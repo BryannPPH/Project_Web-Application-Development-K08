@@ -1,0 +1,37 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Editor and operating system files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs and runtime files
+*.log
+*.pid
+tmp/
+temp/
+
+# Go build and test artifacts
+backend/bin/
+backend/coverage.out
+backend/coverage.html
+*.test
+
+# Frontend dependencies and build artifacts
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+frontend/.vite/
+
+# Generic generated artifacts
+build/
+dist/
+coverage/
+
