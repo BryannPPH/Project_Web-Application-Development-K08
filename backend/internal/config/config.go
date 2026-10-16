@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -17,9 +18,10 @@ const (
 )
 
 type Config struct {
-	Environment Environment
-	LogLevel    slog.Level
-	HTTP        HTTPConfig
+	Environment      Environment
+	LogLevel         slog.Level
+	HTTP             HTTPConfig
+	PlatformDatabase PlatformDatabaseConfig
 }
 
 type HTTPConfig struct {
@@ -29,6 +31,15 @@ type HTTPConfig struct {
 	WriteTimeout      time.Duration
 	IdleTimeout       time.Duration
 	ShutdownTimeout   time.Duration
+}
+
+type PlatformDatabaseConfig struct {
+	URL               string
+	MinConnections    int32
+	MaxConnections    int32
+	MaxConnectionIdle time.Duration
+	MaxConnectionLife time.Duration
+	HealthTimeout     time.Duration
 }
 
 type lookupEnv func(string) (string, bool)
@@ -74,6 +85,34 @@ func load(lookup lookupEnv) (Config, error) {
 		return Config{}, err
 	}
 
+	platformDatabaseURL, err := requiredValue(lookup, "PLATFORM_DATABASE_URL")
+	if err != nil {
+		return Config{}, err
+	}
+	minConnections, err := positiveInt32(lookup, "PLATFORM_DB_MIN_CONNECTIONS", 2, true)
+	if err != nil {
+		return Config{}, err
+	}
+	maxConnections, err := positiveInt32(lookup, "PLATFORM_DB_MAX_CONNECTIONS", 10, false)
+	if err != nil {
+		return Config{}, err
+	}
+	if minConnections > maxConnections {
+		return Config{}, fmt.Errorf("PLATFORM_DB_MIN_CONNECTIONS must not exceed PLATFORM_DB_MAX_CONNECTIONS")
+	}
+	maxConnectionIdle, err := duration(lookup, "PLATFORM_DB_MAX_CONNECTION_IDLE", 5*time.Minute)
+	if err != nil {
+		return Config{}, err
+	}
+	maxConnectionLife, err := duration(lookup, "PLATFORM_DB_MAX_CONNECTION_LIFETIME", 30*time.Minute)
+	if err != nil {
+		return Config{}, err
+	}
+	healthTimeout, err := duration(lookup, "PLATFORM_DB_HEALTH_TIMEOUT", 5*time.Second)
+	if err != nil {
+		return Config{}, err
+	}
+
 	return Config{
 		Environment: environment,
 		LogLevel:    logLevel,
@@ -84,6 +123,14 @@ func load(lookup lookupEnv) (Config, error) {
 			WriteTimeout:      writeTimeout,
 			IdleTimeout:       idleTimeout,
 			ShutdownTimeout:   shutdownTimeout,
+		},
+		PlatformDatabase: PlatformDatabaseConfig{
+			URL:               platformDatabaseURL,
+			MinConnections:    minConnections,
+			MaxConnections:    maxConnections,
+			MaxConnectionIdle: maxConnectionIdle,
+			MaxConnectionLife: maxConnectionLife,
+			HealthTimeout:     healthTimeout,
 		},
 	}, nil
 }
@@ -128,4 +175,31 @@ func valueOrDefault(lookup lookupEnv, key, defaultValue string) string {
 		return defaultValue
 	}
 	return value
+}
+
+func requiredValue(lookup lookupEnv, key string) (string, error) {
+	value, exists := lookup(key)
+	if !exists || strings.TrimSpace(value) == "" {
+		return "", fmt.Errorf("%s is required", key)
+	}
+	return strings.TrimSpace(value), nil
+}
+
+func positiveInt32(lookup lookupEnv, key string, defaultValue int32, allowZero bool) (int32, error) {
+	raw, exists := lookup(key)
+	if !exists || strings.TrimSpace(raw) == "" {
+		return defaultValue, nil
+	}
+
+	value, err := strconv.ParseInt(raw, 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be a valid integer", key)
+	}
+	if value < 0 {
+		return 0, fmt.Errorf("%s must be zero or greater", key)
+	}
+	if !allowZero && value == 0 {
+		return 0, fmt.Errorf("%s must be greater than zero", key)
+	}
+	return int32(value), nil
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/app"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/config"
+	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/platformdb"
 )
 
 func main() {
@@ -36,6 +37,14 @@ func run() error {
 	)
 	defer stop()
 
-	application := app.New(cfg, logger)
+	database, err := platformdb.Open(ctx, cfg.PlatformDatabase)
+	if err != nil {
+		return err
+	}
+	defer database.Close()
+
+	logger.Info("platform database connection established")
+
+	application := app.New(cfg, logger, database)
 	return application.Run(ctx)
 }

@@ -19,8 +19,12 @@ type App struct {
 	shutdownTimeout time.Duration
 }
 
-func New(cfg config.Config, logger *slog.Logger) *App {
-	handler := httpapi.NewHandler(logger)
+func New(cfg config.Config, logger *slog.Logger, database httpapi.DatabaseHealthChecker) *App {
+	handler := httpapi.NewHandler(httpapi.Dependencies{
+		Logger:                logger,
+		Database:              database,
+		DatabaseHealthTimeout: cfg.PlatformDatabase.HealthTimeout,
+	})
 
 	return &App{
 		server: &http.Server{
