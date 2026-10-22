@@ -2,7 +2,7 @@ package migrations
 
 import "embed"
 
-// Files contains the versioned schema migrations for the platform database.
+// Files memuat migrasi skema berversi untuk basis data platform.
 //
 //go:embed *.sql
 var Files embed.FS
