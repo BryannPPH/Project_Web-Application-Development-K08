@@ -22,6 +22,7 @@ type Config struct {
 	LogLevel         slog.Level
 	HTTP             HTTPConfig
 	PlatformDatabase PlatformDatabaseConfig
+	Authentication   AuthenticationConfig
 }
 
 type HTTPConfig struct {
@@ -40,6 +41,15 @@ type PlatformDatabaseConfig struct {
 	MaxConnectionIdle time.Duration
 	MaxConnectionLife time.Duration
 	HealthTimeout     time.Duration
+}
+
+type AuthenticationConfig struct {
+	SessionIdleTimeout        time.Duration
+	SessionAbsoluteTimeout    time.Duration
+	SessionRotationInterval   time.Duration
+	SessionPreviousTokenGrace time.Duration
+	SessionCookieName         string
+	SessionCookieSecure       bool
 }
 
 type lookupEnv func(string) (string, bool)
@@ -113,6 +123,48 @@ func load(lookup lookupEnv) (Config, error) {
 		return Config{}, err
 	}
 
+	sessionIdleTimeout, err := duration(lookup, "SESSION_IDLE_TIMEOUT", 30*time.Minute)
+	if err != nil {
+		return Config{}, err
+	}
+	sessionAbsoluteTimeout, err := duration(lookup, "SESSION_ABSOLUTE_TIMEOUT", 12*time.Hour)
+	if err != nil {
+		return Config{}, err
+	}
+	sessionRotationInterval, err := duration(lookup, "SESSION_ROTATION_INTERVAL", 15*time.Minute)
+	if err != nil {
+		return Config{}, err
+	}
+	sessionPreviousTokenGrace, err := duration(lookup, "SESSION_PREVIOUS_TOKEN_GRACE", 30*time.Second)
+	if err != nil {
+		return Config{}, err
+	}
+	if sessionIdleTimeout >= sessionAbsoluteTimeout {
+		return Config{}, fmt.Errorf("SESSION_IDLE_TIMEOUT must be shorter than SESSION_ABSOLUTE_TIMEOUT")
+	}
+	if sessionRotationInterval >= sessionAbsoluteTimeout {
+		return Config{}, fmt.Errorf("SESSION_ROTATION_INTERVAL must be shorter than SESSION_ABSOLUTE_TIMEOUT")
+	}
+	if sessionPreviousTokenGrace >= sessionRotationInterval {
+		return Config{}, fmt.Errorf("SESSION_PREVIOUS_TOKEN_GRACE must be shorter than SESSION_ROTATION_INTERVAL")
+	}
+
+	sessionCookieName := strings.TrimSpace(valueOrDefault(lookup, "SESSION_COOKIE_NAME", "dbmp_session"))
+	if !validCookieName(sessionCookieName) {
+		return Config{}, fmt.Errorf("SESSION_COOKIE_NAME is invalid")
+	}
+	sessionCookieSecure, err := boolean(
+		lookup,
+		"SESSION_COOKIE_SECURE",
+		environment == EnvironmentProduction,
+	)
+	if err != nil {
+		return Config{}, err
+	}
+	if environment == EnvironmentProduction && !sessionCookieSecure {
+		return Config{}, fmt.Errorf("SESSION_COOKIE_SECURE must be true in production")
+	}
+
 	return Config{
 		Environment: environment,
 		LogLevel:    logLevel,
@@ -131,6 +183,14 @@ func load(lookup lookupEnv) (Config, error) {
 			MaxConnectionIdle: maxConnectionIdle,
 			MaxConnectionLife: maxConnectionLife,
 			HealthTimeout:     healthTimeout,
+		},
+		Authentication: AuthenticationConfig{
+			SessionIdleTimeout:        sessionIdleTimeout,
+			SessionAbsoluteTimeout:    sessionAbsoluteTimeout,
+			SessionRotationInterval:   sessionRotationInterval,
+			SessionPreviousTokenGrace: sessionPreviousTokenGrace,
+			SessionCookieName:         sessionCookieName,
+			SessionCookieSecure:       sessionCookieSecure,
 		},
 	}, nil
 }
@@ -202,4 +262,32 @@ func positiveInt32(lookup lookupEnv, key string, defaultValue int32, allowZero b
 		return 0, fmt.Errorf("%s must be greater than zero", key)
 	}
 	return int32(value), nil
+}
+
+func boolean(lookup lookupEnv, key string, defaultValue bool) (bool, error) {
+	raw, exists := lookup(key)
+	if !exists || strings.TrimSpace(raw) == "" {
+		return defaultValue, nil
+	}
+	value, err := strconv.ParseBool(strings.TrimSpace(raw))
+	if err != nil {
+		return false, fmt.Errorf("%s must be a valid boolean", key)
+	}
+	return value, nil
+}
+
+func validCookieName(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, character := range value {
+		if (character >= 'a' && character <= 'z') ||
+			(character >= 'A' && character <= 'Z') ||
+			(character >= '0' && character <= '9') ||
+			character == '_' || character == '-' {
+			continue
+		}
+		return false
+	}
+	return true
 }
