@@ -24,7 +24,44 @@ type App struct {
 	listen          func(network, address string) (net.Listener, error)
 }
 
-func New(cfg config.Config, logger *slog.Logger, database *pgxpool.Pool) (*App, error) {
+type ProtectedRouteRegistrar func(mux *http.ServeMux, security *httpapi.AuthMiddleware)
+
+type FeatureDependencies struct {
+	Database       *pgxpool.Pool
+	Logger         *slog.Logger
+	PasswordHasher auth.PasswordHasher
+	SessionRevoker auth.SessionRevoker
+}
+
+type FeatureFactory func(dependencies FeatureDependencies) (ProtectedRouteRegistrar, error)
+
+type Option func(*appOptions) error
+
+type appOptions struct {
+	featureFactories []FeatureFactory
+}
+
+func WithFeatureFactory(factory FeatureFactory) Option {
+	return func(options *appOptions) error {
+		if factory == nil {
+			return errors.New("feature factory is required")
+		}
+		options.featureFactories = append(options.featureFactories, factory)
+		return nil
+	}
+}
+
+func New(cfg config.Config, logger *slog.Logger, database *pgxpool.Pool, options ...Option) (*App, error) {
+	resolvedOptions := appOptions{}
+	for _, option := range options {
+		if option == nil {
+			return nil, errors.New("app option is required")
+		}
+		if err := option(&resolvedOptions); err != nil {
+			return nil, fmt.Errorf("configure app option: %w", err)
+		}
+	}
+
 	passwordHasher := auth.NewArgon2idHasher()
 	sessionService, err := session.NewService(
 		session.NewPGRepository(database),
@@ -52,6 +89,22 @@ func New(cfg config.Config, logger *slog.Logger, database *pgxpool.Pool) (*App, 
 		Name:   cfg.Authentication.SessionCookieName,
 		Secure: cfg.Authentication.SessionCookieSecure,
 	}
+	loginLimiter, err := httpapi.NewFixedWindowLoginLimiter(
+		cfg.Authentication.LoginRateLimitAttempts,
+		cfg.Authentication.LoginRateLimitWindow,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("configure login rate limiter: %w", err)
+	}
+	protectedRoutes, err := buildFeatureRegistrar(resolvedOptions.featureFactories, FeatureDependencies{
+		Database:       database,
+		Logger:         logger,
+		PasswordHasher: passwordHasher,
+		SessionRevoker: sessionService,
+	})
+	if err != nil {
+		return nil, err
+	}
 
 	handler := httpapi.NewHandler(httpapi.Dependencies{
 		Logger:                logger,
@@ -60,6 +113,13 @@ func New(cfg config.Config, logger *slog.Logger, database *pgxpool.Pool) (*App, 
 		Authentication:        authenticationService,
 		Sessions:              sessionService,
 		SessionCookie:         cookie,
+		LoginLimiter:          loginLimiter,
+		TrustedOrigins:        cfg.HTTP.TrustedOrigins,
+		RegisterProtectedRoutes: func(mux *http.ServeMux, security *httpapi.AuthMiddleware) {
+			if protectedRoutes != nil {
+				protectedRoutes(mux, security)
+			}
+		},
 	})
 
 	return &App{
@@ -75,6 +135,30 @@ func New(cfg config.Config, logger *slog.Logger, database *pgxpool.Pool) (*App, 
 		logger:          logger,
 		shutdownTimeout: cfg.HTTP.ShutdownTimeout,
 		listen:          net.Listen,
+	}, nil
+}
+
+func buildFeatureRegistrar(
+	factories []FeatureFactory,
+	dependencies FeatureDependencies,
+) (ProtectedRouteRegistrar, error) {
+	registrars := make([]ProtectedRouteRegistrar, 0, len(factories))
+	for index, factory := range factories {
+		registrar, err := factory(dependencies)
+		if err != nil {
+			return nil, fmt.Errorf("configure feature %d: %w", index+1, err)
+		}
+		if registrar != nil {
+			registrars = append(registrars, registrar)
+		}
+	}
+	if len(registrars) == 0 {
+		return nil, nil
+	}
+	return func(mux *http.ServeMux, security *httpapi.AuthMiddleware) {
+		for _, registrar := range registrars {
+			registrar(mux, security)
+		}
 	}, nil
 }
 

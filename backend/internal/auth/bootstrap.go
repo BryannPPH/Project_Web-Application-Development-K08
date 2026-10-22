@@ -20,12 +20,16 @@ const bootstrapAdvisoryLockKey int64 = 0x44424d5041444d49 // "DBMPADMI"
 
 // Bootstrapper membuat satu administrator platform awal.
 type Bootstrapper struct {
-	database  *pgxpool.Pool
+	store     initialAdminStore
 	passwords PasswordHasher
 }
 
 func NewBootstrapper(database *pgxpool.Pool, passwords PasswordHasher) *Bootstrapper {
-	return &Bootstrapper{database: database, passwords: passwords}
+	return newBootstrapper(&pgInitialAdminStore{database: database}, passwords)
+}
+
+func newBootstrapper(store initialAdminStore, passwords PasswordHasher) *Bootstrapper {
+	return &Bootstrapper{store: store, passwords: passwords}
 }
 
 func (b *Bootstrapper) CreateInitialAdmin(ctx context.Context, username, password string) error {
@@ -38,8 +42,19 @@ func (b *Bootstrapper) CreateInitialAdmin(ctx context.Context, username, passwor
 	if err != nil {
 		return err
 	}
+	return b.store.CreateInitialAdmin(ctx, username, passwordHash)
+}
 
-	transaction, err := b.database.BeginTx(ctx, pgx.TxOptions{})
+type initialAdminStore interface {
+	CreateInitialAdmin(ctx context.Context, username, passwordHash string) error
+}
+
+type pgInitialAdminStore struct {
+	database *pgxpool.Pool
+}
+
+func (s *pgInitialAdminStore) CreateInitialAdmin(ctx context.Context, username, passwordHash string) error {
+	transaction, err := s.database.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return fmt.Errorf("begin bootstrap transaction: %w", err)
 	}
