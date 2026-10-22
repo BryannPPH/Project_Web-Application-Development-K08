@@ -9,8 +9,12 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/auth"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/config"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/httpapi"
+	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/session"
 )
 
 type App struct {
@@ -19,11 +23,42 @@ type App struct {
 	shutdownTimeout time.Duration
 }
 
-func New(cfg config.Config, logger *slog.Logger, database httpapi.DatabaseHealthChecker) *App {
+func New(cfg config.Config, logger *slog.Logger, database *pgxpool.Pool) (*App, error) {
+	passwordHasher := auth.NewArgon2idHasher()
+	sessionService, err := session.NewService(
+		session.NewPGRepository(database),
+		session.NewRandomTokenSource(),
+		session.RealClock{},
+		session.Config{
+			IdleTimeout:        cfg.Authentication.SessionIdleTimeout,
+			AbsoluteTimeout:    cfg.Authentication.SessionAbsoluteTimeout,
+			RotationInterval:   cfg.Authentication.SessionRotationInterval,
+			PreviousTokenGrace: cfg.Authentication.SessionPreviousTokenGrace,
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("configure session service: %w", err)
+	}
+	authenticationService, err := auth.NewService(
+		auth.NewPGUserRepository(database),
+		passwordHasher,
+		sessionService,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("configure authentication service: %w", err)
+	}
+	cookie := session.CookieConfig{
+		Name:   cfg.Authentication.SessionCookieName,
+		Secure: cfg.Authentication.SessionCookieSecure,
+	}
+
 	handler := httpapi.NewHandler(httpapi.Dependencies{
 		Logger:                logger,
 		Database:              database,
 		DatabaseHealthTimeout: cfg.PlatformDatabase.HealthTimeout,
+		Authentication:        authenticationService,
+		Sessions:              sessionService,
+		SessionCookie:         cookie,
 	})
 
 	return &App{
@@ -38,7 +73,7 @@ func New(cfg config.Config, logger *slog.Logger, database httpapi.DatabaseHealth
 		},
 		logger:          logger,
 		shutdownTimeout: cfg.HTTP.ShutdownTimeout,
-	}
+	}, nil
 }
 
 func (a *App) Run(ctx context.Context) error {

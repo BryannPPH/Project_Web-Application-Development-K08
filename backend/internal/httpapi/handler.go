@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/session"
 )
 
 type DatabaseHealthChecker interface {
@@ -15,12 +17,35 @@ type Dependencies struct {
 	Logger                *slog.Logger
 	Database              DatabaseHealthChecker
 	DatabaseHealthTimeout time.Duration
+	Authentication        LoginService
+	Sessions              AuthSessionService
+	SessionCookie         session.CookieConfig
+	// RegisterProtectedRoutes mendaftarkan route fitur yang terproteksi.
+	RegisterProtectedRoutes func(mux *http.ServeMux, security *AuthMiddleware)
 }
 
 func NewHandler(deps Dependencies) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", health)
 	mux.HandleFunc("GET /api/v1/ready", ready(deps.Database, deps.DatabaseHealthTimeout))
+
+	var security *AuthMiddleware
+	if deps.Sessions != nil {
+		security = NewAuthMiddleware(deps.Sessions, deps.SessionCookie, deps.Logger)
+	}
+	if deps.Authentication != nil && deps.Sessions != nil {
+		registerAuthRoutes(
+			mux,
+			deps.Authentication,
+			deps.Sessions,
+			security,
+			deps.SessionCookie,
+			deps.Logger,
+		)
+	}
+	if deps.RegisterProtectedRoutes != nil && security != nil {
+		deps.RegisterProtectedRoutes(mux, security)
+	}
 	mux.HandleFunc("/", notFound)
 
 	return requestID(

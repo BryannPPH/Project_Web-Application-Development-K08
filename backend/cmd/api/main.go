@@ -45,6 +45,9 @@ func run() error {
 
 	logger.Info("platform database connection established")
 
-	application := app.New(cfg, logger, database)
+	application, err := app.New(cfg, logger, database)
+	if err != nil {
+		return err
+	}
 	return application.Run(ctx)
 }
