@@ -117,8 +117,11 @@ func (r *PGRepository) FindByTokenHash(ctx context.Context, tokenHash []byte, no
 			(s.current_token_hash = $1) AS token_is_current
 		FROM sessions s
 		JOIN users u ON u.id = s.user_id
-		WHERE s.current_token_hash = $1
-		   OR (s.previous_token_hash = $1 AND s.previous_token_valid_until > $2)
+		WHERE s.revoked_at IS NULL
+		  AND (
+			s.current_token_hash = $1
+			OR (s.previous_token_hash = $1 AND s.previous_token_valid_until > $2)
+		  )
 		ORDER BY (s.current_token_hash = $1) DESC
 		LIMIT 1`
 

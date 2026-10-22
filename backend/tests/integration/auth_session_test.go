@@ -206,4 +206,29 @@ func TestAuthSessionLifecycle(t *testing.T) {
 	if afterLogoutRecorder.Code != http.StatusUnauthorized {
 		t.Fatalf("me after logout status = %d, want 401", afterLogoutRecorder.Code)
 	}
+
+	revokedLoginRecorder := httptest.NewRecorder()
+	revokedLoginRequest := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/auth/login",
+		strings.NewReader(`{"username":"`+username+`","password":"`+password+`"}`),
+	)
+	handler.ServeHTTP(revokedLoginRecorder, revokedLoginRequest)
+	if revokedLoginRecorder.Code != http.StatusOK {
+		t.Fatalf("revoke-all login status = %d; body=%s", revokedLoginRecorder.Code, revokedLoginRecorder.Body.String())
+	}
+	revokedCookies := revokedLoginRecorder.Result().Cookies()
+	if len(revokedCookies) != 1 {
+		t.Fatalf("revoke-all login cookies = %+v", revokedCookies)
+	}
+	if err := sessionService.RevokeAllForUser(ctx, userID); err != nil {
+		t.Fatalf("revoke all user sessions: %v", err)
+	}
+	revokedRecorder := httptest.NewRecorder()
+	revokedRequest := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+	revokedRequest.AddCookie(revokedCookies[0])
+	handler.ServeHTTP(revokedRecorder, revokedRequest)
+	if revokedRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("me after revoke-all status = %d, want 401", revokedRecorder.Code)
+	}
 }

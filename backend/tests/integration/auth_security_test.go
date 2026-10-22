@@ -110,7 +110,9 @@ func TestAuthSecurityScenarios(t *testing.T) {
 		absoluteSession := harness.login(t)
 		if _, err := harness.database.Exec(
 			context.Background(),
-			"UPDATE sessions SET absolute_expires_at = NOW() WHERE id = $1",
+			`UPDATE sessions
+			 SET absolute_expires_at = created_at + INTERVAL '1 microsecond'
+			 WHERE id = $1`,
 			absoluteSession.sessionID,
 		); err != nil {
 			t.Fatalf("expire absolute session: %v", err)
