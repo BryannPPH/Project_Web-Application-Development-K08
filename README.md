@@ -92,10 +92,27 @@ Endpoint backend awal:
 - Frontend menyimpan CSRF hanya di memory. Gunakan `apiRequest` dari
   `frontend/src/lib/api-client.ts` untuk seluruh request agar cookie dan header
   CSRF diterapkan secara konsisten.
+- Daftarkan modul Person 2/3 melalui `app.WithFeatureFactory`. Factory menerima
+  `PasswordHasher` dan `SessionRevoker` tanpa bergantung pada implementasi konkret.
+- Perubahan password, status aktif, atau privilege penting wajib membatalkan
+  seluruh session user. Lakukan revocation sebelum commit perubahan; bila revoke
+  gagal, batalkan perubahan agar session lama tidak memperoleh privilege baru.
 
 Default session development adalah idle timeout 30 menit, absolute expiration
 12 jam, rotation interval 15 menit, dan grace period token lama 30 detik.
 Rotation tidak memperpanjang absolute expiration.
+
+Login dibatasi berdasarkan username dan alamat koneksi client. Default-nya 10
+percobaan per menit dan dapat diubah melalui `LOGIN_RATE_LIMIT_ATTEMPTS` serta
+`LOGIN_RATE_LIMIT_WINDOW`. Jangan mempercayai `X-Forwarded-For` langsung; reverse
+proxy perlu meneruskan alamat client sebagai peer yang tepercaya atau menerapkan
+rate limit tambahan di proxy.
+
+Mutation browser juga memeriksa header `Origin`/`Referer`. Origin frontend yang
+berbeda dari host API, seperti Vite development server, harus didaftarkan pada
+`HTTP_TRUSTED_ORIGINS` sebagai daftar origin yang dipisahkan koma. CSRF tetap
+menjadi perlindungan utama ketika kedua header tersebut tidak tersedia. Jika TLS
+berakhir di reverse proxy, masukkan origin HTTPS publik ke daftar tersebut.
 
 ## Pemeriksaan lokal
 
