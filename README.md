@@ -9,6 +9,12 @@ frontend menggunakan React + TypeScript, dan database menggunakan PostgreSQL.
 - Bun 1.3+
 - Docker dengan Docker Compose
 
+Instal dependency frontend setelah clone pertama kali:
+
+```bash
+make frontend-install
+```
+
 ## Menjalankan database lokal
 
 Salin konfigurasi development terlebih dahulu:
@@ -56,6 +62,10 @@ make frontend-dev
 Frontend development berjalan di `http://localhost:5173`. Vite meneruskan
 request `/api` ke backend `http://localhost:8080`, sehingga cookie autentikasi
 tetap digunakan melalui same-origin URL dari browser.
+
+Pada production, sajikan frontend dan endpoint `/api` melalui origin yang sama
+menggunakan reverse proxy. Jangan mengaktifkan wildcard CORS untuk request yang
+membawa cookie autentikasi.
 
 Endpoint backend awal:
 
