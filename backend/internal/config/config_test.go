@@ -48,6 +48,15 @@ func TestLoadUsesSafeDefaults(t *testing.T) {
 	if cfg.Authentication.SessionCookieSecure {
 		t.Error("Authentication.SessionCookieSecure = true in development, want false")
 	}
+	if cfg.Authentication.LoginRateLimitAttempts != 10 {
+		t.Errorf("Authentication.LoginRateLimitAttempts = %d, want 10", cfg.Authentication.LoginRateLimitAttempts)
+	}
+	if cfg.Authentication.LoginRateLimitWindow != time.Minute {
+		t.Errorf("Authentication.LoginRateLimitWindow = %v, want 1m", cfg.Authentication.LoginRateLimitWindow)
+	}
+	if len(cfg.HTTP.TrustedOrigins) != 2 {
+		t.Fatalf("HTTP.TrustedOrigins = %v, want two development origins", cfg.HTTP.TrustedOrigins)
+	}
 }
 
 func TestLoadRejectsInvalidConfiguration(t *testing.T) {
@@ -71,6 +80,9 @@ func TestLoadRejectsInvalidConfiguration(t *testing.T) {
 		{name: "invalid secure boolean", env: map[string]string{"SESSION_COOKIE_SECURE": "sometimes"}},
 		{name: "invalid cookie name", env: map[string]string{"SESSION_COOKIE_NAME": "bad cookie"}},
 		{name: "insecure production cookie", env: map[string]string{"APP_ENV": "production", "SESSION_COOKIE_SECURE": "false"}},
+		{name: "invalid trusted origin", env: map[string]string{"HTTP_TRUSTED_ORIGINS": "https://example.com/path"}},
+		{name: "invalid login attempts", env: map[string]string{"LOGIN_RATE_LIMIT_ATTEMPTS": "0"}},
+		{name: "invalid login window", env: map[string]string{"LOGIN_RATE_LIMIT_WINDOW": "0s"}},
 	}
 
 	for _, tt := range tests {

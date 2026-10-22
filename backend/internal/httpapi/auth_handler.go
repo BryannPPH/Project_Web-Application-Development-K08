@@ -6,7 +6,11 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/auth"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/session"
@@ -29,6 +33,7 @@ type authHandler struct {
 	sessions       AuthSessionService
 	middleware     *AuthMiddleware
 	cookie         session.CookieConfig
+	loginLimiter   LoginAttemptLimiter
 	logger         *slog.Logger
 }
 
@@ -38,6 +43,7 @@ func registerAuthRoutes(
 	sessions AuthSessionService,
 	middleware *AuthMiddleware,
 	cookie session.CookieConfig,
+	loginLimiter LoginAttemptLimiter,
 	logger *slog.Logger,
 ) {
 	handler := &authHandler{
@@ -45,10 +51,11 @@ func registerAuthRoutes(
 		sessions:       sessions,
 		middleware:     middleware,
 		cookie:         cookie,
+		loginLimiter:   loginLimiter,
 		logger:         logger,
 	}
-	mux.HandleFunc("POST /api/v1/auth/login", handler.login)
-	mux.HandleFunc("POST /api/v1/auth/logout", handler.logout)
+	mux.Handle("POST /api/v1/auth/login", middleware.RequireBrowserOrigin(http.HandlerFunc(handler.login)))
+	mux.Handle("POST /api/v1/auth/logout", middleware.RequireBrowserOrigin(http.HandlerFunc(handler.logout)))
 	mux.Handle("GET /api/v1/auth/me", middleware.RequireAuthenticated(http.HandlerFunc(handler.me)))
 	mux.Handle("GET /api/v1/auth/csrf", middleware.RequireAuthenticated(http.HandlerFunc(handler.csrf)))
 }
@@ -71,6 +78,15 @@ func (h *authHandler) login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusBadRequest, "INVALID_BODY", "invalid request body")
 		return
 	}
+	if allowed, retryAfter := h.loginLimiter.Allow(request.Username, clientIdentifier(r)); !allowed {
+		seconds := int64((retryAfter + time.Second - 1) / time.Second)
+		if seconds < 1 {
+			seconds = 1
+		}
+		w.Header().Set("Retry-After", strconv.FormatInt(seconds, 10))
+		writeError(w, r, http.StatusTooManyRequests, "LOGIN_RATE_LIMITED", "too many login attempts")
+		return
+	}
 
 	result, err := h.authentication.Login(r.Context(), request.Username, request.Password)
 	if errors.Is(err, auth.ErrInvalidCredentials) {
@@ -88,6 +104,17 @@ func (h *authHandler) login(w http.ResponseWriter, r *http.Request) {
 		CSRFToken:         result.Session.CSRFToken,
 		AbsoluteExpiresAt: result.Session.AbsoluteExpiresAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
 	})
+}
+
+func clientIdentifier(r *http.Request) string {
+	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
+	if err == nil && host != "" {
+		return host
+	}
+	if remoteAddress := strings.TrimSpace(r.RemoteAddr); remoteAddress != "" {
+		return remoteAddress
+	}
+	return "unknown"
 }
 
 func (h *authHandler) me(w http.ResponseWriter, r *http.Request) {

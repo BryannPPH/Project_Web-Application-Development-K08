@@ -142,6 +142,70 @@ func TestLoginUsesGenericInvalidCredentialResponse(t *testing.T) {
 	}
 }
 
+func TestLoginRateLimitReturnsRetryAfter(t *testing.T) {
+	t.Parallel()
+
+	limiter, err := NewFixedWindowLoginLimiter(1, time.Minute)
+	if err != nil {
+		t.Fatalf("NewFixedWindowLoginLimiter() error = %v", err)
+	}
+	handler := NewHandler(Dependencies{
+		Logger:                discardLogger(),
+		Database:              databaseChecker{},
+		DatabaseHealthTimeout: time.Second,
+		Authentication:        stubLoginService{err: auth.ErrInvalidCredentials},
+		Sessions:              &stubSessionService{},
+		SessionCookie:         session.CookieConfig{Name: "dbmp_session"},
+		LoginLimiter:          limiter,
+	})
+
+	for attempt := 1; attempt <= 2; attempt++ {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(
+			http.MethodPost,
+			"/api/v1/auth/login",
+			strings.NewReader(`{"username":"alice","password":"wrong-password"}`),
+		)
+		handler.ServeHTTP(recorder, request)
+		if attempt == 1 && recorder.Code != http.StatusUnauthorized {
+			t.Fatalf("first status = %d, want 401", recorder.Code)
+		}
+		if attempt == 2 {
+			if recorder.Code != http.StatusTooManyRequests {
+				t.Fatalf("second status = %d, want 429", recorder.Code)
+			}
+			if recorder.Header().Get("Retry-After") == "" {
+				t.Fatal("Retry-After is empty")
+			}
+		}
+	}
+}
+
+func TestLoginRejectsUntrustedBrowserOrigin(t *testing.T) {
+	t.Parallel()
+
+	handler := authTestHandler(stubLoginService{}, &stubSessionService{})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"https://api.example/api/v1/auth/login",
+		strings.NewReader(`{"username":"alice","password":"correct-password"}`),
+	)
+	request.Header.Set("Origin", "https://evil.example")
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", recorder.Code)
+	}
+	var response errorBody
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Error.Code != "INVALID_ORIGIN" {
+		t.Fatalf("error code = %q, want INVALID_ORIGIN", response.Error.Code)
+	}
+}
+
 func TestMeReturnsPrincipalButNoSessionData(t *testing.T) {
 	t.Parallel()
 
@@ -287,6 +351,53 @@ func TestMeRejectsMissingOrInvalidSession(t *testing.T) {
 			handler.ServeHTTP(recorder, request)
 			if recorder.Code != http.StatusUnauthorized {
 				t.Fatalf("status = %d, want 401", recorder.Code)
+			}
+			if recorder.Header().Get("Cache-Control") != "no-store" {
+				t.Fatalf("Cache-Control = %q, want no-store", recorder.Header().Get("Cache-Control"))
+			}
+		})
+	}
+}
+
+func TestProtectedMutationValidatesBrowserOrigin(t *testing.T) {
+	t.Parallel()
+
+	sessions := &stubSessionService{authentication: session.Authentication{
+		SessionID:         "session-id",
+		Principal:         auth.Principal{UserID: "user-id", PlatformRole: auth.PlatformRoleUser},
+		AbsoluteExpiresAt: time.Now().Add(time.Hour),
+	}}
+	middleware := NewAuthMiddleware(
+		sessions,
+		session.CookieConfig{Name: "dbmp_session"},
+		discardLogger(),
+		"https://trusted.example",
+	)
+	protected := middleware.ProtectMutation(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	tests := []struct {
+		name       string
+		origin     string
+		host       string
+		wantStatus int
+	}{
+		{name: "cross origin", origin: "https://evil.example", host: "api.example", wantStatus: http.StatusForbidden},
+		{name: "same origin", origin: "https://api.example", host: "api.example", wantStatus: http.StatusNoContent},
+		{name: "trusted proxy origin", origin: "https://trusted.example", host: "api.example", wantStatus: http.StatusNoContent},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPost, "https://"+tt.host+"/mutation", nil)
+			request.Host = tt.host
+			request.Header.Set("Origin", tt.origin)
+			request.Header.Set("X-CSRF-Token", "valid-csrf")
+			request.AddCookie(&http.Cookie{Name: "dbmp_session", Value: "opaque-token"})
+			protected.ServeHTTP(recorder, request)
+			if recorder.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d", recorder.Code, tt.wantStatus)
 			}
 		})
 	}

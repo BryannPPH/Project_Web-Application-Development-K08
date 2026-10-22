@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -32,6 +33,7 @@ type HTTPConfig struct {
 	WriteTimeout      time.Duration
 	IdleTimeout       time.Duration
 	ShutdownTimeout   time.Duration
+	TrustedOrigins    []string
 }
 
 type PlatformDatabaseConfig struct {
@@ -50,6 +52,8 @@ type AuthenticationConfig struct {
 	SessionPreviousTokenGrace time.Duration
 	SessionCookieName         string
 	SessionCookieSecure       bool
+	LoginRateLimitAttempts    int
+	LoginRateLimitWindow      time.Duration
 }
 
 type lookupEnv func(string) (string, bool)
@@ -72,6 +76,14 @@ func load(lookup lookupEnv) (Config, error) {
 	address := strings.TrimSpace(valueOrDefault(lookup, "HTTP_ADDRESS", ":8080"))
 	if address == "" {
 		return Config{}, fmt.Errorf("HTTP_ADDRESS must not be empty")
+	}
+	defaultTrustedOrigins := ""
+	if environment == EnvironmentDevelopment {
+		defaultTrustedOrigins = "http://localhost:5173,http://127.0.0.1:5173"
+	}
+	trustedOrigins, err := parseTrustedOrigins(valueOrDefault(lookup, "HTTP_TRUSTED_ORIGINS", defaultTrustedOrigins))
+	if err != nil {
+		return Config{}, err
 	}
 
 	readHeaderTimeout, err := duration(lookup, "HTTP_READ_HEADER_TIMEOUT", 5*time.Second)
@@ -164,6 +176,14 @@ func load(lookup lookupEnv) (Config, error) {
 	if environment == EnvironmentProduction && !sessionCookieSecure {
 		return Config{}, fmt.Errorf("SESSION_COOKIE_SECURE must be true in production")
 	}
+	loginRateLimitAttempts, err := positiveInt32(lookup, "LOGIN_RATE_LIMIT_ATTEMPTS", 10, false)
+	if err != nil {
+		return Config{}, err
+	}
+	loginRateLimitWindow, err := duration(lookup, "LOGIN_RATE_LIMIT_WINDOW", time.Minute)
+	if err != nil {
+		return Config{}, err
+	}
 
 	return Config{
 		Environment: environment,
@@ -175,6 +195,7 @@ func load(lookup lookupEnv) (Config, error) {
 			WriteTimeout:      writeTimeout,
 			IdleTimeout:       idleTimeout,
 			ShutdownTimeout:   shutdownTimeout,
+			TrustedOrigins:    trustedOrigins,
 		},
 		PlatformDatabase: PlatformDatabaseConfig{
 			URL:               platformDatabaseURL,
@@ -191,8 +212,39 @@ func load(lookup lookupEnv) (Config, error) {
 			SessionPreviousTokenGrace: sessionPreviousTokenGrace,
 			SessionCookieName:         sessionCookieName,
 			SessionCookieSecure:       sessionCookieSecure,
+			LoginRateLimitAttempts:    int(loginRateLimitAttempts),
+			LoginRateLimitWindow:      loginRateLimitWindow,
 		},
 	}, nil
+}
+
+func parseTrustedOrigins(raw string) ([]string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+
+	origins := make([]string, 0)
+	seen := make(map[string]struct{})
+	for _, value := range strings.Split(raw, ",") {
+		parsed, err := url.Parse(strings.TrimSpace(value))
+		if err != nil || parsed.User != nil || parsed.Host == "" {
+			return nil, fmt.Errorf("HTTP_TRUSTED_ORIGINS contains an invalid origin")
+		}
+		scheme := strings.ToLower(parsed.Scheme)
+		if scheme != "http" && scheme != "https" {
+			return nil, fmt.Errorf("HTTP_TRUSTED_ORIGINS only accepts http or https origins")
+		}
+		if (parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
+			return nil, fmt.Errorf("HTTP_TRUSTED_ORIGINS must not contain a path, query, or fragment")
+		}
+		normalized := scheme + "://" + strings.ToLower(parsed.Host)
+		if _, exists := seen[normalized]; exists {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		origins = append(origins, normalized)
+	}
+	return origins, nil
 }
 
 func parseEnvironment(raw string) (Environment, error) {

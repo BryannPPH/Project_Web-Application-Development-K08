@@ -20,6 +20,8 @@ type Dependencies struct {
 	Authentication        LoginService
 	Sessions              AuthSessionService
 	SessionCookie         session.CookieConfig
+	LoginLimiter          LoginAttemptLimiter
+	TrustedOrigins        []string
 	// RegisterProtectedRoutes mendaftarkan route fitur yang terproteksi.
 	RegisterProtectedRoutes func(mux *http.ServeMux, security *AuthMiddleware)
 }
@@ -31,15 +33,20 @@ func NewHandler(deps Dependencies) http.Handler {
 
 	var security *AuthMiddleware
 	if deps.Sessions != nil {
-		security = NewAuthMiddleware(deps.Sessions, deps.SessionCookie, deps.Logger)
+		security = NewAuthMiddleware(deps.Sessions, deps.SessionCookie, deps.Logger, deps.TrustedOrigins...)
 	}
 	if deps.Authentication != nil && deps.Sessions != nil {
+		loginLimiter := deps.LoginLimiter
+		if loginLimiter == nil {
+			loginLimiter = newDefaultLoginLimiter()
+		}
 		registerAuthRoutes(
 			mux,
 			deps.Authentication,
 			deps.Sessions,
 			security,
 			deps.SessionCookie,
+			loginLimiter,
 			deps.Logger,
 		)
 	}
