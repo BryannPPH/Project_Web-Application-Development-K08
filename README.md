@@ -53,6 +53,10 @@ make backend-run
 make frontend-dev
 ```
 
+Frontend development berjalan di `http://localhost:5173`. Vite meneruskan
+request `/api` ke backend `http://localhost:8080`, sehingga cookie autentikasi
+tetap digunakan melalui same-origin URL dari browser.
+
 Endpoint backend awal:
 
 - `GET http://localhost:8080/api/v1/health` untuk liveness.
@@ -75,6 +79,9 @@ Endpoint backend awal:
 - Setelah reload halaman, frontend dapat mengambil CSRF baru melalui
   `GET /api/v1/auth/csrf`. Response authentication menggunakan `Cache-Control:
   no-store` dan tidak pernah mengembalikan session identifier.
+- Frontend menyimpan CSRF hanya di memory. Gunakan `apiRequest` dari
+  `frontend/src/lib/api-client.ts` untuk seluruh request agar cookie dan header
+  CSRF diterapkan secara konsisten.
 
 Default session development adalah idle timeout 30 menit, absolute expiration
 12 jam, rotation interval 15 menit, dan grace period token lama 30 detik.
