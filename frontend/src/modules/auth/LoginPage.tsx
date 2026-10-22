@@ -88,29 +88,10 @@ export function LoginPage() {
 
   return (
     <main className="login-page">
-      <section className="login-intro" aria-labelledby="login-title">
-        <div className="brand-mark" aria-hidden="true">
-          DB
-        </div>
-        <p className="login-intro__eyebrow">Database Management Platform</p>
-        <h1 id="login-title">Kelola basis data dengan akses yang terkendali.</h1>
-        <p className="login-intro__description">
-          Satu ruang kerja untuk melihat data, mengatur akses, dan menjalankan
-          migrasi secara aman.
-        </p>
-        <ul className="login-intro__features" aria-label="Keunggulan platform">
-          <li>Kontrol akses berbasis grup</li>
-          <li>Sesi aman dengan perlindungan CSRF</li>
-          <li>Riwayat migrasi yang dapat ditelusuri</li>
-        </ul>
-      </section>
-
-      <section className="login-panel" aria-labelledby="login-form-title">
-        <div className="login-panel__header">
-          <p className="login-panel__eyebrow">Selamat datang</p>
-          <h2 id="login-form-title">Masuk ke akun Anda</h2>
-          <p>Gunakan akun platform yang telah diberikan administrator.</p>
-        </div>
+      <section className="login-card" aria-labelledby="login-title">
+        <header className="login-card__header">
+          <h1 id="login-title">Masuk ke akun Anda</h1>
+        </header>
 
         <form className="login-form" onSubmit={handleSubmit}>
           <label htmlFor="username">Nama pengguna</label>

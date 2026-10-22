@@ -46,18 +46,10 @@ a:focus-visible {
 
 .button {
   min-height: 2.75rem;
-  border-radius: 0.75rem;
+  border-radius: 0.5rem;
   padding: 0.65rem 1rem;
   cursor: pointer;
   font-weight: 700;
-  transition:
-    background-color 160ms ease,
-    border-color 160ms ease,
-    transform 160ms ease;
-}
-
-.button:hover:not(:disabled) {
-  transform: translateY(-1px);
 }
 
 .button:disabled {
@@ -69,7 +61,6 @@ a:focus-visible {
   border: 1px solid #176b49;
   color: #fff;
   background: #176b49;
-  box-shadow: 0 0.6rem 1.25rem rgb(23 107 73 / 18%);
 }
 
 .button--primary:hover:not(:disabled) {
@@ -86,32 +77,6 @@ a:focus-visible {
 .button--secondary:hover:not(:disabled) {
   border-color: #aebeb4;
   background: #f7faf8;
-}
-
-.brand-mark {
-  display: grid;
-  width: 3.25rem;
-  height: 3.25rem;
-  place-items: center;
-  border: 1px solid rgb(255 255 255 / 24%);
-  border-radius: 1rem;
-  color: #fff;
-  background: rgb(255 255 255 / 12%);
-  font-size: 0.9rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 18%);
-}
-
-.brand-mark--small {
-  width: 2.5rem;
-  height: 2.5rem;
-  border-color: #cfe4d8;
-  border-radius: 0.75rem;
-  color: #176b49;
-  background: #eaf5ef;
-  font-size: 0.72rem;
-  box-shadow: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

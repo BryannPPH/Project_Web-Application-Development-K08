@@ -4,200 +4,59 @@
 }
 
 .workspace-header {
-  min-height: 4.75rem;
+  min-height: 4rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 2rem;
-  padding: 0.85rem clamp(1.25rem, 5vw, 4.5rem);
-  border-bottom: 1px solid #dce4de;
-  background: rgb(255 255 255 / 92%);
-  backdrop-filter: blur(12px);
+  gap: 1rem;
+  padding: 0.75rem clamp(1rem, 4vw, 3rem);
+  border-bottom: 1px solid #d7dfd9;
+  background: #fff;
 }
 
 .workspace-brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.8rem;
   color: #17211c;
+  font-weight: 800;
   text-decoration: none;
-}
-
-.workspace-brand > span:last-child,
-.workspace-user__identity {
-  display: grid;
-}
-
-.workspace-brand strong {
-  font-size: 0.92rem;
-}
-
-.workspace-brand small,
-.workspace-user small {
-  margin-top: 0.1rem;
-  color: #78877e;
-  font-size: 0.7rem;
 }
 
 .workspace-user {
   display: flex;
   align-items: center;
-  gap: 0.8rem;
-}
-
-.workspace-user__avatar {
-  width: 2.25rem;
-  height: 2.25rem;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  color: #176b49;
-  background: #e4f1e9;
-  font-size: 0.82rem;
-  font-weight: 800;
-}
-
-.workspace-user__identity {
-  min-width: 8rem;
-}
-
-.workspace-user__identity strong {
-  max-width: 12rem;
-  overflow: hidden;
-  font-size: 0.82rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  gap: 1rem;
+  color: #526158;
+  font-size: 0.875rem;
 }
 
 .workspace-main {
-  width: min(100% - 2.5rem, 76rem);
+  width: min(100% - 2rem, 72rem);
   margin: 0 auto;
-  padding: clamp(3rem, 7vw, 6rem) 0;
+  padding: 3rem 0;
 }
 
-.workspace-hero {
-  max-width: 48rem;
-}
-
-.workspace-hero__eyebrow {
-  margin: 0 0 0.65rem;
-  color: #176b49;
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-.workspace-hero h1 {
+.workspace-main h1 {
   margin: 0;
-  font-size: clamp(2.25rem, 5vw, 4.25rem);
-  letter-spacing: -0.055em;
-  line-height: 1.05;
+  font-size: 2rem;
 }
 
-.workspace-hero > p:last-child {
-  max-width: 42rem;
-  margin: 1.25rem 0 0;
-  color: #64736a;
-  font-size: 1rem;
-  line-height: 1.75;
+.workspace-role {
+  margin: 0.5rem 0 0;
+  color: #68776e;
 }
 
 .workspace-alert {
-  max-width: 42rem;
+  max-width: 32rem;
   margin: 1.5rem 0 0;
-  border: 1px solid #f0c9c7;
-  border-radius: 0.75rem;
-  padding: 0.8rem 0.9rem;
+  border: 1px solid #efcecc;
+  border-radius: 0.5rem;
+  padding: 0.75rem;
   color: #9f2d28;
-  background: #fff5f4;
-  font-size: 0.88rem;
-  line-height: 1.5;
+  background: #fff6f5;
+  font-size: 0.875rem;
 }
 
-.workspace-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1rem;
-  margin-top: 3.5rem;
-}
-
-.workspace-card {
-  min-height: 16rem;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  border: 1px solid #dce4de;
-  border-radius: 1.1rem;
-  padding: 1.5rem;
-  background: #fff;
-  box-shadow: 0 0.75rem 2rem rgb(31 61 44 / 5%);
-}
-
-.workspace-card__index {
-  color: #8b9a91;
-  font-size: 0.7rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-}
-
-.workspace-card h2 {
-  margin: 2rem 0 0.75rem;
-  font-size: 1.15rem;
-  letter-spacing: -0.02em;
-}
-
-.workspace-card p {
-  margin: 0;
-  color: #6a786f;
-  font-size: 0.88rem;
-  line-height: 1.65;
-}
-
-.status-pill {
-  margin-top: auto;
-  border: 1px solid #d8e0da;
-  border-radius: 999px;
-  padding: 0.35rem 0.65rem;
-  color: #67756c;
-  background: #f6f8f6;
-  font-size: 0.68rem;
-  font-weight: 750;
-}
-
-.status-pill--ready {
-  border-color: #bee1cb;
-  color: #176b49;
-  background: #edf8f1;
-}
-
-@media (max-width: 860px) {
-  .workspace-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .workspace-card {
-    min-height: 13rem;
-  }
-}
-
-@media (max-width: 600px) {
-  .workspace-header {
-    align-items: flex-start;
-    padding: 1rem 1.25rem;
-  }
-
-  .workspace-brand > span:last-child,
-  .workspace-user__identity {
+@media (max-width: 480px) {
+  .workspace-user > span {
     display: none;
-  }
-
-  .workspace-user {
-    gap: 0.5rem;
-  }
-
-  .workspace-main {
-    width: min(100% - 2rem, 76rem);
-    padding-top: 3rem;
   }
 }

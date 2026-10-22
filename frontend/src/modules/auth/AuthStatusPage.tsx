@@ -16,9 +16,6 @@ export function AuthStatusPage({
   return (
     <main className="auth-status">
       <section className="auth-status__card" aria-live="polite">
-        <div className="auth-status__mark" aria-hidden="true">
-          DB
-        </div>
         <h1>{title}</h1>
         <p>{message}</p>
         {actionLabel && onAction ? (
