@@ -165,6 +165,23 @@ func TestAuthSessionLifecycle(t *testing.T) {
 	if graceRecorder.Code != http.StatusOK {
 		t.Fatalf("previous token during grace status = %d, want 200", graceRecorder.Code)
 	}
+	var expiryAfterActivity time.Time
+	if err := database.QueryRow(ctx, "SELECT absolute_expires_at FROM sessions WHERE id = $1", sessionID).Scan(&expiryAfterActivity); err != nil {
+		t.Fatalf("read expiry after activity: %v", err)
+	}
+	if !expiryAfterActivity.Equal(absoluteExpiresAt) {
+		t.Fatalf("activity extended absolute expiry from %v to %v", absoluteExpiresAt, expiryAfterActivity)
+	}
+	if _, err := database.Exec(ctx, "UPDATE sessions SET previous_token_valid_until = $2 WHERE id = $1", sessionID, time.Now().Add(-time.Second)); err != nil {
+		t.Fatalf("expire previous token grace: %v", err)
+	}
+	expiredGraceRecorder := httptest.NewRecorder()
+	expiredGraceRequest := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+	expiredGraceRequest.AddCookie(sessionCookie)
+	handler.ServeHTTP(expiredGraceRecorder, expiredGraceRequest)
+	if expiredGraceRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("previous token after grace status = %d, want 401", expiredGraceRecorder.Code)
+	}
 
 	logoutRecorder := httptest.NewRecorder()
 	logoutRequest := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)

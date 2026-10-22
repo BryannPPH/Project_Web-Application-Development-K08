@@ -204,6 +204,38 @@ func TestAuthenticateRejectsExpiryAndRevocationBoundaries(t *testing.T) {
 	}
 }
 
+func TestAuthenticateAcceptsJustBeforeExpiryBoundaries(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 10, 22, 8, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name   string
+		mutate func(*Record)
+	}{
+		{name: "idle timeout", mutate: func(record *Record) { record.LastActivityAt = now.Add(-30*time.Minute + time.Nanosecond) }},
+		{name: "absolute expiration", mutate: func(record *Record) { record.AbsoluteExpiresAt = now.Add(time.Nanosecond) }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			record := validRecord(now)
+			tt.mutate(&record)
+			service, err := NewService(
+				&fakeRepository{record: record, touchResult: true},
+				&queuedTokenSource{},
+				fakeClock{now: now},
+				testConfig(),
+			)
+			if err != nil {
+				t.Fatalf("NewService() error = %v", err)
+			}
+			if _, err := service.Authenticate(context.Background(), "token"); err != nil {
+				t.Fatalf("Authenticate() error = %v, want nil", err)
+			}
+		})
+	}
+}
+
 func TestCSRFValidationAndRotation(t *testing.T) {
 	t.Parallel()
 
@@ -222,8 +254,10 @@ func TestCSRFValidationAndRotation(t *testing.T) {
 	if err := service.ValidateCSRF(authentication, "csrf-token"); err != nil {
 		t.Fatalf("ValidateCSRF(valid) error = %v", err)
 	}
-	if err := service.ValidateCSRF(authentication, "wrong"); !errors.Is(err, ErrInvalidCSRF) {
-		t.Fatalf("ValidateCSRF(wrong) error = %v, want ErrInvalidCSRF", err)
+	for _, token := range []string{"", "wrong"} {
+		if err := service.ValidateCSRF(authentication, token); !errors.Is(err, ErrInvalidCSRF) {
+			t.Fatalf("ValidateCSRF(%q) error = %v, want ErrInvalidCSRF", token, err)
+		}
 	}
 
 	token, err := service.RotateCSRF(context.Background(), "session-id")
@@ -232,5 +266,27 @@ func TestCSRFValidationAndRotation(t *testing.T) {
 	}
 	if token != "new-csrf-token" || !bytes.Equal(repository.rotatedCSRFHash, hashToken(token)) {
 		t.Fatal("RotateCSRF() did not persist the new token hash")
+	}
+}
+
+func TestRevokeAllForUserUsesRepository(t *testing.T) {
+	t.Parallel()
+
+	repository := &fakeRepository{}
+	service, err := NewService(
+		repository,
+		&queuedTokenSource{},
+		fakeClock{now: time.Date(2026, 10, 22, 8, 0, 0, 0, time.UTC)},
+		testConfig(),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	if err := service.RevokeAllForUser(context.Background(), "user-id"); err != nil {
+		t.Fatalf("RevokeAllForUser() error = %v", err)
+	}
+	if repository.revokeAllUserID != "user-id" {
+		t.Fatalf("revoked user = %q, want user-id", repository.revokeAllUserID)
 	}
 }
