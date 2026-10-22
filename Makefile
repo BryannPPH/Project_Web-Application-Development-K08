@@ -3,7 +3,7 @@ include .env
 export
 endif
 
-.PHONY: db-up db-down db-status migrate-up migrate-status backend-run backend-test frontend-dev frontend-check
+.PHONY: db-up db-down db-status migrate-up migrate-status bootstrap-admin backend-run backend-test backend-integration-test frontend-dev frontend-check
 
 db-up:
 	docker compose up -d --wait platform-db target-db
@@ -20,11 +20,17 @@ migrate-up:
 migrate-status:
 	cd backend && go run ./cmd/migrate status
 
+bootstrap-admin:
+	cd backend && go run ./cmd/bootstrap-admin
+
 backend-run:
 	cd backend && go run ./cmd/api
 
 backend-test:
 	cd backend && go test ./...
+
+backend-integration-test:
+	@cd backend && TEST_PLATFORM_DATABASE_URL="$(PLATFORM_DATABASE_URL)" go test ./tests/integration -count=1 -v
 
 frontend-dev:
 	cd frontend && bun run dev

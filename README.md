@@ -27,6 +27,18 @@ make db-up
 make migrate-up
 ```
 
+Buat platform admin pertama secara interaktif. Password dibaca tanpa echo dan
+tidak diteruskan sebagai command-line argument:
+
+```bash
+make bootstrap-admin
+```
+
+Untuk environment non-interaktif, gunakan `BOOTSTRAP_ADMIN_USERNAME` dan
+`BOOTSTRAP_ADMIN_PASSWORD` sebagai environment sementara. Jangan simpan password
+bootstrap dalam `.env`, script, atau repository. Command menolak membuat admin
+baru jika platform sudah memiliki platform admin aktif.
+
 Service lokal yang tersedia:
 
 | Service | Port | Kegunaan |
@@ -45,12 +57,41 @@ Endpoint backend awal:
 
 - `GET http://localhost:8080/api/v1/health` untuk liveness.
 - `GET http://localhost:8080/api/v1/ready` untuk kesiapan koneksi platform database.
+- `POST http://localhost:8080/api/v1/auth/login` untuk login username/password.
+- `GET http://localhost:8080/api/v1/auth/me` untuk principal session aktif.
+- `GET http://localhost:8080/api/v1/auth/csrf` untuk memperbarui CSRF token.
+- `POST http://localhost:8080/api/v1/auth/logout` untuk revoke session aktif.
+
+### Kontrak authentication untuk feature backend
+
+- Feature handler tidak boleh membaca cookie atau tabel `sessions` sendiri.
+- Bungkus route baca dengan `AuthMiddleware.RequireAuthenticated`.
+- Bungkus route `POST`, `PUT`, `PATCH`, atau `DELETE` dengan
+  `AuthMiddleware.ProtectMutation` agar authentication dan CSRF sama-sama dicek.
+- Ambil identitas melalui `auth.PrincipalFromContext`. Pemeriksaan akses database
+  tetap dilakukan oleh modul `authz`; role `platform_admin` bukan akses database.
+- Login mengembalikan CSRF token di JSON dan opaque session hanya melalui cookie
+  `HttpOnly`. Kirim CSRF token melalui header `X-CSRF-Token` pada mutation.
+- Setelah reload halaman, frontend dapat mengambil CSRF baru melalui
+  `GET /api/v1/auth/csrf`. Response authentication menggunakan `Cache-Control:
+  no-store` dan tidak pernah mengembalikan session identifier.
+
+Default session development adalah idle timeout 30 menit, absolute expiration
+12 jam, rotation interval 15 menit, dan grace period token lama 30 detik.
+Rotation tidak memperpanjang absolute expiration.
 
 ## Pemeriksaan lokal
 
 ```bash
 make backend-test
 make frontend-check
+```
+
+Integration test backend menggunakan PostgreSQL platform lokal dan hanya
+membuat lalu menghapus fixture miliknya sendiri:
+
+```bash
+make backend-integration-test
 ```
 
 ## Migration internal
