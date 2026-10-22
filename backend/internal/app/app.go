@@ -21,6 +21,7 @@ type App struct {
 	server          *http.Server
 	logger          *slog.Logger
 	shutdownTimeout time.Duration
+	listen          func(network, address string) (net.Listener, error)
 }
 
 func New(cfg config.Config, logger *slog.Logger, database *pgxpool.Pool) (*App, error) {
@@ -73,11 +74,16 @@ func New(cfg config.Config, logger *slog.Logger, database *pgxpool.Pool) (*App, 
 		},
 		logger:          logger,
 		shutdownTimeout: cfg.HTTP.ShutdownTimeout,
+		listen:          net.Listen,
 	}, nil
 }
 
 func (a *App) Run(ctx context.Context) error {
-	listener, err := net.Listen("tcp", a.server.Addr)
+	listen := a.listen
+	if listen == nil {
+		listen = net.Listen
+	}
+	listener, err := listen("tcp", a.server.Addr)
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", a.server.Addr, err)
 	}
