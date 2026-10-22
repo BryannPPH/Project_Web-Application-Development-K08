@@ -3,7 +3,7 @@ include .env
 export
 endif
 
-.PHONY: db-up db-down db-status migrate-up migrate-status bootstrap-admin backend-run backend-test backend-integration-test frontend-dev frontend-check
+.PHONY: db-up db-down db-status migrate-up migrate-status bootstrap-admin backend-run backend-test backend-integration-test frontend-install frontend-dev frontend-check
 
 db-up:
 	docker compose up -d --wait platform-db target-db
@@ -31,6 +31,9 @@ backend-test:
 
 backend-integration-test:
 	@cd backend && TEST_PLATFORM_DATABASE_URL="$(PLATFORM_DATABASE_URL)" go test ./tests/integration -count=1 -v
+
+frontend-install:
+	cd frontend && bun install --frozen-lockfile
 
 frontend-dev:
 	cd frontend && bun run dev
