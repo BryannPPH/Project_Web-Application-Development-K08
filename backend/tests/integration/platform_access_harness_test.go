@@ -20,7 +20,7 @@ import (
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/auth"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/database"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/httpapi"
-	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/platformaccess"
+	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/platformfeature"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/session"
 )
 
@@ -93,11 +93,12 @@ func newPlatformHarness(t *testing.T) *platformHarness {
 	if err != nil {
 		t.Fatalf("create credential cipher: %v", err)
 	}
-	registrar, _, err := platformaccess.Build(platformaccess.Options{
+	featureFactory := platformfeature.FeatureFactory(ctx, platformfeature.Options{
 		CredentialCipher:     cipher,
 		TargetConnectTimeout: 3 * time.Second,
 		ViewerQueryTimeout:   10 * time.Second,
-	}, app.FeatureDependencies{
+	})
+	registrar, err := featureFactory(app.FeatureDependencies{
 		Database:       pool,
 		Logger:         logger,
 		PasswordHasher: passwords,

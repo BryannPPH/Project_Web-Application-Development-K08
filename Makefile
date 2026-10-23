@@ -30,7 +30,9 @@ backend-test:
 	cd backend && go test ./...
 
 backend-integration-test:
+	@test -n "$(PLATFORM_DATABASE_URL)" || (echo "PLATFORM_DATABASE_URL wajib diisi" && exit 1)
 	@cd backend && TEST_PLATFORM_DATABASE_URL="$(PLATFORM_DATABASE_URL)" \
+		TEST_TARGET_DATABASE_URL="$(TARGET_DATABASE_URL)" \
 		TEST_TARGET_DB_HOST=localhost TEST_TARGET_DB_PORT="$(TARGET_DB_PORT)" \
 		TEST_TARGET_DB_NAME="$(TARGET_DB_NAME)" TEST_TARGET_DB_USER="$(TARGET_DB_USER)" \
 		TEST_TARGET_DB_PASSWORD="$(TARGET_DB_PASSWORD)" \
