@@ -30,7 +30,7 @@ backend-test:
 	cd backend && go test ./...
 
 backend-integration-test:
-	@cd backend && TEST_PLATFORM_DATABASE_URL="$(PLATFORM_DATABASE_URL)" go test ./tests/integration -count=1 -v
+	@cd backend && TEST_PLATFORM_DATABASE_URL="$(PLATFORM_DATABASE_URL)" TEST_TARGET_DATABASE_URL="$(TARGET_DATABASE_URL)" go test ./tests/integration -count=1 -v
 
 frontend-install:
 	cd frontend && bun install --frozen-lockfile
