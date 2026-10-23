@@ -149,6 +149,34 @@ data rows dipisah karena terpaginasi (`limit` default 50, maksimum 100,
 Modul migration dapat memakai `authz.Service` dan `targetdb.Provider`; fake untuk
 unit test tersedia di `internal/authz/authztest` dan `internal/targetdb/targetdbtest`.
 
+## Migration database target
+
+Riwayat migration dapat dibuka dari tombol **Riwayat migration** pada daftar
+database atau halaman viewer. User `view_only` dapat melihat history dan detail,
+sedangkan pembuatan, perubahan, serta eksekusi draft hanya tersedia untuk user
+`view_edit`. Backend selalu memeriksa ulang grant; platform admin tanpa grant
+database tetap ditolak.
+
+Setiap migration memperoleh versi linear per database dan salah satu status:
+
+- `draft`: SQL masih dapat diubah oleh user `view_edit`;
+- `running`: SQL sedang dijalankan pada target;
+- `succeeded`: seluruh SQL berhasil dan transaction di-commit;
+- `failed`: SQL gagal dan transaction berhasil di-rollback;
+- `interrupted`: hasil eksekusi tidak dapat dipastikan dan membutuhkan
+  rekonsiliasi manual.
+
+Saat backend start, entry yang tertinggal `running` dari proses sebelumnya
+diubah menjadi `interrupted`. Implementasi Milestone 1 mengasumsikan satu
+instance backend aktif agar recovery startup tidak bertabrakan dengan eksekusi
+instance lain.
+
+Endpoint migration berada di
+`/api/v1/databases/{databaseId}/migrations`. Endpoint baca memerlukan session
+dan minimal `view_only`; endpoint mutation juga memerlukan CSRF dan
+`view_edit`. Migration memakai `authz` serta target provider yang sama dengan
+viewer, sehingga credential tetap didekripsi hanya pada batas koneksi target.
+
 ## Pemeriksaan lokal
 
 ```bash
@@ -156,9 +184,13 @@ make backend-test
 make frontend-check
 ```
 
-Integration test backend menggunakan PostgreSQL platform dan target lokal
-(`TEST_TARGET_DB_*` diisi otomatis dari `.env` oleh Makefile) dan hanya
-membuat lalu menghapus fixture miliknya sendiri:
+Integration test backend menggunakan PostgreSQL platform dan target lokal.
+Makefile meneruskan `PLATFORM_DATABASE_URL` dan `TARGET_DATABASE_URL` untuk
+test migration, serta `TEST_TARGET_DB_*` untuk test viewer. Jika
+`TARGET_DATABASE_URL` tidak diisi, integration test membentuk URL secara aman
+dari `TARGET_DB_*` untuk PostgreSQL lokal. Seluruh nilai diambil dari `.env`
+dan platform URL wajib ada.
+Test hanya membuat lalu menghapus fixture miliknya sendiri:
 
 ```bash
 make backend-integration-test
