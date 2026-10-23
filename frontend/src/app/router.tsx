@@ -9,6 +9,8 @@ import { AdminUsersPage } from '@/modules/admin/AdminUsersPage'
 import { RequirePlatformAdmin } from '@/modules/admin/RequirePlatformAdmin'
 import { LoginPage } from '@/modules/auth/LoginPage'
 import { ProtectedRoute } from '@/modules/auth/ProtectedRoute'
+import { MigrationDetailPage } from '@/modules/migrations/MigrationDetailPage'
+import { MigrationListPage } from '@/modules/migrations/MigrationListPage'
 import { DatabaseListPage } from '@/modules/databases/DatabaseListPage'
 import { ViewerPage } from '@/modules/viewer/ViewerPage'
 
@@ -44,6 +46,18 @@ export const router = createBrowserRouter([
             ],
           },
         ],
+      },
+      {
+        path: '/databases/:databaseId/migrations',
+        element: <MigrationListPage />,
+      },
+      {
+        path: '/databases/:databaseId/migrations/new',
+        element: <MigrationDetailPage create />,
+      },
+      {
+        path: '/databases/:databaseId/migrations/:migrationId',
+        element: <MigrationDetailPage />,
       },
     ],
   },
