@@ -3,7 +3,22 @@ include .env
 export
 endif
 
-.PHONY: db-up db-down db-status migrate-up migrate-status bootstrap-admin backend-run backend-test backend-integration-test frontend-install frontend-dev frontend-check
+.PHONY: app-up app-down app-status app-logs docker-bootstrap-admin db-up db-down db-status migrate-up migrate-status bootstrap-admin backend-run backend-test backend-integration-test frontend-install frontend-dev frontend-check
+
+app-up:
+	docker compose up --build -d --wait
+
+app-down:
+	docker compose down
+
+app-status:
+	docker compose ps -a
+
+app-logs:
+	docker compose logs -f backend frontend
+
+docker-bootstrap-admin:
+	docker compose run --rm bootstrap-admin
 
 db-up:
 	docker compose up -d --wait platform-db target-db
