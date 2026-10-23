@@ -1,0 +1,66 @@
+.viewer-layout {
+  display: grid;
+  grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.viewer-sidebar {
+  border: 1px solid #d7dfd9;
+  border-radius: 0.75rem;
+  padding: 1rem;
+  background: #fff;
+}
+
+.viewer-sidebar__title {
+  margin: 0 0 0.5rem;
+  color: #526158;
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.viewer-list {
+  display: grid;
+  gap: 0.15rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.viewer-list a {
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  border-radius: 0.35rem;
+  padding: 0.25rem 0.45rem;
+  color: #34483d;
+  text-decoration: none;
+}
+
+.viewer-list a:hover {
+  background: #f2f5f1;
+}
+
+.viewer-list a[aria-current='page'] {
+  color: #105a3c;
+  background: #dcf1e6;
+  font-weight: 700;
+}
+
+.viewer-tables {
+  margin: 0.25rem 0 0.5rem 0.75rem;
+  border-left: 2px solid #e2e9e4;
+  padding-left: 0.5rem;
+}
+
+.viewer-content h3 {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 1rem;
+}
+
+@media (max-width: 760px) {
+  .viewer-layout {
+    grid-template-columns: 1fr;
+  }
+}
