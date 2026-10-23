@@ -114,6 +114,41 @@ berbeda dari host API, seperti Vite development server, harus didaftarkan pada
 menjadi perlindungan utama ketika kedua header tersebut tidak tersedia. Jika TLS
 berakhir di reverse proxy, masukkan origin HTTPS publik ke daftar tersebut.
 
+## Platform admin, akses database, dan viewer
+
+Backend wajib menerima `MANAGED_DB_CREDENTIAL_KEY` (base64 dari 32 byte) untuk
+mengenkripsi password managed database dengan AES-256-GCM; tanpa key yang valid
+backend menolak start. Nilai di `.env.example` hanya untuk development lokal.
+Buat key production dengan `openssl rand -base64 32`.
+
+Aturan akses yang dikunci tim:
+
+- Role platform (`user`, `platform_admin`) terpisah dari akses database.
+  Platform admin tetap membutuhkan grant group untuk membuka viewer/migration.
+- Akses database hanya diberikan ke group: `view_only` atau `view_edit`.
+- **Effective access** user = level tertinggi dari seluruh group yang diikutinya
+  untuk database tersebut (`none < view_only < view_edit`). User nonaktif dan
+  database nonaktif selalu tidak memiliki akses.
+- Database tanpa grant diperlakukan sama dengan database yang tidak ada (`404`)
+  agar keberadaannya tidak bocor.
+- Grant dibaca dari database pada setiap request, sehingga pencabutan langsung
+  berlaku. Kenaikan privilege (anggota baru di group ber-grant, grant baru, atau
+  `view_only` → `view_edit`), perubahan role, deaktivasi, dan reset password
+  mencabut seluruh session user terkait sehingga user login ulang dengan
+  identifier baru.
+
+Endpoint admin (`/api/v1/admin/users`, `/groups`, `/databases`, beserta
+membership dan grant) hanya untuk platform admin. Endpoint user:
+`GET /api/v1/databases`, `GET /api/v1/databases/{id}`, dan viewer
+`/api/v1/databases/{id}/schemas[/{schema}/tables[/{table}[/rows]]]`.
+Detail table menggabungkan column, constraint, dan index dalam satu response;
+data rows dipisah karena terpaginasi (`limit` default 50, maksimum 100,
+`offset` ≥ 0). Viewer berjalan di transaksi `READ ONLY` dengan
+`statement_timeout` 10 detik dan tidak menerima SQL bebas.
+
+Modul migration dapat memakai `authz.Service` dan `targetdb.Provider`; fake untuk
+unit test tersedia di `internal/authz/authztest` dan `internal/targetdb/targetdbtest`.
+
 ## Pemeriksaan lokal
 
 ```bash
@@ -121,7 +156,8 @@ make backend-test
 make frontend-check
 ```
 
-Integration test backend menggunakan PostgreSQL platform lokal dan hanya
+Integration test backend menggunakan PostgreSQL platform dan target lokal
+(`TEST_TARGET_DB_*` diisi otomatis dari `.env` oleh Makefile) dan hanya
 membuat lalu menghapus fixture miliknya sendiri:
 
 ```bash

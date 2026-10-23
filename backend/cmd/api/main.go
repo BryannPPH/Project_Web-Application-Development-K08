@@ -10,6 +10,8 @@ import (
 
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/app"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/config"
+	manageddb "github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/database"
+	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/platformaccess"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/platformdb"
 )
 
@@ -45,7 +47,17 @@ func run() error {
 
 	logger.Info("platform database connection established")
 
-	application, err := app.New(cfg, logger, database)
+	// Startup gagal bila key credential managed database hilang atau tidak valid.
+	credentialCipher, err := manageddb.LoadCredentialCipher(os.LookupEnv)
+	if err != nil {
+		return fmt.Errorf("load managed database credential key: %w", err)
+	}
+
+	application, err := app.New(cfg, logger, database,
+		app.WithFeatureFactory(platformaccess.FeatureFactory(platformaccess.Options{
+			CredentialCipher: credentialCipher,
+		})),
+	)
 	if err != nil {
 		return err
 	}
