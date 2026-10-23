@@ -9,29 +9,15 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/targetdb"
 )
 
-type TargetProvider interface {
-	Open(context.Context, string) (TargetConnection, error)
-}
-
-type TargetConnection interface {
-	Begin(context.Context) (TargetTransaction, error)
-	Close(context.Context) error
-}
-
-type TargetTransaction interface {
-	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
-	Commit(context.Context) error
-	Rollback(context.Context) error
-}
-
 type PGExecutor struct {
-	provider TargetProvider
+	provider targetdb.Provider
 }
 
-func NewPGExecutor(provider TargetProvider) *PGExecutor { return &PGExecutor{provider: provider} }
+func NewPGExecutor(provider targetdb.Provider) *PGExecutor { return &PGExecutor{provider: provider} }
 
 func (e *PGExecutor) Execute(ctx context.Context, databaseID, sqlText string) ExecutionResult {
 	connection, err := e.provider.Open(ctx, databaseID)

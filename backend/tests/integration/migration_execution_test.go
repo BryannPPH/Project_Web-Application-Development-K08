@@ -11,10 +11,12 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/auth"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/migration"
+	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/targetdb"
 )
 
 type allowMigrationAccess struct{}
@@ -29,14 +31,23 @@ func (allowMigrationAccess) RequireDatabaseEdit(context.Context, auth.Principal,
 type integrationTargetProvider struct{ url string }
 type integrationTargetConnection struct{ connection *pgx.Conn }
 
-func (p integrationTargetProvider) Open(ctx context.Context, _ string) (migration.TargetConnection, error) {
+func (p integrationTargetProvider) Open(ctx context.Context, _ string) (targetdb.Connection, error) {
 	connection, err := pgx.Connect(ctx, p.url)
 	if err != nil {
 		return nil, err
 	}
 	return integrationTargetConnection{connection: connection}, nil
 }
-func (c integrationTargetConnection) Begin(ctx context.Context) (migration.TargetTransaction, error) {
+func (c integrationTargetConnection) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+	return c.connection.Query(ctx, sql, args...)
+}
+func (c integrationTargetConnection) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
+	return c.connection.QueryRow(ctx, sql, args...)
+}
+func (c integrationTargetConnection) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	return c.connection.Exec(ctx, sql, args...)
+}
+func (c integrationTargetConnection) Begin(ctx context.Context) (targetdb.Transaction, error) {
 	return c.connection.Begin(ctx)
 }
 func (c integrationTargetConnection) Close(ctx context.Context) error { return c.connection.Close(ctx) }
@@ -44,8 +55,11 @@ func (c integrationTargetConnection) Close(ctx context.Context) error { return c
 func TestMigrationExecutionCommitAndRollback(t *testing.T) {
 	platformURL := os.Getenv("TEST_PLATFORM_DATABASE_URL")
 	targetURL := os.Getenv("TEST_TARGET_DATABASE_URL")
-	if platformURL == "" || targetURL == "" {
-		t.Skip("platform and target test database URLs are required")
+	if platformURL == "" {
+		t.Skip("platform test database URL is required")
+	}
+	if targetURL == "" {
+		targetURL = loadTargetSettings(t).url()
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -132,6 +146,28 @@ func TestMigrationExecutionCommitAndRollback(t *testing.T) {
 	}
 	if page.Total != 2 || page.Items[0].Version != 2 || page.Items[1].Version != 1 {
 		t.Fatalf("unexpected linear history: %#v", page)
+	}
+
+	orphaned, err := service.CreateDraft(ctx, principal, databaseID, "interrupted fixture", "SELECT 1")
+	if err != nil {
+		t.Fatalf("create interrupted draft: %v", err)
+	}
+	if _, err := repository.MarkRunning(ctx, databaseID, orphaned.ID, userID, time.Now().UTC()); err != nil {
+		t.Fatalf("mark interrupted fixture running: %v", err)
+	}
+	if _, err := migration.NewModule(
+		ctx,
+		platform,
+		allowMigrationAccess{},
+		integrationTargetProvider{url: targetURL},
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		migration.ServiceConfig{ExecutionTimeout: 10 * time.Second},
+	); err != nil {
+		t.Fatalf("initialize migration module recovery: %v", err)
+	}
+	recovered, err := repository.Get(ctx, databaseID, orphaned.ID)
+	if err != nil || recovered.Status != migration.StatusInterrupted || recovered.ErrorMessage == nil {
+		t.Fatalf("recovered migration = %#v, error %v", recovered, err)
 	}
 
 	const concurrentDrafts = 8

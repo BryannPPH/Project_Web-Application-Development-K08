@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -186,7 +185,7 @@ func TestViewOnlyAndViewEditReachTarget(t *testing.T) {
 
 	f := newViewerFixture(t)
 	beginErr := errors.New("begin failed")
-	f.connection.BeginFunc = func(context.Context) (pgx.Tx, error) { return nil, beginErr }
+	f.connection.BeginFunc = func(context.Context) (targetdb.Transaction, error) { return nil, beginErr }
 
 	for _, principal := range []auth.Principal{f.viewer, f.editor} {
 		_, err := f.service.Schemas(context.Background(), principal, databaseID)

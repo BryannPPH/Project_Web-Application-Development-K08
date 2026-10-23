@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/auth"
+	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/authz"
 )
 
 type fakeAuthorizer struct {
@@ -29,6 +30,9 @@ type fakeRepository struct {
 	page                                  Page
 	getCalls, runningCalls, terminalCalls int
 	terminalErr                           error
+	recovered                             int64
+	recoverErr                            error
+	recoveryReason                        string
 }
 
 func (f *fakeRepository) CreateDraft(_ context.Context, databaseID, name, sqlText, creatorID string, now time.Time) (Entry, error) {
@@ -57,8 +61,9 @@ func (f *fakeRepository) MarkTerminal(_ context.Context, _, _ string, status Sta
 	entry.Status, entry.ErrorMessage, entry.FinishedAt = status, message, &now
 	return entry, nil
 }
-func (f *fakeRepository) RecoverRunning(context.Context, time.Time, string) (int64, error) {
-	return 0, nil
+func (f *fakeRepository) RecoverRunning(_ context.Context, _ time.Time, reason string) (int64, error) {
+	f.recoveryReason = reason
+	return f.recovered, f.recoverErr
 }
 
 type fakeLock struct{ released bool }
@@ -143,7 +148,7 @@ func TestViewerHistorySanitizesErrorDetails(t *testing.T) {
 	t.Parallel()
 	raw := "syntax error near secret_table"
 	repository := &fakeRepository{page: Page{Items: []Entry{{ErrorMessage: &raw}}}}
-	authorizer := &fakeAuthorizer{editErr: ErrForbidden}
+	authorizer := &fakeAuthorizer{editErr: authz.ErrDatabaseEditForbidden}
 	service := newTestService(t, repository, authorizer, &fakeLocker{}, &fakeExecutor{})
 	page, err := service.List(context.Background(), auth.Principal{UserID: "user"}, "database", ListOptions{})
 	if err != nil {
@@ -163,5 +168,22 @@ func TestDraftValidationRejectsEmptyAndTransactionControl(t *testing.T) {
 	}
 	if _, err := service.CreateDraft(context.Background(), principal, "database", "name", "BEGIN; SELECT 1"); !errors.Is(err, ErrSQLPolicy) {
 		t.Fatalf("transaction SQL error = %v", err)
+	}
+}
+
+func TestRecoverRunningUsesSafeReasonAndPropagatesFailure(t *testing.T) {
+	t.Parallel()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	repository := &fakeRepository{recovered: 2}
+	if err := recoverRunning(context.Background(), repository, logger, time.Now()); err != nil {
+		t.Fatalf("recoverRunning() error = %v", err)
+	}
+	if repository.recoveryReason != recoveryReason {
+		t.Fatalf("recovery reason = %q", repository.recoveryReason)
+	}
+
+	repository.recoverErr = errors.New("platform unavailable")
+	if err := recoverRunning(context.Background(), repository, logger, time.Now()); err == nil {
+		t.Fatal("recoverRunning() must fail when repository recovery fails")
 	}
 }

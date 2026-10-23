@@ -11,8 +11,8 @@ import (
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/app"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/config"
 	manageddb "github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/database"
-	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/platformaccess"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/platformdb"
+	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/platformfeature"
 )
 
 func main() {
@@ -54,7 +54,7 @@ func run() error {
 	}
 
 	application, err := app.New(cfg, logger, database,
-		app.WithFeatureFactory(platformaccess.FeatureFactory(platformaccess.Options{
+		app.WithFeatureFactory(platformfeature.FeatureFactory(ctx, platformfeature.Options{
 			CredentialCipher: credentialCipher,
 		})),
 	)

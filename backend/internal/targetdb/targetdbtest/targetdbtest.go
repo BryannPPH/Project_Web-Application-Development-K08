@@ -62,7 +62,7 @@ type Connection struct {
 	QueryFunc func(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	RowFunc   func(ctx context.Context, sql string, args ...any) pgx.Row
 	ExecFunc  func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
-	BeginFunc func(ctx context.Context) (pgx.Tx, error)
+	BeginFunc func(ctx context.Context) (targetdb.Transaction, error)
 	closes    int
 }
 
@@ -89,7 +89,7 @@ func (c *Connection) Exec(ctx context.Context, sql string, args ...any) (pgconn.
 	return c.ExecFunc(ctx, sql, args...)
 }
 
-func (c *Connection) Begin(ctx context.Context) (pgx.Tx, error) {
+func (c *Connection) Begin(ctx context.Context) (targetdb.Transaction, error) {
 	if c.BeginFunc == nil {
 		return nil, ErrNotConfigured
 	}

@@ -19,8 +19,18 @@ type Connection interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
-	Begin(ctx context.Context) (pgx.Tx, error)
+	Begin(ctx context.Context) (Transaction, error)
 	Close(ctx context.Context) error
+}
+
+// Transaction adalah kontrak transaksi bersama untuk viewer dan migration.
+// pgx.Tx memenuhi interface ini tanpa adapter tambahan.
+type Transaction interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	Commit(ctx context.Context) error
+	Rollback(ctx context.Context) error
 }
 
 // Provider membuka koneksi target berdasarkan managed database ID.
@@ -142,7 +152,7 @@ func (c *pgxConnection) Exec(ctx context.Context, sql string, args ...any) (pgco
 	return c.conn.Exec(ctx, sql, args...)
 }
 
-func (c *pgxConnection) Begin(ctx context.Context) (pgx.Tx, error) {
+func (c *pgxConnection) Begin(ctx context.Context) (Transaction, error) {
 	return c.conn.Begin(ctx)
 }
 

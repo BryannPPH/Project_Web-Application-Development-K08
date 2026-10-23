@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/auth"
+	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/authz"
 )
 
 type handlerServiceStub struct {
@@ -70,19 +71,28 @@ func TestHandlerMapsAuthorizationAndConflictErrors(t *testing.T) {
 	tests := []struct {
 		err    error
 		status int
+		code   string
 	}{
-		{ErrForbidden, http.StatusForbidden},
-		{ErrNotFound, http.StatusNotFound},
-		{ErrConflict, http.StatusConflict},
-		{ErrSQLPolicy, http.StatusUnprocessableEntity},
-		{errors.New("unexpected"), http.StatusInternalServerError},
+		{authz.ErrUnauthenticated, http.StatusUnauthorized, "UNAUTHENTICATED"},
+		{authz.ErrDatabaseNotFound, http.StatusNotFound, "DATABASE_NOT_FOUND"},
+		{authz.ErrDatabaseInactive, http.StatusConflict, "DATABASE_INACTIVE"},
+		{authz.ErrDatabaseEditForbidden, http.StatusForbidden, "DATABASE_EDIT_FORBIDDEN"},
+		{ErrNotFound, http.StatusNotFound, "NOT_FOUND"},
+		{ErrConflict, http.StatusConflict, "MIGRATION_CONFLICT"},
+		{ErrSQLPolicy, http.StatusUnprocessableEntity, "SQL_POLICY_VIOLATION"},
+		{errors.New("unexpected"), http.StatusInternalServerError, "INTERNAL_ERROR"},
 	}
 	for _, test := range tests {
 		recorder := httptest.NewRecorder()
+		recorder.Header().Set("X-Request-ID", "migration-request")
 		request := httptest.NewRequest(http.MethodPost, "/", nil)
 		NewHandler(&handlerServiceStub{}, slog.New(slog.NewTextHandler(io.Discard, nil))).writeServiceError(recorder, request, test.err)
 		if recorder.Code != test.status {
 			t.Fatalf("error %v status=%d want=%d", test.err, recorder.Code, test.status)
+		}
+		if !strings.Contains(recorder.Body.String(), `"code":"`+test.code+`"`) ||
+			!strings.Contains(recorder.Body.String(), `"requestId":"migration-request"`) {
+			t.Fatalf("error %v body=%s", test.err, recorder.Body.String())
 		}
 	}
 }

@@ -3,13 +3,9 @@ package migration
 import "errors"
 
 var (
-	ErrUnauthenticated   = errors.New("authentication required")
-	ErrForbidden         = errors.New("database access denied")
-	ErrNotFound          = errors.New("migration not found")
-	ErrConflict          = errors.New("migration state conflict")
-	ErrWrongOrder        = errors.New("an earlier migration blocks execution")
-	ErrInvalidInput      = errors.New("invalid migration input")
-	ErrSQLPolicy         = errors.New("sql violates migration policy")
-	ErrTargetUnavailable = errors.New("target database unavailable")
-	ErrInterrupted       = errors.New("migration outcome is uncertain")
+	ErrNotFound     = errors.New("migration not found")
+	ErrConflict     = errors.New("migration state conflict")
+	ErrWrongOrder   = errors.New("an earlier migration blocks execution")
+	ErrInvalidInput = errors.New("invalid migration input")
+	ErrSQLPolicy    = errors.New("sql violates migration policy")
 )

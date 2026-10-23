@@ -12,7 +12,9 @@ import (
 	"strings"
 
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/auth"
+	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/authz"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/httpapi"
+	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/shared/apihttp"
 )
 
 type MigrationService interface {
@@ -174,11 +176,11 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {
 }
 
 func (h *Handler) writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
+	if public, ok := authz.Describe(err); ok {
+		apihttp.WriteError(w, public.Status, public.Code, public.Message)
+		return
+	}
 	switch {
-	case errors.Is(err, ErrUnauthenticated):
-		writeMigrationError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "authentication required")
-	case errors.Is(err, ErrForbidden):
-		writeMigrationError(w, http.StatusForbidden, "FORBIDDEN", "database access denied")
 	case errors.Is(err, ErrNotFound):
 		writeMigrationError(w, http.StatusNotFound, "NOT_FOUND", "migration not found")
 	case errors.Is(err, ErrConflict):
@@ -189,10 +191,6 @@ func (h *Handler) writeServiceError(w http.ResponseWriter, r *http.Request, err 
 		writeMigrationError(w, http.StatusBadRequest, "INVALID_INPUT", "migration name or SQL is invalid")
 	case errors.Is(err, ErrSQLPolicy):
 		writeMigrationError(w, http.StatusUnprocessableEntity, "SQL_POLICY_VIOLATION", "transaction control statements are not allowed")
-	case errors.Is(err, ErrTargetUnavailable):
-		writeMigrationError(w, http.StatusServiceUnavailable, "TARGET_UNAVAILABLE", "target database is unavailable")
-	case errors.Is(err, ErrInterrupted):
-		writeMigrationError(w, http.StatusConflict, "MIGRATION_INTERRUPTED", "migration outcome is uncertain; manual reconciliation is required")
 	default:
 		h.logger.ErrorContext(r.Context(), "migration request failed", "error", err,
 			"database_id", r.PathValue("databaseId"), "migration_id", r.PathValue("migrationId"))
@@ -200,17 +198,8 @@ func (h *Handler) writeServiceError(w http.ResponseWriter, r *http.Request, err 
 	}
 }
 
-type migrationErrorBody struct {
-	Error struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-	} `json:"error"`
-}
-
 func writeMigrationError(w http.ResponseWriter, status int, code, message string) {
-	body := migrationErrorBody{}
-	body.Error.Code, body.Error.Message = code, message
-	writeMigrationJSON(w, status, body)
+	apihttp.WriteError(w, status, code, message)
 }
 
 func writeMigrationJSON(w http.ResponseWriter, status int, value any) {

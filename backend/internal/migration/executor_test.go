@@ -6,7 +6,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/targetdb"
 )
 
 type fakeTargetProvider struct {
@@ -14,7 +17,7 @@ type fakeTargetProvider struct {
 	err        error
 }
 
-func (f *fakeTargetProvider) Open(context.Context, string) (TargetConnection, error) {
+func (f *fakeTargetProvider) Open(context.Context, string) (targetdb.Connection, error) {
 	return f.connection, f.err
 }
 
@@ -24,7 +27,16 @@ type fakeTargetConnection struct {
 	closed   bool
 }
 
-func (f *fakeTargetConnection) Begin(context.Context) (TargetTransaction, error) {
+func (f *fakeTargetConnection) Query(context.Context, string, ...any) (pgx.Rows, error) {
+	return nil, errors.New("not configured")
+}
+func (f *fakeTargetConnection) QueryRow(context.Context, string, ...any) pgx.Row {
+	return fakeRow{err: errors.New("not configured")}
+}
+func (f *fakeTargetConnection) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
+	return pgconn.CommandTag{}, errors.New("not configured")
+}
+func (f *fakeTargetConnection) Begin(context.Context) (targetdb.Transaction, error) {
 	return f.tx, f.beginErr
 }
 func (f *fakeTargetConnection) Close(context.Context) error { f.closed = true; return nil }
@@ -38,11 +50,21 @@ func (f *fakeTargetTransaction) Exec(context.Context, string, ...any) (pgconn.Co
 	f.executed = true
 	return pgconn.CommandTag{}, f.execErr
 }
+func (f *fakeTargetTransaction) Query(context.Context, string, ...any) (pgx.Rows, error) {
+	return nil, errors.New("not configured")
+}
+func (f *fakeTargetTransaction) QueryRow(context.Context, string, ...any) pgx.Row {
+	return fakeRow{err: errors.New("not configured")}
+}
 func (f *fakeTargetTransaction) Commit(context.Context) error { f.committed = true; return f.commitErr }
 func (f *fakeTargetTransaction) Rollback(context.Context) error {
 	f.rolledBack = true
 	return f.rollbackErr
 }
+
+type fakeRow struct{ err error }
+
+func (r fakeRow) Scan(...any) error { return r.err }
 
 func TestPGExecutorCommitsSuccessfulMigration(t *testing.T) {
 	t.Parallel()
