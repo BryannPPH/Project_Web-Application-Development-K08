@@ -30,6 +30,9 @@ export const router = createBrowserRouter([
           { path: '/databases/:databaseId', element: <ViewerPage /> },
           { path: '/databases/:databaseId/schemas/:schema', element: <ViewerPage /> },
           { path: '/databases/:databaseId/schemas/:schema/tables/:table', element: <ViewerPage /> },
+          { path: '/databases/:databaseId/migrations', element: <MigrationListPage /> },
+          { path: '/databases/:databaseId/migrations/new', element: <MigrationDetailPage create /> },
+          { path: '/databases/:databaseId/migrations/:migrationId', element: <MigrationDetailPage /> },
           {
             element: <RequirePlatformAdmin />,
             children: [
@@ -46,18 +49,6 @@ export const router = createBrowserRouter([
             ],
           },
         ],
-      },
-      {
-        path: '/databases/:databaseId/migrations',
-        element: <MigrationListPage />,
-      },
-      {
-        path: '/databases/:databaseId/migrations/new',
-        element: <MigrationDetailPage create />,
-      },
-      {
-        path: '/databases/:databaseId/migrations/:migrationId',
-        element: <MigrationDetailPage />,
       },
     ],
   },

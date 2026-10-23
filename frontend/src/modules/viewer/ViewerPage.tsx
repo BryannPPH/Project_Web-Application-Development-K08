@@ -44,7 +44,12 @@ export function ViewerPage() {
             <span className="badge">{accessLevelLabel(database.data.accessLevel)}</span>
           </span>
         </div>
-        <DatabaseSwitcher currentId={databaseId} />
+        <div className="inline-actions">
+          <Link className="button button--secondary" to={`/databases/${databaseId}/migrations`}>
+            Riwayat migration
+          </Link>
+          <DatabaseSwitcher currentId={databaseId} />
+        </div>
       </div>
 
       <div className="viewer-layout">

@@ -65,12 +65,20 @@ export function DatabaseListPage() {
                     </span>
                   </td>
                   <td>
-                    <Link
-                      className="button button--secondary button--small"
-                      to={`/databases/${database.id}`}
-                    >
-                      Buka viewer
-                    </Link>
+                    <div className="inline-actions">
+                      <Link
+                        className="button button--secondary button--small"
+                        to={`/databases/${database.id}`}
+                      >
+                        Buka viewer
+                      </Link>
+                      <Link
+                        className="button button--secondary button--small"
+                        to={`/databases/${database.id}/migrations`}
+                      >
+                        Riwayat migration
+                      </Link>
+                    </div>
                   </td>
                 </tr>
               ))}

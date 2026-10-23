@@ -31,6 +31,10 @@ describe('DatabaseListPage', () => {
     expect(screen.getByText('View Only')).toBeInTheDocument()
     expect(screen.getByText('View + Edit')).toBeInTheDocument()
     expect(screen.getAllByRole('link', { name: 'Buka viewer' })[0]).toHaveAttribute('href', '/databases/db-1')
+    expect(screen.getAllByRole('link', { name: 'Riwayat migration' })[0]).toHaveAttribute(
+      'href',
+      '/databases/db-1/migrations',
+    )
   })
 
   it('menampilkan empty state bila tidak ada grant', async () => {

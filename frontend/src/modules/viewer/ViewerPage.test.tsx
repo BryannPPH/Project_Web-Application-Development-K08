@@ -92,6 +92,10 @@ describe('ViewerPage', () => {
     expect(screen.getByText('UNIQUE')).toBeInTheDocument()
     expect(screen.getByText('CREATE UNIQUE INDEX customers_pkey ON public.customers USING btree (id)')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'customers' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: 'Riwayat migration' })).toHaveAttribute(
+      'href',
+      '/databases/db-1/migrations',
+    )
   })
 
   it('menampilkan data dan mempertahankan database saat pindah halaman', async () => {
