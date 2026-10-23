@@ -1,203 +1,337 @@
 # Database Management Platform
 
-Proyek Milestone 1 IF3110 Pengembangan Aplikasi Web. Backend menggunakan Go,
-frontend menggunakan React + TypeScript, dan database menggunakan PostgreSQL.
+Database Management Platform adalah proyek Milestone 1 IF3110 Pengembangan
+Aplikasi Web. Aplikasi menyediakan authentication, administrasi user dan group,
+kontrol akses database, PostgreSQL viewer read-only, serta migration executor
+transactional.
 
-## Prasyarat
+## Fitur Milestone 1
 
-- Go 1.26+
-- Bun 1.3+
-- Docker dengan Docker Compose
+- Login berbasis session cookie `HttpOnly` dengan proteksi CSRF.
+- Platform admin untuk mengelola user, group, membership, dan managed database.
+- Grant database berbasis group: `view_only` dan `view_edit`.
+- PostgreSQL viewer untuk schema, table/view, struktur, index, constraint, dan row.
+- Migration history dengan draft, versioning, commit, rollback, dan recovery.
+- Enkripsi credential managed database menggunakan AES-256-GCM.
+- Unit test, integration test PostgreSQL, race detector, dan frontend test.
 
-Instal dependency frontend setelah clone pertama kali:
+## Teknologi
 
-```bash
-make frontend-install
-```
+| Bagian | Teknologi |
+|---|---|
+| Backend | Go 1.26, `net/http`, pgx |
+| Frontend | React 19, TypeScript, Vite, TanStack Query |
+| Database | PostgreSQL 18 |
+| Migration internal | Goose |
+| Runtime frontend Docker | Nginx |
+| Package manager frontend | Bun 1.3 |
 
-## Menjalankan database lokal
+## Quick Start dengan Docker
 
-Salin konfigurasi development terlebih dahulu:
+Docker Compose menjalankan seluruh stack: platform database, target database,
+migration internal, backend, dan frontend.
+
+### 1. Siapkan environment
 
 ```bash
 cp .env.example .env
 ```
 
-Nilai di `.env.example` hanya ditujukan untuk development lokal. Jangan gunakan
-credential tersebut di production dan jangan commit file `.env`.
+Nilai pada `.env.example` hanya untuk development lokal. Jangan commit `.env`
+atau memakai credential contoh di production.
 
-Jalankan platform database dan target database:
+Jika `.env` berasal dari versi repository yang lebih lama, pastikan variabel
+berikut tersedia:
+
+```dotenv
+MANAGED_DB_CREDENTIAL_KEY=<base64 dari tepat 32 byte>
+MANAGED_DB_CREDENTIAL_KEY_VERSION=1
+BACKEND_PORT=8080
+FRONTEND_PORT=5173
+HTTP_WRITE_TIMEOUT=3m
+```
+
+Generate encryption key baru bila diperlukan:
+
+```bash
+openssl rand -base64 32
+```
+
+Jangan mengganti key setelah credential managed database tersimpan. Credential
+lama tidak dapat didekripsi dengan key yang berbeda.
+
+### 2. Jalankan seluruh aplikasi
+
+```bash
+docker compose up --build -d --wait
+```
+
+Alternatif melalui Makefile:
+
+```bash
+make app-up
+```
+
+Urutan startup dikelola melalui healthcheck dan dependency:
+
+```text
+platform-db ──healthy──> migrate ──completed──> backend ──healthy──> frontend
+target-db   ──healthy────────────────────────> backend
+```
+
+### 3. Buat admin pertama
+
+Jalankan satu kali secara interaktif:
+
+```bash
+docker compose run --rm bootstrap-admin
+```
+
+atau:
+
+```bash
+make docker-bootstrap-admin
+```
+
+Password dibaca tanpa echo dan tidak disimpan pada image. Bootstrap akan ditolak
+jika platform sudah memiliki admin aktif.
+
+### 4. Buka aplikasi
+
+- Frontend: `http://localhost:5173`
+- Backend health: `http://localhost:8080/api/v1/health`
+- Backend readiness: `http://localhost:8080/api/v1/ready`
+
+Frontend Nginx meneruskan request `/api` ke backend melalui jaringan Compose,
+sehingga browser tetap menggunakan origin frontend.
+
+### 5. Daftarkan target database contoh
+
+Karena backend berjalan di jaringan Compose, gunakan konfigurasi berikut pada
+halaman **Admin → Databases**:
+
+| Field | Nilai |
+|---|---|
+| Host | `target-db` |
+| Port | `5432` |
+| Database | nilai `TARGET_DB_NAME` |
+| Username | nilai `TARGET_DB_USER` |
+| Password | nilai `TARGET_DB_PASSWORD` |
+| SSL mode | `disable` |
+
+Jangan menggunakan `localhost:55433` dari backend container. `localhost` di
+dalam container menunjuk ke container backend itu sendiri.
+
+## Operasional Docker
+
+Lihat status seluruh service:
+
+```bash
+make app-status
+```
+
+Ikuti log backend dan frontend:
+
+```bash
+make app-logs
+```
+
+Lihat log service tertentu:
+
+```bash
+docker compose logs -f migrate
+docker compose logs -f backend
+docker compose logs -f frontend
+```
+
+Hentikan stack tanpa menghapus data:
+
+```bash
+make app-down
+```
+
+Build ulang setelah source berubah:
+
+```bash
+docker compose up --build -d --wait
+```
+
+Reset seluruh database lokal hanya jika datanya tidak lagi dibutuhkan:
+
+```bash
+docker compose down -v
+```
+
+Perintah terakhir menghapus user, session, grant, migration history, dan seluruh
+data target lokal.
+
+## Local Development dengan Hot Reload Frontend
+
+Mode ini menjalankan PostgreSQL melalui Docker, tetapi backend dan frontend dari
+host. Gunakan mode ini ketika aktif mengembangkan source.
+
+### Prasyarat
+
+- Go 1.26 atau lebih baru;
+- Bun 1.3 atau lebih baru;
+- Docker dengan Docker Compose v2.
+
+Install dependency frontend:
+
+```bash
+make frontend-install
+```
+
+Jalankan database dan migration internal:
 
 ```bash
 make db-up
 make migrate-up
 ```
 
-Buat platform admin pertama secara interaktif. Password dibaca tanpa echo dan
-tidak diteruskan sebagai command-line argument:
+Buat admin pertama dari host:
 
 ```bash
 make bootstrap-admin
 ```
 
-Untuk environment non-interaktif, gunakan `BOOTSTRAP_ADMIN_USERNAME` dan
-`BOOTSTRAP_ADMIN_PASSWORD` sebagai environment sementara. Jangan simpan password
-bootstrap dalam `.env`, script, atau repository. Command menolak membuat admin
-baru jika platform sudah memiliki platform admin aktif.
-
-Service lokal yang tersedia:
-
-| Service | Port | Kegunaan |
-|---|---:|---|
-| `platform-db` | 55432 | User, session, access control, koneksi, dan migration history |
-| `target-db` | 55433 | PostgreSQL contoh yang dikelola platform |
-
-## Menjalankan aplikasi
+Jalankan backend pada terminal pertama:
 
 ```bash
 make backend-run
+```
+
+Jalankan Vite pada terminal kedua:
+
+```bash
 make frontend-dev
 ```
 
-Frontend development berjalan di `http://localhost:5173`. Vite meneruskan
-request `/api` ke backend `http://localhost:8080`, sehingga cookie autentikasi
-tetap digunakan melalui same-origin URL dari browser.
+Dalam mode ini, managed target database menggunakan:
 
-Pada production, sajikan frontend dan endpoint `/api` melalui origin yang sama
-menggunakan reverse proxy. Jangan mengaktifkan wildcard CORS untuk request yang
-membawa cookie autentikasi.
+| Field | Nilai |
+|---|---|
+| Host | `localhost` |
+| Port | nilai `TARGET_DB_PORT`, default `55433` |
+| Database | nilai `TARGET_DB_NAME` |
+| Username | nilai `TARGET_DB_USER` |
+| Password | nilai `TARGET_DB_PASSWORD` |
+| SSL mode | `disable` |
 
-Endpoint backend awal:
+Vite meneruskan `/api` ke `http://localhost:8080`.
 
-- `GET http://localhost:8080/api/v1/health` untuk liveness.
-- `GET http://localhost:8080/api/v1/ready` untuk kesiapan koneksi platform database.
-- `POST http://localhost:8080/api/v1/auth/login` untuk login username/password.
-- `GET http://localhost:8080/api/v1/auth/me` untuk principal session aktif.
-- `GET http://localhost:8080/api/v1/auth/csrf` untuk memperbarui CSRF token.
-- `POST http://localhost:8080/api/v1/auth/logout` untuk revoke session aktif.
+## Model Akses
 
-### Kontrak authentication untuk feature backend
+Role platform dan akses database merupakan dua hal terpisah:
 
-- Feature handler tidak boleh membaca cookie atau tabel `sessions` sendiri.
-- Bungkus route baca dengan `AuthMiddleware.RequireAuthenticated`.
-- Bungkus route `POST`, `PUT`, `PATCH`, atau `DELETE` dengan
-  `AuthMiddleware.ProtectMutation` agar authentication dan CSRF sama-sama dicek.
-- Ambil identitas melalui `auth.PrincipalFromContext`. Pemeriksaan akses database
-  tetap dilakukan oleh modul `authz`; role `platform_admin` bukan akses database.
-- Login mengembalikan CSRF token di JSON dan opaque session hanya melalui cookie
-  `HttpOnly`. Kirim CSRF token melalui header `X-CSRF-Token` pada mutation.
-- Setelah reload halaman, frontend dapat mengambil CSRF baru melalui
-  `GET /api/v1/auth/csrf`. Response authentication menggunakan `Cache-Control:
-  no-store` dan tidak pernah mengembalikan session identifier.
-- Frontend menyimpan CSRF hanya di memory. Gunakan `apiRequest` dari
-  `frontend/src/lib/api-client.ts` untuk seluruh request agar cookie dan header
-  CSRF diterapkan secara konsisten.
-- Daftarkan modul Person 2/3 melalui `app.WithFeatureFactory`. Factory menerima
-  `PasswordHasher` dan `SessionRevoker` tanpa bergantung pada implementasi konkret.
-- Perubahan password, status aktif, atau privilege penting wajib membatalkan
-  seluruh session user. Lakukan revocation sebelum commit perubahan; bila revoke
-  gagal, batalkan perubahan agar session lama tidak memperoleh privilege baru.
+- `platform_admin` dapat mengelola user, group, database, membership, dan grant;
+- role admin tidak otomatis memberikan akses ke isi managed database;
+- akses database hanya berasal dari grant group;
+- `view_only` dapat memakai viewer dan membaca migration history;
+- `view_edit` juga dapat membuat, mengubah, dan mengeksekusi draft migration;
+- effective access adalah grant tertinggi dari seluruh group user;
+- user atau database nonaktif selalu kehilangan akses;
+- database tanpa grant dikembalikan sebagai 404 agar keberadaannya tidak bocor.
 
-Default session development adalah idle timeout 30 menit, absolute expiration
-12 jam, rotation interval 15 menit, dan grace period token lama 30 detik.
-Rotation tidak memperpanjang absolute expiration.
+Perubahan privilege penting, password, role, atau status user mencabut session
+terkait. User perlu login kembali setelah memperoleh privilege lebih tinggi.
 
-Login dibatasi berdasarkan username dan alamat koneksi client. Default-nya 10
-percobaan per menit dan dapat diubah melalui `LOGIN_RATE_LIMIT_ATTEMPTS` serta
-`LOGIN_RATE_LIMIT_WINDOW`. Jangan mempercayai `X-Forwarded-For` langsung; reverse
-proxy perlu meneruskan alamat client sebagai peer yang tepercaya atau menerapkan
-rate limit tambahan di proxy.
+## Database Viewer
 
-Mutation browser juga memeriksa header `Origin`/`Referer`. Origin frontend yang
-berbeda dari host API, seperti Vite development server, harus didaftarkan pada
-`HTTP_TRUSTED_ORIGINS` sebagai daftar origin yang dipisahkan koma. CSRF tetap
-menjadi perlindungan utama ketika kedua header tersebut tidak tersedia. Jika TLS
-berakhir di reverse proxy, masukkan origin HTTPS publik ke daftar tersebut.
+Viewer menyediakan endpoint terstruktur untuk:
 
-## Platform admin, akses database, dan viewer
+- daftar schema non-system;
+- daftar table dan view;
+- column, default, nullable, constraint, dan index;
+- row dengan pagination (`limit` default 50, maksimum 100).
 
-Backend wajib menerima `MANAGED_DB_CREDENTIAL_KEY` (base64 dari 32 byte) untuk
-mengenkripsi password managed database dengan AES-256-GCM; tanpa key yang valid
-backend menolak start. Nilai di `.env.example` hanya untuk development lokal.
-Buat key production dengan `openssl rand -base64 32`.
+Viewer tidak menerima SQL bebas dan menjalankan query dalam transaksi read-only
+dengan `statement_timeout`.
 
-Aturan akses yang dikunci tim:
+## Target Database Migration
 
-- Role platform (`user`, `platform_admin`) terpisah dari akses database.
-  Platform admin tetap membutuhkan grant group untuk membuka viewer/migration.
-- Akses database hanya diberikan ke group: `view_only` atau `view_edit`.
-- **Effective access** user = level tertinggi dari seluruh group yang diikutinya
-  untuk database tersebut (`none < view_only < view_edit`). User nonaktif dan
-  database nonaktif selalu tidak memiliki akses.
-- Database tanpa grant diperlakukan sama dengan database yang tidak ada (`404`)
-  agar keberadaannya tidak bocor.
-- Grant dibaca dari database pada setiap request, sehingga pencabutan langsung
-  berlaku. Kenaikan privilege (anggota baru di group ber-grant, grant baru, atau
-  `view_only` → `view_edit`), perubahan role, deaktivasi, dan reset password
-  mencabut seluruh session user terkait sehingga user login ulang dengan
-  identifier baru.
+Setiap managed database memiliki urutan migration linear dengan status:
 
-Endpoint admin (`/api/v1/admin/users`, `/groups`, `/databases`, beserta
-membership dan grant) hanya untuk platform admin. Endpoint user:
-`GET /api/v1/databases`, `GET /api/v1/databases/{id}`, dan viewer
-`/api/v1/databases/{id}/schemas[/{schema}/tables[/{table}[/rows]]]`.
-Detail table menggabungkan column, constraint, dan index dalam satu response;
-data rows dipisah karena terpaginasi (`limit` default 50, maksimum 100,
-`offset` ≥ 0). Viewer berjalan di transaksi `READ ONLY` dengan
-`statement_timeout` 10 detik dan tidak menerima SQL bebas.
+| Status | Arti |
+|---|---|
+| `draft` | Nama dan SQL masih dapat diubah |
+| `running` | Sedang dijalankan pada target database |
+| `succeeded` | Seluruh SQL berhasil dan transaction di-commit |
+| `failed` | SQL gagal dan transaction di-rollback |
+| `interrupted` | Hasil tidak pasti dan membutuhkan rekonsiliasi manual |
 
-Modul migration dapat memakai `authz.Service` dan `targetdb.Provider`; fake untuk
-unit test tersedia di `internal/authz/authztest` dan `internal/targetdb/targetdbtest`.
+Backend melarang transaction control statement seperti `BEGIN`, `COMMIT`, dan
+`ROLLBACK` di dalam SQL migration karena transaction dikelola oleh executor.
 
-## Migration database target
-
-Riwayat migration dapat dibuka dari tombol **Riwayat migration** pada daftar
-database atau halaman viewer. User `view_only` dapat melihat history dan detail,
-sedangkan pembuatan, perubahan, serta eksekusi draft hanya tersedia untuk user
-`view_edit`. Backend selalu memeriksa ulang grant; platform admin tanpa grant
-database tetap ditolak.
-
-Setiap migration memperoleh versi linear per database dan salah satu status:
-
-- `draft`: SQL masih dapat diubah oleh user `view_edit`;
-- `running`: SQL sedang dijalankan pada target;
-- `succeeded`: seluruh SQL berhasil dan transaction di-commit;
-- `failed`: SQL gagal dan transaction berhasil di-rollback;
-- `interrupted`: hasil eksekusi tidak dapat dipastikan dan membutuhkan
-  rekonsiliasi manual.
-
-Saat backend start, entry yang tertinggal `running` dari proses sebelumnya
+Saat backend start, entry `running` yang tertinggal dari proses sebelumnya
 diubah menjadi `interrupted`. Implementasi Milestone 1 mengasumsikan satu
-instance backend aktif agar recovery startup tidak bertabrakan dengan eksekusi
-instance lain.
+instance backend aktif.
 
-Endpoint migration berada di
-`/api/v1/databases/{databaseId}/migrations`. Endpoint baca memerlukan session
-dan minimal `view_only`; endpoint mutation juga memerlukan CSRF dan
-`view_edit`. Migration memakai `authz` serta target provider yang sama dengan
-viewer, sehingga credential tetap didekripsi hanya pada batas koneksi target.
+## Testing
 
-## Pemeriksaan lokal
+Panduan automated test, manual test, data fixture, authorization matrix,
+migration commit/rollback, security checklist, dan kriteria kelulusan tersedia di
+[TESTING.md](./TESTING.md).
+
+Pemeriksaan utama:
 
 ```bash
 make backend-test
+make backend-integration-test
 make frontend-check
 ```
 
-Integration test backend menggunakan PostgreSQL platform dan target lokal.
-Makefile meneruskan `PLATFORM_DATABASE_URL` dan `TARGET_DATABASE_URL` untuk
-test migration, serta `TEST_TARGET_DB_*` untuk test viewer. Jika
-`TARGET_DATABASE_URL` tidak diisi, integration test membentuk URL secara aman
-dari `TARGET_DB_*` untuk PostgreSQL lokal. Seluruh nilai diambil dari `.env`
-dan platform URL wajib ada.
-Test hanya membuat lalu menghapus fixture miliknya sendiri:
+Integration test membutuhkan `platform-db` dan `target-db` yang healthy.
 
-```bash
-make backend-integration-test
+## Command Makefile
+
+| Command | Kegunaan |
+|---|---|
+| `make app-up` | Build dan jalankan seluruh stack Docker |
+| `make app-down` | Hentikan stack tanpa menghapus volume |
+| `make app-status` | Lihat seluruh container termasuk one-shot migration |
+| `make app-logs` | Ikuti log backend dan frontend |
+| `make docker-bootstrap-admin` | Buat admin pertama melalui container |
+| `make db-up` | Jalankan hanya platform dan target database |
+| `make db-down` | Hentikan seluruh service Compose |
+| `make migrate-up` | Jalankan migration internal dari host |
+| `make migrate-status` | Lihat status migration internal |
+| `make bootstrap-admin` | Buat admin pertama dari host |
+| `make backend-run` | Jalankan backend dari host |
+| `make frontend-dev` | Jalankan Vite development server |
+| `make backend-test` | Jalankan seluruh backend test |
+| `make backend-integration-test` | Jalankan integration test PostgreSQL |
+| `make frontend-check` | Typecheck, lint, test, dan build frontend |
+
+## Struktur Repository
+
+```text
+.
+├── backend/
+│   ├── cmd/                  # api, migrate, bootstrap-admin
+│   ├── internal/             # domain dan infrastructure backend
+│   ├── migrations/           # schema internal platform
+│   ├── tests/integration/    # integration test PostgreSQL
+│   └── Dockerfile
+├── frontend/
+│   ├── src/                  # React application
+│   ├── Dockerfile
+│   └── nginx.conf
+├── compose.yml
+├── Makefile
+├── TESTING.md
+└── .env.example
 ```
 
-## Migration internal
+## Catatan Production
 
-Migration pada `backend/migrations` hanya mengatur schema internal platform.
-Migration yang dibuat pengguna untuk managed database adalah fitur aplikasi yang
-terpisah dan tidak dijalankan melalui command ini.
+Konfigurasi Docker Compose repository ini ditujukan untuk development dan
+testing lokal. Sebelum production:
+
+- gunakan secret manager dan encryption key unik;
+- aktifkan TLS serta `SESSION_COOKIE_SECURE=true`;
+- gunakan origin HTTPS publik pada `HTTP_TRUSTED_ORIGINS`;
+- jangan publish port PostgreSQL ke jaringan publik;
+- gunakan backup dan rotation policy untuk database;
+- gunakan reverse proxy/load balancer yang tepercaya;
+- evaluasi strategi recovery migration untuk lebih dari satu backend instance.
