@@ -2,7 +2,7 @@ import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ViewerPage } from '@/modules/viewer/ViewerPage'
-import { errorResponse, jsonResponse, mockFetch, regularUser, renderRoute } from '@/test/platform-test-utils'
+import { errorResponse, jsonResponse, mockFetch, regularUser, renderRoute, senjaImage } from '@/test/platform-test-utils'
 
 const database = { id: 'db-1', name: 'Warehouse', databaseName: 'warehouse', engine: 'postgresql', capabilities: { viewer: true, transactionalMigration: true, transactionalDdl: true }, accessLevel: 'view_only' }
 const tablePath = '/api/v1/databases/db-1/schemas/public/tables/customers'
@@ -150,5 +150,90 @@ describe('ViewerPage', () => {
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent('Database tidak ditemukan atau Anda tidak memiliki akses.'),
     )
+  })
+
+  it('menampilkan Senja tidur ketika database dinonaktifkan admin', async () => {
+    mockFetch((url) =>
+      url.pathname === '/api/v1/databases/db-1' ? errorResponse(409, 'DATABASE_INACTIVE', 'database is inactive') : undefined,
+    )
+    renderViewer('/databases/db-1/schemas/public/tables/customers')
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('Database sedang dinonaktifkan oleh administrator.'),
+    )
+    expect(senjaImage('sleeping')).toBeInTheDocument()
+  })
+
+  it('menampilkan Senja mencari dengan kaca pembesar ketika database tidak ditemukan', async () => {
+    mockFetch((url) =>
+      url.pathname === '/api/v1/databases/db-1' ? errorResponse(404, 'DATABASE_NOT_FOUND', 'database not found') : undefined,
+    )
+    renderViewer('/databases/db-1/schemas/public/tables/customers')
+
+    await waitFor(() => expect(senjaImage('searching')).toBeInTheDocument())
+    expect(screen.getByRole('link', { name: 'Kembali ke daftar database' })).toHaveAttribute('href', '/databases')
+  })
+
+  it('menampilkan error schema selebar halaman dengan Senja kabel lepas saat target mati', async () => {
+    const handler = standardHandler((offset) => rowsPage(offset, false))
+    mockFetch((url) =>
+      url.pathname === '/api/v1/databases/db-1/schemas'
+        ? errorResponse(502, 'TARGET_UNAVAILABLE', 'target database is unavailable')
+        : handler(url),
+    )
+    renderViewer('/databases/db-1/schemas/public/tables/customers')
+
+    // Error 5xx di-retry sekali oleh hook sebelum ditampilkan.
+    expect(await screen.findByText('Schema gagal dimuat', {}, { timeout: 4000 })).toBeInTheDocument()
+    expect(screen.getByText('Database target tidak dapat dihubungi. Coba lagi nanti.')).toBeInTheDocument()
+    expect(senjaImage('unplugged')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Coba lagi' })).toBeInTheDocument()
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
+  })
+
+  it('menampilkan Senja mencari ketika table tidak ditemukan', async () => {
+    const handler = standardHandler((offset) => rowsPage(offset, false))
+    mockFetch((url) =>
+      url.pathname === tablePath ? errorResponse(404, 'TABLE_NOT_FOUND', 'table not found') : handler(url),
+    )
+    renderViewer('/databases/db-1/schemas/public/tables/customers')
+
+    expect(await screen.findByText('Table tidak ditemukan.')).toBeInTheDocument()
+    expect(senjaImage('searching')).toBeInTheDocument()
+  })
+
+  it('meminta user memilih schema bila belum ada yang dipilih', async () => {
+    mockFetch(standardHandler((offset) => rowsPage(offset, false)))
+    renderRoute(<ViewerPage />, { route: '/databases/db-1', path: '/databases/:databaseId', user: regularUser })
+
+    expect(await screen.findByText('Pilih schema di panel kiri.')).toBeInTheDocument()
+    expect(senjaImage('lantern')).toBeInTheDocument()
+  })
+
+  it('memberi tahu bila table tanpa primary key dan nilai dipotong', async () => {
+    mockFetch(
+      standardHandler(() =>
+        jsonResponse({
+          columns: [{ name: 'note', dataType: 'text' }],
+          rows: [['catatan panjang…']],
+          limit: 50,
+          offset: 0,
+          hasMore: false,
+          orderedBy: [],
+          truncated: true,
+        }),
+      ),
+    )
+    renderViewer('/databases/db-1/schemas/public/tables/customers?tab=data')
+
+    expect(await screen.findByText('Table tanpa primary key: urutan baris tidak dijamin.')).toBeInTheDocument()
+    expect(screen.getByText('Sebagian nilai panjang dipotong agar tampilan tetap ringan.')).toBeInTheDocument()
+  })
+
+  it('menandai panel table sebagai hanya baca', async () => {
+    mockFetch(standardHandler((offset) => rowsPage(offset, false)))
+    renderViewer('/databases/db-1/schemas/public/tables/customers')
+
+    expect(await screen.findByText('Hanya baca')).toBeInTheDocument()
   })
 })

@@ -1,6 +1,7 @@
 import { useSearchParams } from 'react-router-dom'
 
-import { describeError } from '@/components/error-message'
+import { describeError, poseForError } from '@/components/error-message'
+import { Icon } from '@/components/Icon'
 import { StatusMessage } from '@/components/StatusMessage'
 import { parsePageParams, useTableRows } from '@/modules/viewer/api'
 
@@ -36,12 +37,13 @@ export function TableData({ databaseId, schema, table }: TableDataProps) {
   }
 
   if (rows.isPending) {
-    return <StatusMessage>Memuat data…</StatusMessage>
+    return <StatusMessage tone="loading">Memuat data…</StatusMessage>
   }
   if (rows.isError) {
     return (
       <StatusMessage
         actionLabel="Coba lagi"
+        illustration={poseForError(rows.error)}
         onAction={() => void rows.refetch()}
         title="Data gagal dimuat"
         tone="error"
@@ -55,17 +57,18 @@ export function TableData({ databaseId, schema, table }: TableDataProps) {
   return (
     <div>
       {page.rows.length === 0 ? (
-        <StatusMessage tone="empty">
+        <StatusMessage illustration="searching" tone="empty">
           {offset === 0 ? 'Table ini belum memiliki data.' : 'Tidak ada data pada halaman ini.'}
         </StatusMessage>
       ) : (
-        <div className="data-table-wrapper">
+        <div className={rows.isFetching ? 'data-table-wrapper data-grid data-grid--fetching' : 'data-table-wrapper data-grid'}>
           <table className="data-table">
             <thead>
               <tr>
                 {page.columns.map((column) => (
                   <th key={column.name} title={column.dataType}>
                     {column.name}
+                    <small>{column.dataType}</small>
                   </th>
                 ))}
               </tr>
@@ -74,7 +77,12 @@ export function TableData({ databaseId, schema, table }: TableDataProps) {
               {page.rows.map((row, rowIndex) => (
                 <tr key={offset + rowIndex}>
                   {row.map((value, columnIndex) => (
-                    <td key={page.columns[columnIndex]?.name ?? columnIndex}>{renderCell(value)}</td>
+                    <td
+                      key={page.columns[columnIndex]?.name ?? columnIndex}
+                      title={typeof value === 'string' && value.length > 40 ? value : undefined}
+                    >
+                      {renderCell(value)}
+                    </td>
                   ))}
                 </tr>
               ))}
@@ -84,7 +92,10 @@ export function TableData({ databaseId, schema, table }: TableDataProps) {
       )}
 
       {page.truncated ? (
-        <p className="muted">Sebagian nilai panjang dipotong agar tampilan tetap ringan.</p>
+        <StatusMessage tone="warning">Sebagian nilai panjang dipotong agar tampilan tetap ringan.</StatusMessage>
+      ) : null}
+      {page.orderedBy.length === 0 && page.rows.length > 0 ? (
+        <p className="muted">Table tanpa primary key: urutan baris tidak dijamin.</p>
       ) : null}
 
       <div className="pagination">
@@ -95,7 +106,7 @@ export function TableData({ databaseId, schema, table }: TableDataProps) {
           {page.orderedBy.length > 0 ? ` · diurutkan menurut ${page.orderedBy.join(', ')}` : ''}
         </span>
         <div className="inline-actions">
-          <label className="form-field form-field--checkbox">
+          <label className="form-field form-field--inline">
             Per halaman
             <select
               aria-label="Jumlah baris per halaman"
@@ -115,6 +126,7 @@ export function TableData({ databaseId, schema, table }: TableDataProps) {
             onClick={() => goTo(offset - limit)}
             type="button"
           >
+            <Icon name="chevronLeft" size={14} />
             Sebelumnya
           </button>
           <button
@@ -124,6 +136,7 @@ export function TableData({ databaseId, schema, table }: TableDataProps) {
             type="button"
           >
             Berikutnya
+            <Icon name="chevronRight" size={14} />
           </button>
         </div>
       </div>

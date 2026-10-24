@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from 'react-router-dom'
 
 import { DashboardPage } from '@/app/DashboardPage'
 import { FoundationPage } from '@/app/FoundationPage'
+import { NotFoundPage } from '@/app/NotFoundPage'
 import { AdminDatabasesPage } from '@/modules/admin/AdminDatabasesPage'
 import { AdminGroupsPage } from '@/modules/admin/AdminGroupsPage'
 import { AdminLayout } from '@/modules/admin/AdminLayout'
@@ -11,6 +12,7 @@ import { LoginPage } from '@/modules/auth/LoginPage'
 import { ProtectedRoute } from '@/modules/auth/ProtectedRoute'
 import { MigrationDetailPage } from '@/modules/migrations/MigrationDetailPage'
 import { MigrationListPage } from '@/modules/migrations/MigrationListPage'
+import { SchemaDiffPage } from '@/modules/schema-diff/SchemaDiffPage'
 import { DatabaseListPage } from '@/modules/databases/DatabaseListPage'
 import { ViewerPage } from '@/modules/viewer/ViewerPage'
 
@@ -33,6 +35,7 @@ export const router = createBrowserRouter([
           { path: '/databases/:databaseId/migrations', element: <MigrationListPage /> },
           { path: '/databases/:databaseId/migrations/new', element: <MigrationDetailPage create /> },
           { path: '/databases/:databaseId/migrations/:migrationId', element: <MigrationDetailPage /> },
+          { path: '/databases/:databaseId/schema-diff', element: <SchemaDiffPage /> },
           {
             element: <RequirePlatformAdmin />,
             children: [
@@ -48,6 +51,7 @@ export const router = createBrowserRouter([
               },
             ],
           },
+          { path: '*', element: <NotFoundPage /> },
         ],
       },
     ],

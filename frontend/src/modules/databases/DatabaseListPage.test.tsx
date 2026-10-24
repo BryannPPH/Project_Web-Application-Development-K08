@@ -1,8 +1,16 @@
-import { cleanup, screen } from '@testing-library/react'
+import { cleanup, fireEvent, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { DatabaseListPage } from '@/modules/databases/DatabaseListPage'
-import { errorResponse, jsonResponse, mockFetch, regularUser, renderRoute } from '@/test/platform-test-utils'
+import {
+  adminUser,
+  errorResponse,
+  jsonResponse,
+  mockFetch,
+  regularUser,
+  renderRoute,
+  senjaImage,
+} from '@/test/platform-test-utils'
 
 afterEach(() => {
   cleanup()
@@ -52,5 +60,54 @@ describe('DatabaseListPage', () => {
 
     // Hook me-retry error 5xx satu kali (jeda ~1 detik) sebelum menampilkan error.
     expect(await screen.findByRole('alert', {}, { timeout: 4000 })).toHaveTextContent('Daftar database gagal dimuat')
+  })
+
+  it('menyaring database lewat pencarian dan filter akses', async () => {
+    mockFetch((url) =>
+      url.pathname === '/api/v1/databases'
+        ? jsonResponse({
+            databases: [
+              { id: 'db-1', name: 'Warehouse', databaseName: 'warehouse', accessLevel: 'view_only' },
+              { id: 'db-2', name: 'Sales', databaseName: 'sales_prod', accessLevel: 'view_edit' },
+            ],
+          })
+        : undefined,
+    )
+    renderPage()
+
+    fireEvent.change(await screen.findByLabelText('Cari database'), { target: { value: 'SALES_P' } })
+    expect(screen.getByText('Sales')).toBeInTheDocument()
+    expect(screen.queryByText('Warehouse')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hanya lihat' }))
+    expect(screen.getByText('Tidak ada database yang cocok dengan filter.')).toBeInTheDocument()
+    expect(senjaImage('searching')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Cari database'), { target: { value: '' } })
+    expect(screen.getByText('Warehouse')).toBeInTheDocument()
+    expect(screen.queryByText('Sales')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Hanya lihat' })).toHaveAttribute('aria-pressed', 'true')
+
+    fireEvent.change(screen.getByLabelText('Cari database'), { target: { value: 'tidak-ada' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Hapus filter' }))
+    expect(screen.getByText('Warehouse')).toBeInTheDocument()
+    expect(screen.getByText('Sales')).toBeInTheDocument()
+    expect(screen.getByLabelText('Cari database')).toHaveValue('')
+  })
+
+  it('menampilkan Senja mencari saat kosong, tanpa petunjuk admin untuk user biasa', async () => {
+    mockFetch((url) => (url.pathname === '/api/v1/databases' ? jsonResponse({ databases: [] }) : undefined))
+    renderPage()
+
+    expect(await screen.findByText('Belum ada database')).toBeInTheDocument()
+    expect(senjaImage('searching')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Group &/ })).not.toBeInTheDocument()
+  })
+
+  it('memberi admin tanpa grant petunjuk ke halaman group', async () => {
+    mockFetch((url) => (url.pathname === '/api/v1/databases' ? jsonResponse({ databases: [] }) : undefined))
+    renderRoute(<DatabaseListPage />, { route: '/databases', path: '/databases', user: adminUser })
+
+    expect(await screen.findByRole('link', { name: /Group &/ })).toHaveAttribute('href', '/admin/groups')
   })
 })

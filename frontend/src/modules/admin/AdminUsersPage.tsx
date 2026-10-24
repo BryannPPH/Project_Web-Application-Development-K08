@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from 'react'
 
+import { ActiveBadge } from '@/components/Badges'
 import { describeError } from '@/components/error-message'
+import { Icon } from '@/components/Icon'
 import { StatusMessage } from '@/components/StatusMessage'
 import { useAdminUsers, useUserMutations } from '@/modules/admin/api'
 import { validateNewUser } from '@/modules/admin/forms'
@@ -81,7 +83,12 @@ export function AdminUsersPage() {
   return (
     <div>
       <div className="panel">
-        <h2>Tambah user</h2>
+        <div className="panel__header">
+          <div>
+            <h2>Tambah user</h2>
+            <p className="muted">Password minimal 8 karakter. User baru langsung aktif.</p>
+          </div>
+        </div>
         <form aria-label="Tambah user" noValidate onSubmit={(event) => void handleCreate(event)}>
           <div className="form-grid">
             <label className="form-field">
@@ -100,11 +107,13 @@ export function AdminUsersPage() {
               </select>
             </label>
             <button className="button button--primary" disabled={mutations.create.isPending} type="submit">
+              <Icon name="plus" size={16} />
               {mutations.create.isPending ? 'Menyimpan…' : 'Tambah'}
             </button>
           </div>
           {formError ? (
             <p className="form-error" role="alert">
+              <Icon name="error" size={16} />
               {formError}
             </p>
           ) : null}
@@ -112,19 +121,22 @@ export function AdminUsersPage() {
       </div>
 
       <div className="panel">
-        <h2>Daftar user</h2>
+        <div className="panel__header">
+          <h2>Daftar user</h2>
+          {users.data ? <span className="badge">{users.data.length} user</span> : null}
+        </div>
         {actionError ? <StatusMessage tone="error">{actionError}</StatusMessage> : null}
-        {users.isPending ? <StatusMessage>Memuat user…</StatusMessage> : null}
+        {users.isPending ? <StatusMessage tone="loading">Memuat user…</StatusMessage> : null}
         {users.isError ? (
           <StatusMessage tone="error" title="User gagal dimuat">
             {describeError(users.error)}
           </StatusMessage>
         ) : null}
-        {users.data?.length === 0 ? <StatusMessage tone="empty">Belum ada user.</StatusMessage> : null}
+        {users.data?.length === 0 ? <StatusMessage illustration="searching" tone="empty">Belum ada user.</StatusMessage> : null}
 
         {users.data && users.data.length > 0 ? (
           <div className="data-table-wrapper">
-            <table className="data-table">
+            <table className="data-table data-table--stack">
               <thead>
                 <tr>
                   <th>Username</th>
@@ -136,11 +148,11 @@ export function AdminUsersPage() {
               <tbody>
                 {users.data.map((user) => (
                   <tr key={user.id}>
-                    <td>
-                      {user.username}
+                    <td data-label="Username">
+                      <strong>{user.username}</strong>
                       {user.id === currentUser.data?.id ? <span className="muted"> (Anda)</span> : null}
                     </td>
-                    <td>
+                    <td data-label="Role">
                       <select
                         aria-label={`Role ${user.username}`}
                         onChange={(event) =>
@@ -155,15 +167,17 @@ export function AdminUsersPage() {
                         ))}
                       </select>
                     </td>
-                    <td>
-                      <span className={user.isActive ? 'badge badge--success' : 'badge badge--danger'}>
-                        {user.isActive ? 'Aktif' : 'Nonaktif'}
-                      </span>
+                    <td data-label="Status">
+                      <ActiveBadge active={user.isActive} />
                     </td>
-                    <td>
+                    <td className="cell-actions">
                       <div className="inline-actions">
                         <button
-                          className="button button--secondary button--small"
+                          className={
+                            user.isActive
+                              ? 'button button--danger-outline button--small'
+                              : 'button button--secondary button--small'
+                          }
                           onClick={() => void updateUser(user, { isActive: !user.isActive })}
                           type="button"
                         >
@@ -174,6 +188,7 @@ export function AdminUsersPage() {
                           onClick={() => setResetTarget(user)}
                           type="button"
                         >
+                          <Icon name="key" size={14} />
                           Reset password
                         </button>
                       </div>
@@ -188,7 +203,7 @@ export function AdminUsersPage() {
         {resetTarget ? (
           <form
             aria-label="Reset password"
-            className="panel"
+            className="inset-form"
             noValidate
             onSubmit={(event) => void handleReset(event)}
           >

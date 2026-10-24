@@ -1,17 +1,149 @@
+/* Design tokens — Sunset palette (lihat ui-design-brief §2). */
 :root {
-  color: #17211c;
-  background: #f2f5f1;
-  font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
+  --brand-peach: #ffb38a;
+  --brand-sunset: #ff7a45;
+  --brand-coral: #ff5e7e;
+  --brand-gradient: linear-gradient(135deg, #ffb38a 0%, #ff7a45 45%, #ff5e7e 100%);
+
+  --action: #c2410c;
+  --action-hover: #9a3412;
+  --action-soft: #fff1ee;
+
+  --bg: #fff1ee;
+  --surface: #ffffff;
+  --surface-subtle: #fff8f6;
+  --ink: #2b1b2e;
+  --ink-soft: #4a3a4d;
+  --muted: #6b4c6e;
+  --line: #e8d5d0;
+  --line-soft: #f3e7e3;
+  --hover: #fff3ec;
+  --selected: #ffe3d3;
+
+  --danger: #d92d20;
+  --danger-bg: #fee4e2;
+  --warning: #b54708;
+  --warning-bg: #fef0c7;
+  --success: #067647;
+  --success-bg: #dcfae6;
+  --info: #175cd3;
+  --info-bg: #d1e9ff;
+  --neutral: #475467;
+  --neutral-bg: #f2f4f7;
+
+  /* Latar status yang lebih lembut (kotak pesan) dan garis tepinya. */
+  --danger-soft: #fef3f2;
+  --danger-line: #fecdca;
+  --danger-strong: #b42318;
+  --success-soft: #ecfdf3;
+  --success-line: #a6efc4;
+  --warning-soft: #fffaeb;
+  --warning-line: #fedf89;
+  --info-soft: #eef6ff;
+  --info-line: #b2d4fb;
+  --info-strong: #12459e;
+
+  /* Plum pekat untuk sidebar dan editor kode; tetap gelap di kedua tema. */
+  --plum: #2b1b2e;
+  --tint-peach: #fff4ee;
+  --tint-pink: #ffeef1;
+  --tint-lavender: #f6eef6;
+  --coral-strong: #a3243f;
+  --placeholder: #a08aa2;
+  --overlay: rgb(255 255 255 / 70%);
+
+  --font-ui: 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 18px;
+  --shadow: 0 1px 2px rgb(43 27 46 / 5%);
+  --shadow-lg: 0 12px 32px rgb(43 27 46 / 18%);
+
+  --control-h: 2.25rem;
+  --control-h-sm: 1.875rem;
+  --control-h-lg: 2.75rem;
+  --focus-ring: 0 0 0 3px rgb(255 122 69 / 35%);
+
+  --sidebar-w: 240px;
+
+  color: var(--ink);
+  background: var(--bg);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.5;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Dark mode: palet sunset yang sama, hanya digelapkan. Plum menjadi latar,
+   peach/sunset/coral tetap sebagai aksen, dan teks memakai blush. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --action-soft: #3a2026;
+
+  --bg: #1e1420;
+  --surface: #2b1b2e;
+  --surface-subtle: #33223a;
+  --ink: #fbeee9;
+  --ink-soft: #e6d3dc;
+  --muted: #bfa5bd;
+  --line: #4a3550;
+  --line-soft: #3b2a41;
+  --hover: #3a2840;
+  --selected: #4d2e33;
+
+  --danger: #ff8f84;
+  --danger-bg: #4a1f24;
+  --warning: #f7c35c;
+  --warning-bg: #3f2f12;
+  --success: #6ddca1;
+  --success-bg: #173a2a;
+  --info: #93bcff;
+  --info-bg: #1d2e4d;
+  --neutral: #d4c6d6;
+  --neutral-bg: #3d2d43;
+
+  --danger-soft: #3a1a20;
+  --danger-line: #6b2b33;
+  --danger-strong: #ffa49a;
+  --success-soft: #14301f;
+  --success-line: #24573d;
+  --warning-soft: #33270e;
+  --warning-line: #5f4714;
+  --info-soft: #172640;
+  --info-line: #2c4672;
+  --info-strong: #b3cdff;
+
+  --plum: #150d17;
+  --tint-peach: #3b2724;
+  --tint-pink: #3d222b;
+  --tint-lavender: #33253b;
+  --coral-strong: #ffa3b5;
+  --placeholder: #8f7792;
+  --overlay: rgb(0 0 0 / 25%);
+
+  --shadow: 0 1px 2px rgb(0 0 0 / 30%);
+  --shadow-lg: 0 12px 32px rgb(0 0 0 / 45%);
+}
+
 * {
   box-sizing: border-box;
+}
+
+/* Transisi halus saat tema berganti. */
+body,
+.workspace-body,
+.panel,
+.sidebar__card {
+  transition:
+    background-color 240ms ease,
+    color 240ms ease,
+    border-color 240ms ease;
 }
 
 html {
@@ -23,6 +155,40 @@ body {
   min-width: 320px;
   min-height: 100vh;
   margin: 0;
+  background: var(--bg);
+}
+
+h1,
+h2,
+h3 {
+  color: var(--ink);
+  line-height: 1.25;
+}
+
+h1 {
+  font-size: 1.875rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+h2 {
+  font-size: 1.0625rem;
+  font-weight: 700;
+}
+
+h3 {
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+
+a {
+  color: var(--action);
+}
+
+code,
+pre,
+kbd {
+  font-family: var(--font-mono);
 }
 
 button,
@@ -30,6 +196,7 @@ input,
 select,
 textarea {
   font: inherit;
+  color: inherit;
 }
 
 button,
@@ -37,46 +204,131 @@ a {
   -webkit-tap-highlight-color: transparent;
 }
 
-button:focus-visible,
-input:focus-visible,
-a:focus-visible {
-  outline: 3px solid rgb(28 109 74 / 22%);
+:focus-visible {
+  outline: 2px solid var(--brand-sunset);
   outline-offset: 2px;
 }
 
+img {
+  max-width: 100%;
+}
+
+/* ---------- Buttons ---------- */
+
 .button {
-  min-height: 2.75rem;
-  border-radius: 0.5rem;
-  padding: 0.65rem 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  height: var(--control-h);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0 1.125rem;
   cursor: pointer;
-  font-weight: 700;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.button svg {
+  flex: none;
 }
 
 .button:disabled {
   cursor: not-allowed;
-  opacity: 0.62;
+  opacity: 0.55;
 }
 
 .button--primary {
-  border: 1px solid #176b49;
+  border-color: var(--action);
   color: #fff;
-  background: #176b49;
+  background: var(--action);
 }
 
 .button--primary:hover:not(:disabled) {
-  border-color: #105a3c;
-  background: #105a3c;
+  border-color: var(--action-hover);
+  background: var(--action-hover);
 }
 
 .button--secondary {
-  border: 1px solid #d7dfd9;
-  color: #34483d;
-  background: #fff;
+  border-color: var(--line);
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: var(--shadow);
 }
 
 .button--secondary:hover:not(:disabled) {
-  border-color: #aebeb4;
-  background: #f7faf8;
+  border-color: var(--brand-peach);
+  background: var(--hover);
+}
+
+.button--ghost {
+  color: var(--ink-soft);
+  background: transparent;
+}
+
+.button--ghost:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--hover);
+}
+
+.button--danger {
+  border-color: var(--danger);
+  color: #fff;
+  background: var(--danger);
+}
+
+.button--danger:hover:not(:disabled) {
+  border-color: #b42318;
+  background: #b42318;
+}
+
+.button--danger-outline {
+  border-color: #f4b8b3;
+  color: var(--danger);
+  background: var(--surface);
+}
+
+.button--danger-outline:hover:not(:disabled) {
+  border-color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.button--small {
+  height: var(--control-h-sm);
+  padding: 0 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.button--large {
+  height: var(--control-h-lg);
+  padding: 0 1.25rem;
+  font-size: 0.9375rem;
+}
+
+.button--block {
+  width: 100%;
+}
+
+.button--icon {
+  width: var(--control-h);
+  padding: 0;
+}
+
+.spinner {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -85,5 +337,7 @@ a:focus-visible {
   *::after {
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
   }
 }

@@ -1,11 +1,13 @@
 import { useState, type FormEvent } from 'react'
 
+import { ActiveBadge, EngineBadge } from '@/components/Badges'
 import { describeError } from '@/components/error-message'
+import { Icon } from '@/components/Icon'
 import { StatusMessage } from '@/components/StatusMessage'
 import { useManagedDatabaseMutations, useManagedDatabases } from '@/modules/admin/api'
 import { readDatabaseForm } from '@/modules/admin/forms'
 import { sslModes, type ConnectionTestResult, type ManagedDatabase } from '@/modules/admin/types'
-import { databaseEngineLabel, type DatabaseEngine } from '@/modules/databases/types'
+import type { DatabaseEngine } from '@/modules/databases/types'
 
 const reasonLabels: Record<string, string> = {
   timeout: 'koneksi timeout',
@@ -26,6 +28,8 @@ function describeTest(result: ConnectionTestResult) {
   return `Koneksi gagal: ${reasonLabels[result.reason ?? 'unknown'] ?? result.reason}.`
 }
 
+const defaultPorts: Record<DatabaseEngine, string> = { postgresql: '5432', mysql: '3306' }
+
 interface DatabaseFormProps {
   initial?: ManagedDatabase
   onDone: () => void
@@ -33,13 +37,19 @@ interface DatabaseFormProps {
 
 function DatabaseForm({ initial, onDone }: DatabaseFormProps) {
   const mutations = useManagedDatabaseMutations()
-  const [message, setMessage] = useState<{ tone: 'info' | 'error'; text: string } | null>(null)
+  const [message, setMessage] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
   const editing = !!initial
   const [engine, setEngine] = useState<DatabaseEngine>(initial?.engine ?? 'postgresql')
-  const [port, setPort] = useState(String(initial?.port ?? 5432))
-  const supportedSSLModes = engine === 'mysql'
-    ? sslModes.filter((mode) => mode === 'disable' || mode === 'require')
-    : sslModes
+  const [port, setPort] = useState(String(initial?.port ?? defaultPorts[engine]))
+  // MySQL hanya mendukung mode TLS disable/require.
+  const supportedSSLModes =
+    engine === 'mysql' ? sslModes.filter((mode) => mode === 'disable' || mode === 'require') : sslModes
+
+  function changeEngine(nextEngine: DatabaseEngine) {
+    // Port ikut berganti hanya bila masih bernilai default engine sebelumnya.
+    setPort((current) => (current === defaultPorts[engine] ? defaultPorts[nextEngine] : current))
+    setEngine(nextEngine)
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -71,7 +81,7 @@ function DatabaseForm({ initial, onDone }: DatabaseFormProps) {
     }
     try {
       const result = await mutations.testDraft.mutateAsync(input)
-      setMessage({ tone: result.success ? 'info' : 'error', text: describeTest(result) })
+      setMessage({ tone: result.success ? 'success' : 'error', text: describeTest(result) })
     } catch (testError) {
       setMessage({ tone: 'error', text: describeError(testError) })
     }
@@ -88,16 +98,11 @@ function DatabaseForm({ initial, onDone }: DatabaseFormProps) {
       <div className="form-grid">
         <label className="form-field">
           Engine
+          {/* Engine tidak dapat diubah setelah koneksi dibuat. */}
           <select
             disabled={editing}
             name={editing ? undefined : 'engine'}
-            onChange={(event) => {
-              const nextEngine = event.target.value as DatabaseEngine
-              setPort((current) => current === String(engine === 'mysql' ? 3306 : 5432)
-                ? String(nextEngine === 'mysql' ? 3306 : 5432)
-                : current)
-              setEngine(nextEngine)
-            }}
+            onChange={(event) => changeEngine(event.target.value as DatabaseEngine)}
             value={engine}
           >
             <option value="postgresql">PostgreSQL</option>
@@ -150,7 +155,11 @@ function DatabaseForm({ initial, onDone }: DatabaseFormProps) {
           Aktif
         </label>
       </div>
-      {message ? <StatusMessage tone={message.tone}>{message.text}</StatusMessage> : null}
+      {message ? (
+        <div className="form-message">
+          <StatusMessage tone={message.tone}>{message.text}</StatusMessage>
+        </div>
+      ) : null}
       <div className="form-actions">
         <button className="button button--primary" disabled={pending} type="submit">
           {pending ? 'Menyimpan…' : editing ? 'Simpan perubahan' : 'Tambah koneksi'}
@@ -161,6 +170,11 @@ function DatabaseForm({ initial, onDone }: DatabaseFormProps) {
           onClick={(event) => void handleTest(event.currentTarget.form)}
           type="button"
         >
+          <Icon
+            className={mutations.testDraft.isPending ? 'spinner' : undefined}
+            name={mutations.testDraft.isPending ? 'loader' : 'zap'}
+            size={16}
+          />
           {mutations.testDraft.isPending ? 'Menguji…' : 'Test koneksi'}
         </button>
         {editing ? (
@@ -178,12 +192,12 @@ export function AdminDatabasesPage() {
   const mutations = useManagedDatabaseMutations()
   const [editing, setEditing] = useState<ManagedDatabase | null>(null)
   const [formKey, setFormKey] = useState(0)
-  const [rowMessage, setRowMessage] = useState<{ tone: 'info' | 'error'; text: string } | null>(null)
+  const [rowMessage, setRowMessage] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
 
   async function testStored(database: ManagedDatabase) {
     try {
       const result = await mutations.testStored.mutateAsync(database.id)
-      setRowMessage({ tone: result.success ? 'info' : 'error', text: `${database.name}: ${describeTest(result)}` })
+      setRowMessage({ tone: result.success ? 'success' : 'error', text: `${database.name}: ${describeTest(result)}` })
     } catch (error) {
       setRowMessage({ tone: 'error', text: describeError(error) })
     }
@@ -195,7 +209,7 @@ export function AdminDatabasesPage() {
     }
     try {
       await mutations.remove.mutateAsync(database.id)
-      setRowMessage({ tone: 'info', text: `${database.name} dihapus.` })
+      setRowMessage({ tone: 'success', text: `${database.name} dihapus.` })
     } catch (error) {
       setRowMessage({ tone: 'error', text: describeError(error) })
     }
@@ -203,8 +217,13 @@ export function AdminDatabasesPage() {
 
   return (
     <div>
-      <div className="panel">
-        <h2>{editing ? `Ubah ${editing.name}` : 'Tambah koneksi database'}</h2>
+      <div className={editing ? 'panel panel--editing' : 'panel'}>
+        <div className="panel__header">
+          <div>
+            <h2>{editing ? `Ubah ${editing.name}` : 'Tambah koneksi database'}</h2>
+            <p className="muted">Password disimpan terenkripsi dan tidak pernah ditampilkan kembali.</p>
+          </div>
+        </div>
         <DatabaseForm
           initial={editing ?? undefined}
           key={editing?.id ?? `new-${formKey}`}
@@ -216,20 +235,25 @@ export function AdminDatabasesPage() {
       </div>
 
       <div className="panel">
-        <h2>Koneksi terdaftar</h2>
+        <div className="panel__header">
+          <h2>Koneksi terdaftar</h2>
+          {databases.data ? <span className="badge">{databases.data.length} koneksi</span> : null}
+        </div>
         {rowMessage ? <StatusMessage tone={rowMessage.tone}>{rowMessage.text}</StatusMessage> : null}
-        {databases.isPending ? <StatusMessage>Memuat koneksi…</StatusMessage> : null}
+        {databases.isPending ? <StatusMessage tone="loading">Memuat koneksi…</StatusMessage> : null}
         {databases.isError ? (
           <StatusMessage tone="error" title="Koneksi gagal dimuat">
             {describeError(databases.error)}
           </StatusMessage>
         ) : null}
         {databases.data?.length === 0 ? (
-          <StatusMessage tone="empty">Belum ada koneksi database.</StatusMessage>
+          <StatusMessage illustration="searching" tone="empty">
+            Belum ada koneksi database.
+          </StatusMessage>
         ) : null}
         {databases.data && databases.data.length > 0 ? (
           <div className="data-table-wrapper">
-            <table className="data-table">
+            <table className="data-table data-table--stack">
               <thead>
                 <tr>
                   <th>Nama</th>
@@ -244,29 +268,36 @@ export function AdminDatabasesPage() {
               <tbody>
                 {databases.data.map((database) => (
                   <tr key={database.id}>
-                    <td>{database.name}</td>
-                    <td><span className="badge">{databaseEngineLabel(database.engine)}</span></td>
-                    <td>
+                    <td data-label="Nama">
+                      <strong>{database.name}</strong>
+                    </td>
+                    <td data-label="Engine">
+                      <EngineBadge engine={database.engine} />
+                    </td>
+                    <td data-label="Target">
                       <code>
                         {database.username}@{database.host}:{database.port}/{database.databaseName}
                       </code>
                     </td>
-                    <td>{database.sslMode}</td>
-                    <td>{database.hasCredential ? 'Tersimpan (terenkripsi)' : 'Belum ada'}</td>
-                    <td>
-                      <span className={database.isActive ? 'badge badge--success' : 'badge badge--danger'}>
-                        {database.isActive ? 'Aktif' : 'Nonaktif'}
-                      </span>
+                    <td data-label="SSL">
+                      <code>{database.sslMode}</code>
                     </td>
-                    <td>
+                    <td data-label="Credential">{database.hasCredential ? 'Tersimpan (terenkripsi)' : 'Belum ada'}</td>
+                    <td data-label="Status">
+                      <ActiveBadge active={database.isActive} />
+                    </td>
+                    <td className="cell-actions">
                       <div className="inline-actions">
                         <button className="button button--secondary button--small" onClick={() => void testStored(database)} type="button">
+                          <Icon name="zap" size={14} />
                           Test
                         </button>
                         <button className="button button--secondary button--small" onClick={() => setEditing(database)} type="button">
+                          <Icon name="pencil" size={14} />
                           Ubah
                         </button>
-                        <button className="button button--danger button--small" onClick={() => void remove(database)} type="button">
+                        <button className="button button--danger-outline button--small" onClick={() => void remove(database)} type="button">
+                          <Icon name="trash" size={14} />
                           Hapus
                         </button>
                       </div>

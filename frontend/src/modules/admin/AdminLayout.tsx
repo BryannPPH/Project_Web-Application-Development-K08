@@ -1,19 +1,23 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
 
-import '@/components/platform.css'
+// Navigasi antar halaman admin ada di sidebar; layout ini hanya memberi judul.
+const pageTitles: Record<string, string> = {
+  '/admin/users': 'User',
+  '/admin/groups': 'Group & akses',
+  '/admin/databases': 'Koneksi database',
+}
 
 export function AdminLayout() {
+  const { pathname } = useLocation()
+
   return (
     <section>
       <div className="page-header">
-        <h1>Administrasi platform</h1>
-        <span className="muted">Role admin tidak memberi akses database tanpa grant group.</span>
+        <div className="page-header__text">
+          <h1>{pageTitles[pathname.replace(/\/$/, '')] ?? 'Administrasi platform'}</h1>
+          <p className="muted">Role admin tidak memberi akses database tanpa grant group.</p>
+        </div>
       </div>
-      <nav aria-label="Menu admin" className="tab-list">
-        <NavLink to="/admin/users">User</NavLink>
-        <NavLink to="/admin/groups">Group &amp; akses</NavLink>
-        <NavLink to="/admin/databases">Koneksi database</NavLink>
-      </nav>
       <Outlet />
     </section>
   )

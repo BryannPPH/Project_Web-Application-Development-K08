@@ -1,30 +1,344 @@
-.login-page,
-.auth-status {
-  min-height: 100vh;
+/* ---------- Login (S01): satu-satunya layar dengan brand "lantang" ---------- */
+
+.login-page {
   display: grid;
-  place-items: center;
-  padding: 1.5rem;
-  background: #f3f6f3;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  min-height: 100vh;
+  background: var(--surface);
 }
 
-.login-card,
-.auth-status__card {
-  width: min(100%, 26rem);
-  border: 1px solid #d7dfd9;
-  border-radius: 0.75rem;
-  padding: 2rem;
+.login-hero {
+  /* Tinggi padang rumput; Senja berdiri tepat di atasnya. */
+  --ground-h: clamp(150px, 24vh, 230px);
+
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  min-height: 100vh;
+  overflow: hidden;
+  padding: 3rem 2rem;
+  color: #fff;
+  background: var(--brand-gradient);
+  text-align: center;
+}
+
+.login-hero__brand {
+  position: absolute;
+  top: 2rem;
+  left: 2rem;
+  z-index: 2;
+  text-shadow: 0 1px 6px rgb(194 65 12 / 35%);
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.login-hero__logo {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--radius-lg);
   background: #fff;
+  box-shadow: 0 4px 12px rgb(43 27 46 / 15%);
+}
+
+.login-hero__logo img {
+  width: auto;
+  height: 1.75rem;
+}
+
+/* ---------- Hutan senja ---------- */
+
+.forest {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.forest__sun {
+  position: absolute;
+  top: 16%;
+  right: 14%;
+  width: clamp(90px, 14vw, 150px);
+  aspect-ratio: 1;
+  border-radius: 999px;
+  background: radial-gradient(circle, #fff6e8 0 55%, #ffe1c2 56% 100%);
+  box-shadow:
+    0 0 40px 18px rgb(255 236 210 / 55%),
+    0 0 120px 60px rgb(255 214 170 / 35%);
+}
+
+.forest__hills,
+.forest__trees,
+.forest__ground {
+  position: absolute;
+  left: 0;
+  width: 100%;
+}
+
+.forest__hills {
+  bottom: calc(var(--ground-h) - 40px);
+  height: clamp(180px, 30vh, 280px);
+}
+
+/* Ubin pohon 3:1 diulang ke samping dan digeser satu ubin per putaran. */
+.forest__trees {
+  --trees-h: clamp(230px, 40vh, 380px);
+
+  bottom: calc(var(--ground-h) - 30px);
+  height: var(--trees-h);
+  background-repeat: repeat-x;
+  background-position: 0 100%;
+  background-size: auto 100%;
+  animation: forest-scroll 22s linear infinite;
+}
+
+@keyframes forest-scroll {
+  to {
+    background-position: calc(var(--trees-h) * -3) 100%;
+  }
+}
+
+.forest__ground {
+  bottom: 0;
+  height: var(--ground-h);
+}
+
+/* Rumpun rumput + bunga kecil sebagai pola berulang di tepi padang rumput. */
+.forest__grass {
+  position: absolute;
+  bottom: calc(var(--ground-h) - 46px);
+  left: 0;
+  width: 100%;
+  height: 34px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='34' viewBox='0 0 140 34'%3E%3Cg fill='none' stroke='%237fb04f' stroke-linecap='round' stroke-width='3'%3E%3Cpath d='M8 34 Q6 22 2 14M12 34 Q13 20 18 10M16 34 Q20 24 26 20'/%3E%3Cpath d='M62 34 Q60 24 55 18M67 34 Q68 18 72 8M72 34 Q76 25 82 22'/%3E%3Cpath d='M112 34 Q110 26 106 20M117 34 Q119 22 124 14'/%3E%3C/g%3E%3Cg fill='%23ff8a9a'%3E%3Ccircle cx='38' cy='20' r='3'/%3E%3Ccircle cx='43' cy='20' r='3'/%3E%3Ccircle cx='40.5' cy='16' r='3'/%3E%3Ccircle cx='40.5' cy='24' r='3'/%3E%3C/g%3E%3Ccircle cx='40.5' cy='20' r='2' fill='%23fff3c4'/%3E%3Cpath d='M40.5 26 V34' stroke='%237fb04f' stroke-width='2'/%3E%3Cg fill='%23ffffff'%3E%3Ccircle cx='94' cy='24' r='2.5'/%3E%3Ccircle cx='98' cy='24' r='2.5'/%3E%3Ccircle cx='96' cy='21' r='2.5'/%3E%3Ccircle cx='96' cy='27' r='2.5'/%3E%3C/g%3E%3Ccircle cx='96' cy='24' r='1.6' fill='%23ffb38a'/%3E%3C/svg%3E")
+    repeat-x 0 100%;
+  animation: grass-scroll 1.4s linear infinite;
+}
+
+/* Rumput di depan bergeser lebih cepat daripada pohon (parallax). */
+@keyframes grass-scroll {
+  to {
+    background-position: -140px 100%;
+  }
+}
+
+.forest__firefly {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #fff3c4;
+  box-shadow: 0 0 10px 4px rgb(255 214 140 / 75%);
+  animation: firefly 4s ease-in-out infinite alternate;
+}
+
+@keyframes firefly {
+  0% {
+    opacity: 0.15;
+    transform: translate(0, 0);
+  }
+
+  50% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0.3;
+    transform: translate(10px, -14px);
+  }
+}
+
+/* Senja "berbicara": tagline tampil sebagai balon chat dengan ekor ke maskot. */
+.login-hero__scene {
+  position: absolute;
+  bottom: calc(var(--ground-h) - 62px);
+  left: 50%;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  transform: translateX(-50%);
+}
+
+.login-hero__senja {
+  position: relative;
+  display: block;
+}
+
+/* Bayangan lembut di rumput, mengecil saat Senja melompat kecil. */
+.login-hero__senja::after {
+  content: '';
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  z-index: -1;
+  width: 62%;
+  height: 22px;
+  border-radius: 50%;
+  background: rgb(54 84 34 / 35%);
+  filter: blur(3px);
+  transform: translateX(-50%);
+  animation: senja-shadow 0.9s ease-in-out infinite;
+}
+
+/* Cahaya hangat dari lentera Senja. */
+.login-hero__glow {
+  position: absolute;
+  top: 58%;
+  left: 52%;
+  width: 46%;
+  aspect-ratio: 1;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgb(255 226 160 / 70%) 0%, transparent 65%);
+  animation: lantern-glow 2.6s ease-in-out infinite alternate;
+}
+
+/* Senja berjalan: badan bergoyang kiri-kanan dan memantul di setiap langkah. */
+.login-hero__mascot {
+  position: relative;
+  display: block;
+  width: auto;
+  height: clamp(190px, 34vh, 300px);
+  transform-origin: 50% 100%;
+  animation: senja-walk 0.9s ease-in-out infinite;
+}
+
+@keyframes senja-walk {
+  0%,
+  50%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+
+  25% {
+    transform: translateY(-9px) rotate(-3.5deg);
+  }
+
+  75% {
+    transform: translateY(-9px) rotate(3.5deg);
+  }
+}
+
+@keyframes senja-shadow {
+  0%,
+  50%,
+  100% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+
+  25%,
+  75% {
+    opacity: 0.65;
+    transform: translateX(-50%) scale(0.86);
+  }
+}
+
+@keyframes lantern-glow {
+  from {
+    opacity: 0.6;
+    transform: scale(0.92);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
+.login-hero__bubble {
+  position: relative;
+  max-width: 20rem;
+  margin: 0 0 0 2.5rem;
+  border-radius: 1.25rem;
+  padding: 1rem 1.25rem;
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: 0 10px 28px rgb(43 27 46 / 16%);
+  font-size: 1.0625rem;
+  font-weight: 600;
+  line-height: 1.45;
+  text-align: left;
+  transform-origin: 40% 100%;
+  animation: bubble-pop 420ms cubic-bezier(0.34, 1.56, 0.64, 1) 200ms both;
+}
+
+.login-hero__bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -16px;
+  left: 38%;
+  width: 30px;
+  height: 20px;
+  background: var(--surface);
+  clip-path: polygon(0 0, 100% 0, 40% 100%);
+}
+
+@keyframes bubble-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.85) translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.login-panel {
+  display: grid;
+  place-items: center;
+  padding: 2rem 1.5rem;
+}
+
+.login-card {
+  width: min(100%, 24rem);
 }
 
 .login-card__header {
   margin-bottom: 1.75rem;
 }
 
-.login-card h1,
-.auth-status h1 {
+.login-card__logo {
+  display: none;
+}
+
+.login-card h1 {
   margin: 0;
-  color: #17211c;
   font-size: 1.5rem;
+}
+
+.login-card__header p {
+  margin: 0.375rem 0 0;
+  color: var(--muted);
+  font-size: 0.9375rem;
+}
+
+.login-notice {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  margin: 0 0 1.25rem;
+  border: 1px solid var(--info-line);
+  border-radius: var(--radius);
+  padding: 0.625rem 0.75rem;
+  color: var(--info-strong);
+  background: var(--info-soft);
+  font-size: 0.8125rem;
+}
+
+.login-notice svg {
+  flex: none;
+  margin-top: 0.1rem;
 }
 
 .login-form {
@@ -32,47 +346,177 @@
 }
 
 .login-form label {
-  margin-bottom: 0.5rem;
-  color: #34483d;
+  margin-bottom: 0.375rem;
+  color: var(--ink);
   font-size: 0.875rem;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .login-form input {
-  min-height: 2.75rem;
-  margin-bottom: 1.25rem;
-  border: 1px solid #c8d2cb;
-  border-radius: 0.5rem;
-  padding: 0.65rem 0.75rem;
-  color: #17211c;
-  background: #fff;
+  width: 100%;
+  height: var(--control-h-lg);
+  margin-bottom: 1.125rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0 0.875rem;
+  color: var(--ink);
+  background: var(--surface);
+  font-size: 1rem;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.login-form input::placeholder {
+  color: var(--placeholder);
 }
 
 .login-form input:focus {
-  border-color: #176b49;
-  outline: 2px solid rgb(23 107 73 / 15%);
+  border-color: var(--brand-sunset);
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.login-form input:disabled {
+  background: var(--surface-subtle);
+}
+
+.password-field {
+  position: relative;
+}
+
+.password-field input {
+  padding-right: 2.75rem;
+}
+
+.password-field__toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: grid;
+  place-items: center;
+  width: var(--control-h-lg);
+  height: var(--control-h-lg);
+  border: 0;
+  border-radius: var(--radius);
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.password-field__toggle:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+.login-form .form-error {
+  margin: 0 0 1.125rem;
 }
 
 .login-form__submit {
-  width: 100%;
+  margin-top: 0.375rem;
 }
 
-.form-error {
-  margin: 0 0 1rem;
-  border: 1px solid #efcecc;
-  border-radius: 0.5rem;
-  padding: 0.75rem;
-  color: #9f2d28;
-  background: #fff6f5;
-  font-size: 0.875rem;
-}
-
-.auth-status__card {
+.login-card__footer {
+  margin: 1.5rem 0 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
   text-align: center;
 }
 
+@media (max-width: 760px) {
+  .login-page {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  .login-hero {
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 1rem;
+    padding: 1.25rem 1.25rem 1rem;
+    text-align: left;
+  }
+
+  .login-hero__brand {
+    position: static;
+    flex: 1;
+  }
+
+  .login-hero {
+    --ground-h: 40px;
+
+    min-height: 0;
+  }
+
+  .forest__sun,
+  .forest__hills,
+  .forest__trees,
+  .forest__firefly,
+  .login-hero__glow {
+    display: none;
+  }
+
+  .login-hero__scene {
+    position: relative;
+    bottom: auto;
+    left: auto;
+    transform: none;
+  }
+
+  .login-hero__mascot {
+    height: 88px;
+  }
+
+  /* Header mobile terlalu sempit untuk balon chat; cukup Senja saja. */
+  .login-hero__bubble {
+    display: none;
+  }
+
+  .login-panel {
+    align-items: start;
+    padding: 2rem 1.25rem;
+  }
+}
+
+/* ---------- Status penuh layar (memuat sesi, gagal terhubung) ---------- */
+
+.auth-status {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 1.5rem;
+  background: var(--bg);
+}
+
+.auth-status__card {
+  display: grid;
+  justify-items: center;
+  width: min(100%, 26rem);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 2rem;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+
+.auth-status__art {
+  width: auto;
+  height: 140px;
+  margin-bottom: 1rem;
+}
+
+.auth-status h1 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
 .auth-status p {
-  margin: 0.75rem 0 1.5rem;
-  color: #68776e;
+  margin: 0.5rem 0 1.25rem;
+  color: var(--muted);
   line-height: 1.5;
+}
+
+.auth-status p:last-child {
+  margin-bottom: 0;
 }
