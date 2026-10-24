@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/auth"
@@ -39,9 +40,9 @@ func NewService(policy authz.Service, provider targetdb.Provider, timeout time.D
 
 func (s *Service) Schemas(ctx context.Context, principal auth.Principal, databaseID string) ([]Schema, error) {
 	var schemas []Schema
-	err := s.read(ctx, principal, databaseID, func(ctx context.Context, q querier) error {
+	err := s.read(ctx, principal, databaseID, func(ctx context.Context, q querier, catalog catalogDriver) error {
 		var err error
-		schemas, err = listSchemas(ctx, q)
+		schemas, err = catalog.Schemas(ctx, q)
 		return err
 	})
 	return schemas, err
@@ -49,9 +50,9 @@ func (s *Service) Schemas(ctx context.Context, principal auth.Principal, databas
 
 func (s *Service) Tables(ctx context.Context, principal auth.Principal, databaseID, schema string) ([]Table, error) {
 	var tables []Table
-	err := s.read(ctx, principal, databaseID, func(ctx context.Context, q querier) error {
+	err := s.read(ctx, principal, databaseID, func(ctx context.Context, q querier, catalog catalogDriver) error {
 		var err error
-		tables, err = listTables(ctx, q, schema)
+		tables, err = catalog.Tables(ctx, q, schema)
 		return err
 	})
 	return tables, err
@@ -60,19 +61,9 @@ func (s *Service) Tables(ctx context.Context, principal auth.Principal, database
 // TableDetail menggabungkan columns, constraints, dan indexes dalam satu response.
 func (s *Service) TableDetail(ctx context.Context, principal auth.Principal, databaseID, schema, table string) (TableDetail, error) {
 	var detail TableDetail
-	err := s.read(ctx, principal, databaseID, func(ctx context.Context, q querier) error {
-		oid, resolved, err := resolveTable(ctx, q, schema, table)
-		if err != nil {
-			return err
-		}
-		detail.Table = resolved
-		if detail.Columns, err = listColumns(ctx, q, oid); err != nil {
-			return err
-		}
-		if detail.Constraints, err = listConstraints(ctx, q, oid); err != nil {
-			return err
-		}
-		detail.Indexes, err = listIndexes(ctx, q, oid)
+	err := s.read(ctx, principal, databaseID, func(ctx context.Context, q querier, catalog catalogDriver) error {
+		var err error
+		detail, err = catalog.TableDetail(ctx, q, schema, table)
 		return err
 	})
 	return detail, err
@@ -84,20 +75,9 @@ func (s *Service) Rows(ctx context.Context, principal auth.Principal, databaseID
 		return RowsPage{}, ErrInvalidPagination
 	}
 	var result RowsPage
-	err := s.read(ctx, principal, databaseID, func(ctx context.Context, q querier) error {
-		oid, resolved, err := resolveTable(ctx, q, schema, table)
-		if err != nil {
-			return err
-		}
-		columns, err := listColumns(ctx, q, oid)
-		if err != nil {
-			return err
-		}
-		orderBy, err := primaryKeyColumns(ctx, q, oid)
-		if err != nil {
-			return err
-		}
-		result, err = fetchRows(ctx, q, resolved, columns, orderBy, page)
+	err := s.read(ctx, principal, databaseID, func(ctx context.Context, q querier, catalog catalogDriver) error {
+		var err error
+		result, err = catalog.Rows(ctx, q, schema, table, page)
 		return err
 	})
 	return result, err
@@ -113,7 +93,7 @@ func (s *Service) read(
 	ctx context.Context,
 	principal auth.Principal,
 	databaseID string,
-	operation func(ctx context.Context, q querier) error,
+	operation func(ctx context.Context, q querier, catalog catalogDriver) error,
 ) error {
 	if err := s.policy.RequireDatabaseView(ctx, principal, databaseID); err != nil {
 		return err
@@ -127,20 +107,23 @@ func (s *Service) read(
 		return err
 	}
 	defer func() { _ = connection.Close(context.WithoutCancel(ctx)) }()
+	catalog, err := catalogFor(connection.Engine())
+	if err != nil {
+		return classifyQueryError(err)
+	}
 
-	transaction, err := connection.Begin(ctx)
+	transaction, err := connection.Begin(ctx, targetdb.TxOptions{ReadOnly: true})
 	if err != nil {
 		return classifyQueryError(err)
 	}
 	defer func() { _ = transaction.Rollback(context.WithoutCancel(ctx)) }()
 
-	if _, err := transaction.Exec(ctx, "SET TRANSACTION READ ONLY"); err != nil {
-		return classifyQueryError(err)
+	if connection.Engine() == targetdb.EnginePostgreSQL {
+		if _, err := transaction.Exec(ctx, "SELECT set_config('statement_timeout', $1, true)", statementTimeout); err != nil {
+			return classifyQueryError(err)
+		}
 	}
-	if _, err := transaction.Exec(ctx, "SELECT set_config('statement_timeout', $1, true)", statementTimeout); err != nil {
-		return classifyQueryError(err)
-	}
-	if err := operation(ctx, transaction); err != nil {
+	if err := operation(ctx, transaction, catalog); err != nil {
 		return classifyQueryError(err)
 	}
 	return nil
@@ -164,6 +147,17 @@ func classifyQueryError(err error) error {
 			return ErrTargetTimeout
 		}
 		return fmt.Errorf("%w (sqlstate %s)", ErrTargetQueryFailed, pgError.Code)
+	}
+	var mysqlError *mysqldriver.MySQLError
+	if errors.As(err, &mysqlError) {
+		switch mysqlError.Number {
+		case 1142, 1143, 1227:
+			return ErrTargetPermissionDenied
+		case 3024:
+			return ErrTargetTimeout
+		default:
+			return fmt.Errorf("%w (mysql %d)", ErrTargetQueryFailed, mysqlError.Number)
+		}
 	}
 	if errors.Is(err, context.DeadlineExceeded) || pgconn.Timeout(err) {
 		return ErrTargetTimeout

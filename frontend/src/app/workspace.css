@@ -1,99 +1,371 @@
+/* Layout: sidebar plum penuh di kiri dan panel konten putih memenuhi sisa layar
+   (tanpa bingkai di tepi). Item menu aktif berupa pil putih yang "menyatu"
+   dengan panel konten. */
+
 .workspace {
+  --panel-radius: 28px;
+
   min-height: 100vh;
-  background: #f3f6f3;
+  background: var(--plum);
 }
 
-.workspace-header {
-  min-height: 4rem;
+.app-frame {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* ---------- Sidebar ---------- */
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: var(--sidebar-w);
+  height: 100vh;
+  overflow-y: auto;
+  padding: 1.5rem 0 1.25rem 18px;
+  color: #f5e9ec;
+  scrollbar-width: none;
+}
+
+.sidebar__brand {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.75rem clamp(1rem, 4vw, 3rem);
-  border-bottom: 1px solid #d7dfd9;
-  background: #fff;
-}
-
-.workspace-brand {
-  color: #17211c;
-  font-weight: 800;
-  text-decoration: none;
-}
-
-.workspace-user {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  color: #526158;
-  font-size: 0.875rem;
-}
-
-.workspace-main {
-  width: min(100% - 2rem, 72rem);
-  margin: 0 auto;
-  padding: 3rem 0;
-}
-
-.workspace-main h1 {
-  margin: 0;
-  font-size: 2rem;
-}
-
-.workspace-role {
-  margin: 0.5rem 0 0;
-  color: #68776e;
-}
-
-.workspace-alert {
-  max-width: 32rem;
-  margin: 1.5rem 0 0;
-  border: 1px solid #efcecc;
-  border-radius: 0.5rem;
-  padding: 0.75rem;
-  color: #9f2d28;
-  background: #fff6f5;
-  font-size: 0.875rem;
-}
-
-@media (max-width: 480px) {
-  .workspace-user > span {
-    display: none;
-  }
-}
-
-.workspace-nav {
-  display: flex;
-  flex: 1;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-}
-
-.workspace-nav a {
-  border-radius: 0.5rem;
-  padding: 0.45rem 0.75rem;
-  color: #526158;
+  gap: 0.625rem;
+  margin: 0 18px 1.75rem 4px;
+  color: #fff;
+  font-size: 1.0625rem;
   font-weight: 700;
   text-decoration: none;
 }
 
-.workspace-nav a:hover {
-  background: #f2f5f1;
+.sidebar__brand img {
+  width: auto;
+  height: 38px;
 }
 
-.workspace-nav a[aria-current='page'] {
-  color: #105a3c;
-  background: #dcf1e6;
+.sidebar__brand-accent {
+  color: var(--brand-sunset);
 }
 
-.workspace-links {
+.sidebar__section {
+  margin: 1.25rem 0 0.375rem 0.875rem;
+  color: #a990a8;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.sidebar__nav {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.sidebar__nav a {
+  position: relative;
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 0.75rem;
-  margin-top: 1.5rem;
+  height: 2.75rem;
+  margin-right: 18px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 0.875rem;
+  color: #dccfdc;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-align: left;
+  text-decoration: none;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
 }
 
-.workspace-links .button {
+.sidebar__nav a svg {
+  flex: none;
+  color: var(--brand-peach);
+}
+
+.sidebar__nav a:hover {
+  color: #fff;
+  background: rgb(255 255 255 / 8%);
+}
+
+/* Pil aktif memanjang sampai panel konten, dengan sudut cekung di atas & bawah. */
+.sidebar__nav a[aria-current='page'],
+.sidebar__nav a.active {
+  margin-right: 0;
+  border-radius: 999px 0 0 999px;
+  color: var(--ink);
+  background: var(--surface);
+}
+
+.sidebar__nav a[aria-current='page'] svg,
+.sidebar__nav a.active svg {
+  color: var(--action);
+}
+
+.sidebar__nav a[aria-current='page']::before,
+.sidebar__nav a[aria-current='page']::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  width: 20px;
+  height: 20px;
+  pointer-events: none;
+}
+
+.sidebar__nav a[aria-current='page']::before {
+  top: -20px;
+  background: radial-gradient(circle at 0 0, transparent 19.5px, var(--surface) 20px);
+}
+
+.sidebar__nav a[aria-current='page']::after {
+  bottom: -20px;
+  background: radial-gradient(circle at 0 100%, transparent 19.5px, var(--surface) 20px);
+}
+
+/* Kartu Senja di kiri bawah, berisi tombol Keluar. */
+.sidebar__card {
+  position: relative;
+  display: grid;
+  justify-items: start;
+  gap: 0.375rem;
+  margin: auto 18px 0 0;
+  border-radius: 20px;
+  padding: 5.75rem 1rem 1rem;
+  color: #f5e9ec;
+  background:
+    radial-gradient(circle at 76% 26%, #ffb38a 0 26px, transparent 27px),
+    radial-gradient(circle at 76% 26%, rgb(255 179 138 / 25%) 0 40px, transparent 41px),
+    rgb(255 255 255 / 7%);
+}
+
+.sidebar__card-art {
+  position: absolute;
+  top: -1.25rem;
+  left: 0.5rem;
+  width: auto;
+  height: 100px;
+}
+
+.sidebar__card strong {
+  color: #fff;
+  font-size: 0.9375rem;
+}
+
+.sidebar__card p {
+  margin: 0 0 0.375rem;
+  color: #dccfdc;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.sidebar__card-button {
   display: inline-flex;
   align-items: center;
+  gap: 0.375rem;
+  height: 2.125rem;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 1.125rem;
+  color: var(--ink);
+  background: var(--brand-peach);
+  cursor: pointer;
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.sidebar__card-button:hover:not(:disabled) {
+  background: #ffc4a3;
+}
+
+.sidebar__card-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.sidebar-backdrop {
+  display: none;
+}
+
+/* ---------- Panel konten ---------- */
+
+.workspace-body {
+  flex: 1;
+  min-width: 0;
+  border-radius: var(--panel-radius) 0 0 var(--panel-radius);
+  background: var(--surface);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  height: 4.25rem;
+  margin: 0 clamp(1rem, 3vw, 2.25rem);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.topbar__menu {
+  display: none;
+}
+
+.topbar__user {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
+}
+
+.topbar__identity {
+  display: grid;
+  justify-items: end;
+  gap: 0.125rem;
+}
+
+.topbar__username {
+  color: var(--ink);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.topbar__avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 2.375rem;
+  height: 2.375rem;
+  border: 2px solid var(--surface);
+  border-radius: 999px;
+  color: var(--ink);
+  background: var(--brand-gradient);
+  box-shadow: 0 0 0 2px var(--selected);
+  font-weight: 700;
+}
+
+.breadcrumb {
+  min-width: 0;
+}
+
+.breadcrumb ol {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  list-style: none;
+  white-space: nowrap;
+}
+
+.breadcrumb li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.breadcrumb li svg {
+  flex: none;
+  opacity: 0.6;
+}
+
+.breadcrumb a {
+  color: var(--muted);
   text-decoration: none;
+}
+
+.breadcrumb a:hover {
+  color: var(--action);
+}
+
+.breadcrumb [aria-current='page'] {
+  overflow: hidden;
+  color: var(--ink);
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.workspace-main {
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: clamp(1.25rem, 3vw, 2rem) clamp(1rem, 3vw, 2.25rem) 2.5rem;
+}
+
+.workspace-alert {
+  margin: 0 0 1rem;
+}
+
+/* ---------- Mobile: bingkai hilang, sidebar menjadi drawer ---------- */
+
+@media (max-width: 760px) {
+  .workspace {
+    background: var(--surface);
+  }
+
+  .app-frame {
+    display: block;
+  }
+
+  .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    height: 100vh;
+    padding: 1.25rem 0 1rem 1rem;
+    background: var(--plum);
+    transform: translateX(-100%);
+    transition: transform 180ms ease;
+    box-shadow: var(--shadow-lg);
+  }
+
+  .workspace--menu-open .sidebar {
+    transform: none;
+  }
+
+  .sidebar__nav a[aria-current='page'],
+  .sidebar__nav a.active {
+    margin-right: 1rem;
+    border-radius: 999px;
+  }
+
+  .sidebar__nav a[aria-current='page']::before,
+  .sidebar__nav a[aria-current='page']::after {
+    display: none;
+  }
+
+  .workspace--menu-open .sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 25;
+    display: block;
+    border: 0;
+    background: rgb(43 27 46 / 45%);
+  }
+
+  .workspace-body {
+    border-radius: 0;
+  }
+
+  .topbar {
+    margin: 0 1rem;
+  }
+
+  .topbar__menu {
+    display: inline-flex;
+    margin-left: -0.5rem;
+  }
+
+  .topbar__identity {
+    display: none;
+  }
 }

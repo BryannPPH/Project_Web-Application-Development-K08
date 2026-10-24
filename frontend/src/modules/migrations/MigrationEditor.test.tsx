@@ -40,4 +40,10 @@ describe('MigrationEditor', () => {
     expect(screen.getByLabelText('Nama migration')).toBeDisabled()
     expect(screen.queryByRole('button', { name: 'Simpan' })).not.toBeInTheDocument()
   })
+
+  it('menampilkan batas DDL berdasarkan capability target', () => {
+    render(<MigrationEditor onSubmit={vi.fn()} submitLabel="Simpan" transactionalDdl={false} />)
+
+    expect(screen.getByText(/DDL ditolak/)).toBeInTheDocument()
+  })
 })

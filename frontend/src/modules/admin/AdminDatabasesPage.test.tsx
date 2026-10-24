@@ -9,6 +9,7 @@ import { adminUser, jsonResponse, mockFetch, renderRoute } from '@/test/platform
 const stored: ManagedDatabase = {
   id: 'db-1',
   name: 'Warehouse',
+  engine: 'postgresql',
   host: 'db.internal',
   port: 5432,
   databaseName: 'warehouse',
@@ -90,8 +91,22 @@ describe('AdminDatabasesPage', () => {
     fireEvent.click(within(form).getByRole('button', { name: 'Tambah koneksi' }))
 
     await waitFor(() => expect(created).toBeDefined())
-    expect(created).toMatchObject({ name: 'Warehouse', password: 'super-secret', port: 5432, sslMode: 'require' })
+    expect(created).toMatchObject({ name: 'Warehouse', engine: 'postgresql', password: 'super-secret', port: 5432, sslMode: 'require' })
     const postCall = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST')
     expect(new Headers(postCall?.[1]?.headers).get('X-CSRF-Token')).toBe('csrf-test')
+  })
+
+  it('menyesuaikan default koneksi untuk MySQL', async () => {
+    mockFetch((url) =>
+      url.pathname === '/api/v1/admin/databases' ? jsonResponse({ databases: [] }) : undefined,
+    )
+    renderPage()
+
+    const form = await screen.findByRole('form', { name: 'Tambah koneksi database' })
+    fireEvent.change(within(form).getByLabelText('Engine'), { target: { value: 'mysql' } })
+
+    expect(within(form).getByLabelText('Port')).toHaveValue('3306')
+    expect(within(form).getByRole('option', { name: 'MySQL 8.4' })).toBeInTheDocument()
+    expect(within(form).queryByRole('option', { name: 'prefer' })).not.toBeInTheDocument()
   })
 })

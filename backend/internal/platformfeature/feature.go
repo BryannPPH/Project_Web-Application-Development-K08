@@ -12,6 +12,7 @@ import (
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/httpapi"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/migration"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/platformaccess"
+	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/schemadiff"
 )
 
 const defaultStartupTimeout = 10 * time.Second
@@ -60,9 +61,24 @@ func FeatureFactory(startupContext context.Context, options Options) app.Feature
 			return nil, fmt.Errorf("configure migration: %w", err)
 		}
 
+		// Bonus: analisis execution plan dan schema diff memakai authz serta
+		// target provider yang sama dengan viewer dan migration.
+		explainService, err := migration.NewExplainService(components.Authz, components.TargetProvider, options.Migration)
+		if err != nil {
+			return nil, fmt.Errorf("configure migration explain: %w", err)
+		}
+		explainHandler := migration.NewExplainHandler(explainService, dependencies.Logger)
+		diffService, err := schemadiff.NewService(components.Authz, components.TargetProvider)
+		if err != nil {
+			return nil, fmt.Errorf("configure schema diff: %w", err)
+		}
+		diffHandler := schemadiff.NewHandler(diffService, dependencies.Logger)
+
 		return func(mux *http.ServeMux, security *httpapi.AuthMiddleware) {
 			platformRegistrar(mux, security)
 			migrationHandler.RegisterRoutes(mux, security)
+			explainHandler.RegisterRoutes(mux, security)
+			diffHandler.RegisterRoutes(mux, security)
 		}, nil
 	}
 }

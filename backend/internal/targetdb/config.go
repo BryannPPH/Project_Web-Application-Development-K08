@@ -1,4 +1,4 @@
-// Package targetdb membuka koneksi ke PostgreSQL target yang dikelola platform.
+// Package targetdb membuka koneksi ke database target yang dikelola platform.
 //
 // Credential tidak pernah keluar dari package ini dalam bentuk error/log.
 // Consumer (viewer, migration) hanya memanggil Provider.Open(databaseID) dan
@@ -17,6 +17,39 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+type Engine string
+
+const (
+	EnginePostgreSQL Engine = "postgresql"
+	EngineMySQL      Engine = "mysql"
+)
+
+func (e Engine) Valid() bool {
+	return e == EnginePostgreSQL || e == EngineMySQL
+}
+
+func NormalizeEngine(engine Engine) Engine {
+	if engine == "" {
+		return EnginePostgreSQL
+	}
+	return engine
+}
+
+type Capabilities struct {
+	Viewer                 bool `json:"viewer"`
+	TransactionalMigration bool `json:"transactionalMigration"`
+	TransactionalDDL       bool `json:"transactionalDdl"`
+}
+
+func CapabilitiesFor(engine Engine) Capabilities {
+	switch NormalizeEngine(engine) {
+	case EngineMySQL:
+		return Capabilities{Viewer: true, TransactionalMigration: true, TransactionalDDL: false}
+	default:
+		return Capabilities{Viewer: true, TransactionalMigration: true, TransactionalDDL: true}
+	}
+}
+
 // SSLModes adalah nilai ssl_mode yang diterima, sama dengan CHECK constraint schema.
 var SSLModes = []string{"disable", "allow", "prefer", "require", "verify-ca", "verify-full"}
 
@@ -33,6 +66,7 @@ var ErrInvalidConfig = errors.New("invalid target connection configuration")
 // sebelum koneksi dibuka; jangan simpan, log, atau kembalikan ke client.
 type ConnectionConfig struct {
 	DatabaseID string
+	Engine     Engine
 	Host       string
 	Port       int
 	Database   string
@@ -95,7 +129,10 @@ func ValidPassword(value string) bool {
 
 // Validate memeriksa seluruh field sebelum DSN dibentuk.
 func (c ConnectionConfig) Validate() error {
+	engine := NormalizeEngine(c.Engine)
 	switch {
+	case !engine.Valid():
+		return fmt.Errorf("%w: engine", ErrInvalidConfig)
 	case !ValidHost(c.Host):
 		return fmt.Errorf("%w: host", ErrInvalidConfig)
 	case c.Port < 1 || c.Port > 65535:
@@ -108,6 +145,8 @@ func (c ConnectionConfig) Validate() error {
 		return fmt.Errorf("%w: password", ErrInvalidConfig)
 	case !ValidSSLMode(c.SSLMode):
 		return fmt.Errorf("%w: ssl mode", ErrInvalidConfig)
+	case engine == EngineMySQL && c.SSLMode != "disable" && c.SSLMode != "require":
+		return fmt.Errorf("%w: mysql ssl mode", ErrInvalidConfig)
 	}
 	return nil
 }
@@ -118,6 +157,9 @@ func (c ConnectionConfig) Validate() error {
 // aturan libpq (\' dan \\), sehingga tidak ada nilai yang dapat menyisipkan
 // parameter lain. Error parse tidak dibungkus agar DSN tidak ikut ke pesan error.
 func (c ConnectionConfig) pgxConfig(connectTimeout time.Duration) (*pgx.ConnConfig, error) {
+	if NormalizeEngine(c.Engine) != EnginePostgreSQL {
+		return nil, ErrInvalidConfig
+	}
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}

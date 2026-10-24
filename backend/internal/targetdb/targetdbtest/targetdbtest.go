@@ -15,9 +15,6 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/targetdb"
 )
 
@@ -58,42 +55,47 @@ func (p *Provider) OpenCount() int {
 
 // Connection adalah fake targetdb.Connection yang mencatat Close.
 type Connection struct {
-	mu        sync.Mutex
-	QueryFunc func(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
-	RowFunc   func(ctx context.Context, sql string, args ...any) pgx.Row
-	ExecFunc  func(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
-	BeginFunc func(ctx context.Context) (targetdb.Transaction, error)
-	closes    int
+	mu          sync.Mutex
+	EngineValue targetdb.Engine
+	QueryFunc   func(ctx context.Context, sql string, args ...any) (targetdb.Rows, error)
+	RowFunc     func(ctx context.Context, sql string, args ...any) targetdb.Row
+	ExecFunc    func(ctx context.Context, sql string, args ...any) (targetdb.CommandResult, error)
+	BeginFunc   func(ctx context.Context, options ...targetdb.TxOptions) (targetdb.Transaction, error)
+	closes      int
 }
 
 var _ targetdb.Connection = (*Connection)(nil)
 
-func (c *Connection) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+func (c *Connection) Engine() targetdb.Engine {
+	return targetdb.NormalizeEngine(c.EngineValue)
+}
+
+func (c *Connection) Query(ctx context.Context, sql string, args ...any) (targetdb.Rows, error) {
 	if c.QueryFunc == nil {
 		return nil, ErrNotConfigured
 	}
 	return c.QueryFunc(ctx, sql, args...)
 }
 
-func (c *Connection) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
+func (c *Connection) QueryRow(ctx context.Context, sql string, args ...any) targetdb.Row {
 	if c.RowFunc == nil {
 		return errorRow{err: ErrNotConfigured}
 	}
 	return c.RowFunc(ctx, sql, args...)
 }
 
-func (c *Connection) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+func (c *Connection) Exec(ctx context.Context, sql string, args ...any) (targetdb.CommandResult, error) {
 	if c.ExecFunc == nil {
-		return pgconn.CommandTag{}, ErrNotConfigured
+		return nil, ErrNotConfigured
 	}
 	return c.ExecFunc(ctx, sql, args...)
 }
 
-func (c *Connection) Begin(ctx context.Context) (targetdb.Transaction, error) {
+func (c *Connection) Begin(ctx context.Context, options ...targetdb.TxOptions) (targetdb.Transaction, error) {
 	if c.BeginFunc == nil {
 		return nil, ErrNotConfigured
 	}
-	return c.BeginFunc(ctx)
+	return c.BeginFunc(ctx, options...)
 }
 
 func (c *Connection) Close(context.Context) error {

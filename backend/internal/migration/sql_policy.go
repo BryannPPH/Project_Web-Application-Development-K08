@@ -19,6 +19,86 @@ func validateSQLPolicy(sqlText string) error {
 	return nil
 }
 
+func validateMySQLAtomicPolicy(sqlText string) error {
+	if hasMySQLExecutableComment(sqlText) {
+		return fmt.Errorf("%w: MySQL executable comments are not permitted", ErrSQLPolicy)
+	}
+	statements, err := topLevelStatementWords(sqlText)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrSQLPolicy, err)
+	}
+	if len(statements) == 0 {
+		return ErrSQLPolicy
+	}
+	for _, words := range statements {
+		if len(words) == 0 {
+			continue
+		}
+		switch words[0] {
+		case "INSERT", "UPDATE", "DELETE", "SELECT":
+		default:
+			return fmt.Errorf("%w: MySQL atomic mode only permits transactional DML", ErrSQLPolicy)
+		}
+	}
+	return nil
+}
+
+func hasMySQLExecutableComment(input string) bool {
+	quote := byte(0)
+	lineComment := false
+	blockComment := false
+	for index := 0; index < len(input); index++ {
+		current := input[index]
+		if lineComment {
+			if current == '\n' {
+				lineComment = false
+			}
+			continue
+		}
+		if blockComment {
+			if current == '*' && index+1 < len(input) && input[index+1] == '/' {
+				blockComment = false
+				index++
+			}
+			continue
+		}
+		if quote != 0 {
+			if current == '\\' {
+				index++
+				continue
+			}
+			if current == quote {
+				if index+1 < len(input) && input[index+1] == quote {
+					index++
+					continue
+				}
+				quote = 0
+			}
+			continue
+		}
+		switch current {
+		case '\'', '"', '`':
+			quote = current
+		case '#':
+			lineComment = true
+		case '-':
+			if index+1 < len(input) && input[index+1] == '-' {
+				lineComment = true
+				index++
+			}
+		case '/':
+			if index+1 < len(input) && input[index+1] == '*' {
+				if index+2 < len(input) && input[index+2] == '!' {
+					return true
+				}
+				blockComment = true
+				index++
+			}
+		}
+	}
+	return false
+}
+
 func transactionControl(words []string) bool {
 	if len(words) == 0 {
 		return false
@@ -51,7 +131,7 @@ func topLevelStatementWords(input string) ([][]string, error) {
 				words = make([]string, 0, 4)
 			}
 			index++
-		case '\'', '"':
+		case '\'', '"', '`':
 			next, err := skipQuoted(input, index, input[index])
 			if err != nil {
 				return nil, err
@@ -64,6 +144,11 @@ func topLevelStatementWords(input string) ([][]string, error) {
 					index++
 				}
 			} else {
+				index++
+			}
+		case '#':
+			index++
+			for index < len(input) && input[index] != '\n' {
 				index++
 			}
 		case '/':
@@ -109,6 +194,10 @@ func topLevelStatementWords(input string) ([][]string, error) {
 
 func skipQuoted(input string, start int, quote byte) (int, error) {
 	for index := start + 1; index < len(input); index++ {
+		if input[index] == '\\' && quote != '"' {
+			index++
+			continue
+		}
 		if input[index] != quote {
 			continue
 		}

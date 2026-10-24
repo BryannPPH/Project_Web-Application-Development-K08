@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Route } from 'react-router-dom'
 
 import { RequirePlatformAdmin } from '@/modules/admin/RequirePlatformAdmin'
-import { adminUser, regularUser, renderRoute } from '@/test/platform-test-utils'
+import { adminUser, regularUser, renderRoute, senjaImage } from '@/test/platform-test-utils'
 
 afterEach(() => {
   cleanup()
@@ -29,6 +29,8 @@ describe('RequirePlatformAdmin', () => {
 
     expect(screen.getByRole('alert')).toHaveTextContent('Akses ditolak')
     expect(screen.queryByRole('heading', { name: 'Panel admin' })).not.toBeInTheDocument()
+    expect(senjaImage('locked')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Kembali ke Dashboard' })).toHaveAttribute('href', '/')
   })
 
   it('menampilkan halaman admin untuk platform admin', () => {

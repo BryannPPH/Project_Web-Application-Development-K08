@@ -99,7 +99,11 @@ func (s *Service) Update(ctx context.Context, principal auth.Principal, id strin
 	if !uuid.Valid(id) {
 		return ManagedDatabase{}, ErrNotFound
 	}
-	changes, password, err := normalizeUpdate(input)
+	existing, err := s.repository.Get(ctx, id)
+	if err != nil {
+		return ManagedDatabase{}, err
+	}
+	changes, password, err := normalizeUpdate(input, existing.Engine)
 	if err != nil {
 		return ManagedDatabase{}, err
 	}
@@ -155,6 +159,7 @@ func (s *Service) TestDraft(ctx context.Context, principal auth.Principal, input
 	}
 	return s.test(ctx, targetdb.ConnectionConfig{
 		DatabaseID: "draft",
+		Engine:     record.Engine,
 		Host:       record.Host,
 		Port:       record.Port,
 		Database:   record.DatabaseName,
@@ -252,6 +257,7 @@ func (s *Service) resolve(ctx context.Context, id string, requireActive bool) (t
 	}
 	config := targetdb.ConnectionConfig{
 		DatabaseID: record.ID,
+		Engine:     record.Engine,
 		Host:       record.Host,
 		Port:       record.Port,
 		Database:   record.DatabaseName,
@@ -276,6 +282,8 @@ func (s *Service) encrypt(id, password string) (StoredCredential, error) {
 func toAccessible(record ManagedDatabase, level authz.AccessLevel) AccessibleDatabase {
 	return AccessibleDatabase{
 		ID:           record.ID,
+		Engine:       record.Engine,
+		Capabilities: targetdb.CapabilitiesFor(record.Engine),
 		Name:         record.Name,
 		DatabaseName: record.DatabaseName,
 		AccessLevel:  level,
@@ -283,7 +291,9 @@ func toAccessible(record ManagedDatabase, level authz.AccessLevel) AccessibleDat
 }
 
 func normalizeCreate(input CreateInput) (ManagedDatabase, string, error) {
+	engine := targetdb.NormalizeEngine(input.Engine)
 	record := ManagedDatabase{
+		Engine:       engine,
 		Name:         strings.TrimSpace(input.Name),
 		Host:         strings.TrimSpace(input.Host),
 		Port:         input.Port,
@@ -293,7 +303,11 @@ func normalizeCreate(input CreateInput) (ManagedDatabase, string, error) {
 		IsActive:     true,
 	}
 	if record.Port == 0 {
-		record.Port = 5432
+		if engine == targetdb.EngineMySQL {
+			record.Port = 3306
+		} else {
+			record.Port = 5432
+		}
 	}
 	if record.SSLMode == "" {
 		record.SSLMode = targetdb.DefaultSSLMode
@@ -304,7 +318,10 @@ func normalizeCreate(input CreateInput) (ManagedDatabase, string, error) {
 	if err := validateName(record.Name); err != nil {
 		return ManagedDatabase{}, "", err
 	}
-	if err := validateConnectionFields(record.Host, record.Port, record.DatabaseName, record.Username, record.SSLMode); err != nil {
+	if !engine.Valid() {
+		return ManagedDatabase{}, "", &ValidationError{"engine", "engine must be postgresql or mysql"}
+	}
+	if err := validateConnectionFields(engine, record.Host, record.Port, record.DatabaseName, record.Username, record.SSLMode); err != nil {
 		return ManagedDatabase{}, "", err
 	}
 	if !targetdb.ValidPassword(input.Password) {
@@ -313,8 +330,11 @@ func normalizeCreate(input CreateInput) (ManagedDatabase, string, error) {
 	return record, input.Password, nil
 }
 
-func normalizeUpdate(input UpdateInput) (patch, *string, error) {
+func normalizeUpdate(input UpdateInput, engine targetdb.Engine) (patch, *string, error) {
 	var changes patch
+	if input.Engine != nil && targetdb.NormalizeEngine(*input.Engine) != targetdb.NormalizeEngine(engine) {
+		return patch{}, nil, &ValidationError{"engine", "engine cannot be changed after creation"}
+	}
 	if input.Name != nil {
 		name := strings.TrimSpace(*input.Name)
 		if err := validateName(name); err != nil {
@@ -351,7 +371,7 @@ func normalizeUpdate(input UpdateInput) (patch, *string, error) {
 	}
 	if input.SSLMode != nil {
 		value := strings.TrimSpace(*input.SSLMode)
-		if !targetdb.ValidSSLMode(value) {
+		if !validSSLModeForEngine(engine, value) {
 			return patch{}, nil, &ValidationError{"sslMode", "ssl mode is not supported"}
 		}
 		changes.SSLMode = &value
@@ -370,7 +390,7 @@ func validateName(name string) error {
 	return nil
 }
 
-func validateConnectionFields(host string, port int, databaseName, username, sslMode string) error {
+func validateConnectionFields(engine targetdb.Engine, host string, port int, databaseName, username, sslMode string) error {
 	switch {
 	case !targetdb.ValidHost(host):
 		return &ValidationError{"host", "host must be a hostname or IP address"}
@@ -380,8 +400,18 @@ func validateConnectionFields(host string, port int, databaseName, username, ssl
 		return &ValidationError{"databaseName", "database name must contain 1 to 63 bytes"}
 	case !targetdb.ValidIdentifierValue(username):
 		return &ValidationError{"username", "username must contain 1 to 63 bytes"}
-	case !targetdb.ValidSSLMode(sslMode):
+	case !validSSLModeForEngine(engine, sslMode):
 		return &ValidationError{"sslMode", "ssl mode is not supported"}
 	}
 	return nil
+}
+
+func validSSLModeForEngine(engine targetdb.Engine, mode string) bool {
+	if !targetdb.ValidSSLMode(mode) {
+		return false
+	}
+	if targetdb.NormalizeEngine(engine) == targetdb.EngineMySQL {
+		return mode == "disable" || mode == "require"
+	}
+	return true
 }

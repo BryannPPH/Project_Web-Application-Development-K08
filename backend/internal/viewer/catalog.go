@@ -7,12 +7,14 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/targetdb"
 )
 
 // querier adalah subset pgx.Tx yang dipakai query katalog.
 type querier interface {
-	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
-	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Query(ctx context.Context, sql string, args ...any) (targetdb.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) targetdb.Row
 }
 
 // relkind yang dianggap "table" oleh viewer.
@@ -345,13 +347,8 @@ func fetchRows(ctx context.Context, q querier, table Table, columns []Column, or
 		Offset:    page.Offset,
 		OrderedBy: orderBy,
 	}
-	fields := rows.FieldDescriptions()
-	typeByName := make(map[string]string, len(columns))
 	for _, column := range columns {
-		typeByName[column.Name] = column.DataType
-	}
-	for _, field := range fields {
-		result.Columns = append(result.Columns, RowColumn{Name: field.Name, DataType: typeByName[field.Name]})
+		result.Columns = append(result.Columns, RowColumn{Name: column.Name, DataType: column.DataType})
 	}
 
 	for rows.Next() {

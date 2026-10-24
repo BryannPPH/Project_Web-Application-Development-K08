@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from 'react'
 
+import { AccessBadge, ActiveBadge } from '@/components/Badges'
 import { describeError } from '@/components/error-message'
+import { Icon } from '@/components/Icon'
 import { StatusMessage } from '@/components/StatusMessage'
 import {
   useAdminGroups,
@@ -11,7 +13,7 @@ import {
   useManagedDatabases,
 } from '@/modules/admin/api'
 import type { AdminGroup } from '@/modules/admin/types'
-import { accessLevelLabel, type AccessLevel } from '@/modules/databases/types'
+import type { AccessLevel } from '@/modules/databases/types'
 
 export function AdminGroupsPage() {
   const groups = useAdminGroups()
@@ -43,7 +45,12 @@ export function AdminGroupsPage() {
   return (
     <div>
       <div className="panel">
-        <h2>Tambah group</h2>
+        <div className="panel__header">
+          <div>
+            <h2>Tambah group</h2>
+            <p className="muted">Akses user = level tertinggi dari semua group yang diikutinya.</p>
+          </div>
+        </div>
         <form aria-label="Tambah group" noValidate onSubmit={(event) => void handleCreate(event)}>
           <div className="form-grid">
             <label className="form-field">
@@ -55,59 +62,73 @@ export function AdminGroupsPage() {
               <input name="description" />
             </label>
             <button className="button button--primary" disabled={mutations.create.isPending} type="submit">
+              <Icon name="plus" size={16} />
               Tambah
             </button>
           </div>
           {error ? (
             <p className="form-error" role="alert">
+              <Icon name="error" size={16} />
               {error}
             </p>
           ) : null}
         </form>
       </div>
 
-      <div className="panel">
-        <h2>Daftar group</h2>
-        {groups.isPending ? <StatusMessage>Memuat group…</StatusMessage> : null}
-        {groups.isError ? <StatusMessage tone="error">{describeError(groups.error)}</StatusMessage> : null}
-        {groups.data?.length === 0 ? <StatusMessage tone="empty">Belum ada group.</StatusMessage> : null}
-        {groups.data && groups.data.length > 0 ? (
-          <div className="data-table-wrapper">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Nama</th>
-                  <th>Deskripsi</th>
-                  <th>Anggota</th>
-                  <th aria-label="Aksi" />
-                </tr>
-              </thead>
-              <tbody>
-                {groups.data.map((group) => (
-                  <tr key={group.id}>
-                    <td>{group.name}</td>
-                    <td>{group.description ?? <span className="cell-null">—</span>}</td>
-                    <td>{group.memberCount}</td>
-                    <td>
-                      <button
-                        className="button button--secondary button--small"
-                        onClick={() => setSelectedId(group.id)}
-                        type="button"
-                      >
-                        Kelola
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      <div className="split">
+        <div className="panel">
+          <div className="panel__header">
+            <h2>Daftar group</h2>
+            {groups.data ? <span className="badge">{groups.data.length} group</span> : null}
           </div>
-        ) : null}
-      </div>
+          {groups.isPending ? <StatusMessage tone="loading">Memuat group…</StatusMessage> : null}
+          {groups.isError ? <StatusMessage tone="error">{describeError(groups.error)}</StatusMessage> : null}
+          {groups.data?.length === 0 ? <StatusMessage illustration="searching" tone="empty">Belum ada group.</StatusMessage> : null}
+          {groups.data && groups.data.length > 0 ? (
+            <div className="data-table-wrapper">
+              <table className="data-table data-table--stack">
+                <thead>
+                  <tr>
+                    <th>Nama</th>
+                    <th>Deskripsi</th>
+                    <th>Anggota</th>
+                    <th aria-label="Aksi" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {groups.data.map((group) => (
+                    <tr className={group.id === selectedId ? 'row-selected' : undefined} key={group.id}>
+                      <td data-label="Nama">
+                        <strong>{group.name}</strong>
+                      </td>
+                      <td data-label="Deskripsi">{group.description || <span className="cell-empty">—</span>}</td>
+                      <td data-label="Anggota">{group.memberCount}</td>
+                      <td className="cell-actions">
+                        <button
+                          className="button button--secondary button--small"
+                          onClick={() => setSelectedId(group.id)}
+                          type="button"
+                        >
+                          Kelola
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </div>
 
-      {selected ? (
-        <GroupDetail group={selected} key={selected.id} onDeleted={() => setSelectedId(null)} />
-      ) : null}
+        {selected ? (
+          <GroupDetail group={selected} key={selected.id} onDeleted={() => setSelectedId(null)} />
+        ) : (
+          <div className="panel panel--placeholder">
+            <Icon name="users" size={28} />
+            <p>Pilih group lalu klik Kelola untuk mengatur anggota dan akses database.</p>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -118,12 +139,12 @@ function GroupDetail({ group, onDeleted }: { group: AdminGroup; onDeleted: () =>
   const grants = useGroupGrants(group.id)
   const users = useAdminUsers()
   const databases = useManagedDatabases()
-  const [message, setMessage] = useState<{ tone: 'info' | 'error'; text: string } | null>(null)
+  const [message, setMessage] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
 
   async function run(action: () => Promise<unknown>, success: string) {
     try {
       await action()
-      setMessage({ tone: 'info', text: success })
+      setMessage({ tone: 'success', text: success })
     } catch (error) {
       setMessage({ tone: 'error', text: describeError(error) })
     }
@@ -181,8 +202,8 @@ function GroupDetail({ group, onDeleted }: { group: AdminGroup; onDeleted: () =>
   const candidates = users.data?.filter((user) => !memberIds.has(user.id)) ?? []
 
   return (
-    <div className="panel">
-      <h2>Kelola group: {group.name}</h2>
+    <div className="panel group-detail">
+      <h2>Kelola · {group.name}</h2>
       {message ? <StatusMessage tone={message.tone}>{message.text}</StatusMessage> : null}
 
       <form aria-label="Ubah group" noValidate onSubmit={handleRename}>
@@ -199,15 +220,12 @@ function GroupDetail({ group, onDeleted }: { group: AdminGroup; onDeleted: () =>
             <button className="button button--primary" type="submit">
               Simpan
             </button>
-            <button className="button button--danger" onClick={handleDelete} type="button">
-              Hapus group
-            </button>
           </div>
         </div>
       </form>
 
-      <h3>Anggota</h3>
-      {members.isPending ? <StatusMessage>Memuat anggota…</StatusMessage> : null}
+      <h3 className="section-title">Anggota</h3>
+      {members.isPending ? <StatusMessage tone="loading">Memuat anggota…</StatusMessage> : null}
       {members.isError ? <StatusMessage tone="error">{describeError(members.error)}</StatusMessage> : null}
       {members.data?.length === 0 ? <StatusMessage tone="empty">Group belum memiliki anggota.</StatusMessage> : null}
       {members.data && members.data.length > 0 ? (
@@ -216,9 +234,11 @@ function GroupDetail({ group, onDeleted }: { group: AdminGroup; onDeleted: () =>
             <tbody>
               {members.data.map((member) => (
                 <tr key={member.userId}>
-                  <td>{member.username}</td>
-                  <td>{member.isActive ? null : <span className="badge badge--danger">Nonaktif</span>}</td>
                   <td>
+                    <Icon name="user" size={14} /> {member.username}
+                  </td>
+                  <td>{member.isActive ? null : <ActiveBadge active={false} />}</td>
+                  <td className="cell-actions">
                     <button
                       className="button button--secondary button--small"
                       onClick={() =>
@@ -238,7 +258,7 @@ function GroupDetail({ group, onDeleted }: { group: AdminGroup; onDeleted: () =>
           </table>
         </div>
       ) : null}
-      <form aria-label="Tambah anggota" className="form-actions" onSubmit={handleAddMember}>
+      <form aria-label="Tambah anggota" className="form-row" onSubmit={handleAddMember}>
         <label className="form-field">
           Tambah anggota
           <select defaultValue="" name="userId">
@@ -253,15 +273,16 @@ function GroupDetail({ group, onDeleted }: { group: AdminGroup; onDeleted: () =>
           </select>
         </label>
         <button className="button button--secondary" type="submit">
+          <Icon name="plus" size={16} />
           Tambah
         </button>
       </form>
 
-      <h3>Akses database</h3>
-      <p className="muted">
+      <h3 className="section-title">Akses database</h3>
+      <p className="muted group-detail__hint">
         Effective access user = level tertinggi dari seluruh group yang diikutinya (View + Edit &gt; View Only).
       </p>
-      {grants.isPending ? <StatusMessage>Memuat akses…</StatusMessage> : null}
+      {grants.isPending ? <StatusMessage tone="loading">Memuat akses…</StatusMessage> : null}
       {grants.isError ? <StatusMessage tone="error">{describeError(grants.error)}</StatusMessage> : null}
       {grants.data?.length === 0 ? <StatusMessage tone="empty">Group belum memiliki akses database.</StatusMessage> : null}
       {grants.data && grants.data.length > 0 ? (
@@ -270,11 +291,13 @@ function GroupDetail({ group, onDeleted }: { group: AdminGroup; onDeleted: () =>
             <tbody>
               {grants.data.map((grant) => (
                 <tr key={grant.databaseId}>
-                  <td>{grant.databaseName}</td>
                   <td>
-                    <span className="badge">{accessLevelLabel(grant.accessLevel)}</span>
+                    <Icon name="database" size={14} /> {grant.databaseName}
                   </td>
                   <td>
+                    <AccessBadge level={grant.accessLevel} />
+                  </td>
+                  <td className="cell-actions">
                     <button
                       className="button button--secondary button--small"
                       onClick={() =>
@@ -294,7 +317,7 @@ function GroupDetail({ group, onDeleted }: { group: AdminGroup; onDeleted: () =>
           </table>
         </div>
       ) : null}
-      <form aria-label="Atur akses database" className="form-actions" onSubmit={handleGrant}>
+      <form aria-label="Atur akses database" className="form-row" onSubmit={handleGrant}>
         <label className="form-field">
           Database
           <select defaultValue="" name="databaseId">
@@ -319,6 +342,17 @@ function GroupDetail({ group, onDeleted }: { group: AdminGroup; onDeleted: () =>
           Simpan akses
         </button>
       </form>
+
+      <div className="danger-zone">
+        <div>
+          <strong>Hapus group</strong>
+          <p className="muted">Seluruh membership dan grant group ini ikut terhapus.</p>
+        </div>
+        <button className="button button--danger-outline" onClick={handleDelete} type="button">
+          <Icon name="trash" size={16} />
+          Hapus group
+        </button>
+      </div>
     </div>
   )
 }

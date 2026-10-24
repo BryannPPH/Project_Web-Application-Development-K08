@@ -2,7 +2,7 @@
 
 Database Management Platform adalah proyek Milestone 1 IF3110 Pengembangan
 Aplikasi Web. Aplikasi menyediakan authentication, administrasi user dan group,
-kontrol akses database, PostgreSQL viewer read-only, serta migration executor
+kontrol akses database, PostgreSQL/MySQL viewer read-only, serta migration executor
 transactional.
 
 ## Fitur Milestone 1
@@ -10,7 +10,7 @@ transactional.
 - Login berbasis session cookie `HttpOnly` dengan proteksi CSRF.
 - Platform admin untuk mengelola user, group, membership, dan managed database.
 - Grant database berbasis group: `view_only` dan `view_edit`.
-- PostgreSQL viewer untuk schema, table/view, struktur, index, constraint, dan row.
+- PostgreSQL dan MySQL 8.4 viewer untuk schema, table/view, struktur, index, constraint, dan row.
 - Migration history dengan draft, versioning, commit, rollback, dan recovery.
 - Enkripsi credential managed database menggunakan AES-256-GCM.
 - Unit test, integration test PostgreSQL, race detector, dan frontend test.
@@ -19,9 +19,10 @@ transactional.
 
 | Bagian | Teknologi |
 |---|---|
-| Backend | Go 1.26, `net/http`, pgx |
+| Backend | Go 1.26, `net/http`, pgx, go-sql-driver/mysql |
 | Frontend | React 19, TypeScript, Vite, TanStack Query |
-| Database | PostgreSQL 18 |
+| Platform database | PostgreSQL 18 |
+| Managed target | PostgreSQL 18 atau MySQL 8.4 |
 | Migration internal | Goose |
 | Runtime frontend Docker | Nginx |
 | Package manager frontend | Bun 1.3 |
@@ -112,6 +113,7 @@ halaman **Admin → Databases**:
 
 | Field | Nilai |
 |---|---|
+| Engine | `PostgreSQL` |
 | Host | `target-db` |
 | Port | `5432` |
 | Database | nilai `TARGET_DB_NAME` |
@@ -121,6 +123,10 @@ halaman **Admin → Databases**:
 
 Jangan menggunakan `localhost:55433` dari backend container. `localhost` di
 dalam container menunjuk ke container backend itu sendiri.
+
+Target MySQL contoh dapat didaftarkan dengan engine `MySQL 8.4`, host
+`mysql-target`, port `3306`, database/username/password dari variabel
+`MYSQL_TARGET_DB_*`, dan SSL mode `disable`.
 
 ## Operasional Docker
 
@@ -211,6 +217,7 @@ Dalam mode ini, managed target database menggunakan:
 
 | Field | Nilai |
 |---|---|
+| Engine | `PostgreSQL` |
 | Host | `localhost` |
 | Port | nilai `TARGET_DB_PORT`, default `55433` |
 | Database | nilai `TARGET_DB_NAME` |
@@ -219,6 +226,9 @@ Dalam mode ini, managed target database menggunakan:
 | SSL mode | `disable` |
 
 Vite meneruskan `/api` ke `http://localhost:8080`.
+
+Untuk target MySQL dari host, gunakan engine `MySQL 8.4`, host `localhost`,
+port `MYSQL_TARGET_DB_PORT` (default `55434`), dan credential `MYSQL_TARGET_DB_*`.
 
 ## Model Akses
 
@@ -245,8 +255,8 @@ Viewer menyediakan endpoint terstruktur untuk:
 - column, default, nullable, constraint, dan index;
 - row dengan pagination (`limit` default 50, maksimum 100).
 
-Viewer tidak menerima SQL bebas dan menjalankan query dalam transaksi read-only
-dengan `statement_timeout`.
+Viewer tidak menerima SQL bebas dan menjalankan query dalam transaksi read-only.
+PostgreSQL memakai `statement_timeout`; MySQL dibatasi oleh deadline request.
 
 ## Target Database Migration
 
@@ -262,6 +272,10 @@ Setiap managed database memiliki urutan migration linear dengan status:
 
 Backend melarang transaction control statement seperti `BEGIN`, `COMMIT`, dan
 `ROLLBACK` di dalam SQL migration karena transaction dikelola oleh executor.
+
+Pada PostgreSQL, DML dan DDL dijalankan atomik dalam satu transaction. MySQL
+hanya menerima `SELECT`, `INSERT`, `UPDATE`, dan `DELETE`; DDL ditolak sebelum
+eksekusi karena implicit commit MySQL tidak dapat memenuhi jaminan rollback penuh.
 
 Saat backend start, entry `running` yang tertinggal dari proses sebelumnya
 diubah menjadi `interrupted`. Implementasi Milestone 1 mengasumsikan satu
@@ -281,7 +295,7 @@ make backend-integration-test
 make frontend-check
 ```
 
-Integration test membutuhkan `platform-db` dan `target-db` yang healthy.
+Integration test membutuhkan target database terkait yang healthy.
 
 ## Command Makefile
 
@@ -292,7 +306,7 @@ Integration test membutuhkan `platform-db` dan `target-db` yang healthy.
 | `make app-status` | Lihat seluruh container termasuk one-shot migration |
 | `make app-logs` | Ikuti log backend dan frontend |
 | `make docker-bootstrap-admin` | Buat admin pertama melalui container |
-| `make db-up` | Jalankan hanya platform dan target database |
+| `make db-up` | Jalankan platform, target PostgreSQL, dan target MySQL |
 | `make db-down` | Hentikan seluruh service Compose |
 | `make migrate-up` | Jalankan migration internal dari host |
 | `make migrate-status` | Lihat status migration internal |

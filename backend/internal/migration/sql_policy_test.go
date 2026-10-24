@@ -33,6 +33,34 @@ func TestValidateSQLPolicy(t *testing.T) {
 	}
 }
 
+func TestValidateMySQLAtomicPolicy(t *testing.T) {
+	t.Parallel()
+
+	allowed := []string{
+		"SELECT 1",
+		"INSERT INTO items VALUES ('CREATE TABLE hidden'); UPDATE items SET id=2; DELETE FROM items WHERE id=3",
+		"INSERT INTO items(value) VALUES ('/*! this is data */')",
+		"# CREATE TABLE ignored\nSELECT * FROM `order;items`",
+	}
+	for _, sql := range allowed {
+		if err := validateMySQLAtomicPolicy(sql); err != nil {
+			t.Errorf("validateMySQLAtomicPolicy(%q) error = %v", sql, err)
+		}
+	}
+	blocked := []string{
+		"CREATE TABLE items(id bigint)",
+		"ALTER TABLE items ADD value text",
+		"TRUNCATE items",
+		"BEGIN; SELECT 1",
+		"/*!80000 CREATE TABLE hidden(id bigint) */; SELECT 1",
+	}
+	for _, sql := range blocked {
+		if err := validateMySQLAtomicPolicy(sql); !errors.Is(err, ErrSQLPolicy) {
+			t.Errorf("validateMySQLAtomicPolicy(%q) error = %v, want ErrSQLPolicy", sql, err)
+		}
+	}
+}
+
 func TestAdvisoryKeysAreStableAndNamespaced(t *testing.T) {
 	t.Parallel()
 	firstA, firstB := advisoryKeys("8d728274-b56e-4f93-8893-5b02d76a58cb")

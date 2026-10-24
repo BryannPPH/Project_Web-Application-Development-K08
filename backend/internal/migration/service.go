@@ -154,6 +154,9 @@ func (s *Service) Execute(ctx context.Context, principal auth.Principal, databas
 	if err := validateSQLPolicy(entry.SQL); err != nil {
 		return Entry{}, err
 	}
+	if err := s.executor.Validate(ctx, databaseID, entry.SQL); err != nil {
+		return Entry{}, err
+	}
 
 	entry, err = s.repository.MarkRunning(ctx, databaseID, migrationID, principal.UserID, s.clock.Now())
 	if err != nil {

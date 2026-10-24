@@ -21,7 +21,7 @@ docker-bootstrap-admin:
 	docker compose run --rm bootstrap-admin
 
 db-up:
-	docker compose up -d --wait platform-db target-db
+	docker compose up -d --wait platform-db target-db mysql-target
 
 db-down:
 	docker compose down
@@ -51,6 +51,9 @@ backend-integration-test:
 		TEST_TARGET_DB_HOST=localhost TEST_TARGET_DB_PORT="$(TARGET_DB_PORT)" \
 		TEST_TARGET_DB_NAME="$(TARGET_DB_NAME)" TEST_TARGET_DB_USER="$(TARGET_DB_USER)" \
 		TEST_TARGET_DB_PASSWORD="$(TARGET_DB_PASSWORD)" \
+		TEST_MYSQL_TARGET_DB_HOST=localhost TEST_MYSQL_TARGET_DB_PORT="$(MYSQL_TARGET_DB_PORT)" \
+		TEST_MYSQL_TARGET_DB_NAME="$(MYSQL_TARGET_DB_NAME)" TEST_MYSQL_TARGET_DB_USER="$(MYSQL_TARGET_DB_USER)" \
+		TEST_MYSQL_TARGET_DB_PASSWORD="$(MYSQL_TARGET_DB_PASSWORD)" \
 		go test ./tests/integration -count=1 -v
 
 frontend-install:

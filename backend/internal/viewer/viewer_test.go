@@ -67,6 +67,17 @@ func TestBuildRowsQueryQuotesIdentifiers(t *testing.T) {
 	}
 }
 
+func TestQuoteMySQLIdentifiers(t *testing.T) {
+	t.Parallel()
+
+	if got := quoteMySQLIdentifier("odd`name"); got != "`odd``name`" {
+		t.Fatalf("quoteMySQLIdentifier() = %q", got)
+	}
+	if got := quoteMySQLIdentifiers([]string{"id", "order"}); got != "`id`, `order`" {
+		t.Fatalf("quoteMySQLIdentifiers() = %q", got)
+	}
+}
+
 func TestIsHiddenSchema(t *testing.T) {
 	t.Parallel()
 
@@ -185,7 +196,7 @@ func TestViewOnlyAndViewEditReachTarget(t *testing.T) {
 
 	f := newViewerFixture(t)
 	beginErr := errors.New("begin failed")
-	f.connection.BeginFunc = func(context.Context) (targetdb.Transaction, error) { return nil, beginErr }
+	f.connection.BeginFunc = func(context.Context, ...targetdb.TxOptions) (targetdb.Transaction, error) { return nil, beginErr }
 
 	for _, principal := range []auth.Principal{f.viewer, f.editor} {
 		_, err := f.service.Schemas(context.Background(), principal, databaseID)

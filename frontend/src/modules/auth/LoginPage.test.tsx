@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
@@ -51,6 +51,7 @@ function renderLoginPage() {
 }
 
 afterEach(() => {
+  cleanup()
   clearCsrfToken()
   vi.unstubAllGlobals()
 })
@@ -147,5 +148,56 @@ describe('LoginPage', () => {
       'Nama pengguna atau kata sandi salah.',
     )
     expect(screen.getByLabelText('Kata sandi')).toHaveValue('')
+  })
+
+  it('menampilkan/menyembunyikan kata sandi dan memberi tahu tujuan setelah login', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(() => Promise.resolve(unauthenticatedResponse())))
+    renderLoginPage()
+
+    const password = await screen.findByLabelText('Kata sandi')
+    expect(password).toHaveAttribute('type', 'password')
+    expect(screen.getByRole('status')).toHaveTextContent('Silakan masuk untuk melanjutkan')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tampilkan kata sandi' }))
+    expect(password).toHaveAttribute('type', 'text')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sembunyikan kata sandi' }))
+    expect(password).toHaveAttribute('type', 'password')
+  })
+
+  it('menampilkan pesan khusus saat terlalu banyak percobaan login', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>((input) =>
+        Promise.resolve(
+          String(input).endsWith('/auth/login')
+            ? jsonResponse(
+                { error: { code: 'LOGIN_RATE_LIMITED', message: 'too many login attempts', requestId: 'r' } },
+                429,
+              )
+            : unauthenticatedResponse(),
+        ),
+      ),
+    )
+    renderLoginPage()
+
+    fireEvent.change(await screen.findByLabelText('Nama pengguna'), { target: { value: 'operator' } })
+    fireEvent.change(screen.getByLabelText('Kata sandi'), { target: { value: 'wrong-password' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Masuk' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Terlalu banyak percobaan. Coba lagi dalam beberapa menit.',
+    )
+  })
+
+  it('menampilkan tagline sebagai balon chat Senja', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(() => Promise.resolve(unauthenticatedResponse())))
+    renderLoginPage()
+
+    await screen.findByLabelText('Nama pengguna')
+    expect(document.querySelector('.login-hero__bubble')).toHaveTextContent(
+      'Kelola, lihat, dan migrasikan database PostgreSQL Anda dengan aman.',
+    )
+    expect(document.querySelector('img[src*="senja-waving"]')).toBeInTheDocument()
   })
 })

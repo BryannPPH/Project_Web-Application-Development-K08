@@ -6,9 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/targetdb"
 )
 
@@ -25,18 +22,22 @@ type fakeTargetConnection struct {
 	tx       *fakeTargetTransaction
 	beginErr error
 	closed   bool
+	engine   targetdb.Engine
 }
 
-func (f *fakeTargetConnection) Query(context.Context, string, ...any) (pgx.Rows, error) {
+func (f *fakeTargetConnection) Engine() targetdb.Engine {
+	return targetdb.NormalizeEngine(f.engine)
+}
+func (f *fakeTargetConnection) Query(context.Context, string, ...any) (targetdb.Rows, error) {
 	return nil, errors.New("not configured")
 }
-func (f *fakeTargetConnection) QueryRow(context.Context, string, ...any) pgx.Row {
+func (f *fakeTargetConnection) QueryRow(context.Context, string, ...any) targetdb.Row {
 	return fakeRow{err: errors.New("not configured")}
 }
-func (f *fakeTargetConnection) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
-	return pgconn.CommandTag{}, errors.New("not configured")
+func (f *fakeTargetConnection) Exec(context.Context, string, ...any) (targetdb.CommandResult, error) {
+	return nil, errors.New("not configured")
 }
-func (f *fakeTargetConnection) Begin(context.Context) (targetdb.Transaction, error) {
+func (f *fakeTargetConnection) Begin(context.Context, ...targetdb.TxOptions) (targetdb.Transaction, error) {
 	return f.tx, f.beginErr
 }
 func (f *fakeTargetConnection) Close(context.Context) error { f.closed = true; return nil }
@@ -46,14 +47,17 @@ type fakeTargetTransaction struct {
 	executed, committed, rolledBack bool
 }
 
-func (f *fakeTargetTransaction) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
-	f.executed = true
-	return pgconn.CommandTag{}, f.execErr
+func (f *fakeTargetTransaction) Exec(context.Context, string, ...any) (targetdb.CommandResult, error) {
+	return nil, f.execErr
 }
-func (f *fakeTargetTransaction) Query(context.Context, string, ...any) (pgx.Rows, error) {
+func (f *fakeTargetTransaction) ExecScript(context.Context, string) (targetdb.CommandResult, error) {
+	f.executed = true
+	return nil, f.execErr
+}
+func (f *fakeTargetTransaction) Query(context.Context, string, ...any) (targetdb.Rows, error) {
 	return nil, errors.New("not configured")
 }
-func (f *fakeTargetTransaction) QueryRow(context.Context, string, ...any) pgx.Row {
+func (f *fakeTargetTransaction) QueryRow(context.Context, string, ...any) targetdb.Row {
 	return fakeRow{err: errors.New("not configured")}
 }
 func (f *fakeTargetTransaction) Commit(context.Context) error { f.committed = true; return f.commitErr }
@@ -111,5 +115,17 @@ func TestSanitizeTargetErrorRemovesDSNCredentials(t *testing.T) {
 	message := sanitizeTargetError(errors.New("dial postgres://owner:super-secret@db.internal:5432/app failed"))
 	if strings.Contains(message, "super-secret") {
 		t.Fatalf("sanitized error leaked password: %s", message)
+	}
+}
+
+func TestValidateRejectsMySQLDDL(t *testing.T) {
+	t.Parallel()
+	connection := &fakeTargetConnection{engine: targetdb.EngineMySQL}
+	executor := NewPGExecutor(&fakeTargetProvider{connection: connection})
+	if err := executor.Validate(context.Background(), "database", "CREATE TABLE items(id bigint)"); !errors.Is(err, ErrSQLPolicy) {
+		t.Fatalf("Validate() error = %v, want ErrSQLPolicy", err)
+	}
+	if err := executor.Validate(context.Background(), "database", "INSERT INTO items VALUES (1); UPDATE items SET id=2"); err != nil {
+		t.Fatalf("Validate(transactional DML) error = %v", err)
 	}
 }

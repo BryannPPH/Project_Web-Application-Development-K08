@@ -37,6 +37,7 @@ type ExecutionResult struct {
 }
 
 type Executor interface {
+	Validate(context.Context, string, string) error
 	Execute(context.Context, string, string) ExecutionResult
 }
 

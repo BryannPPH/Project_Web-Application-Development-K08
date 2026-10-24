@@ -1,0 +1,110 @@
+.db-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.db-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.875rem;
+  border: 1px solid var(--line-soft);
+  border-radius: 20px;
+  padding: 1.25rem;
+  background: var(--surface);
+  box-shadow: 0 2px 10px rgb(43 27 46 / 4%);
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.db-card:hover {
+  border-color: var(--brand-peach);
+  box-shadow: 0 4px 14px rgb(43 27 46 / 8%);
+}
+
+.db-card__head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.db-card__icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 999px;
+  color: var(--action);
+  background: var(--selected);
+}
+
+.db-card__title {
+  display: grid;
+  min-width: 0;
+}
+
+.db-card__title h2 {
+  margin: 0;
+  overflow: hidden;
+  font-size: 1rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.db-card__title code {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.db-card__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.db-card__badges .badge + .badge {
+  margin-left: 0;
+}
+
+.db-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  width: 100%;
+  margin-top: auto;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 0.875rem;
+}
+
+.db-card--skeleton {
+  height: 10.5rem;
+  border-color: var(--line-soft);
+  background: linear-gradient(90deg, var(--surface) 0%, var(--hover) 50%, var(--surface) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s ease-in-out infinite;
+}
+
+.db-empty-hint {
+  margin: 0.5rem 0 0;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+
+  to {
+    background-position: -100% 0;
+  }
+}

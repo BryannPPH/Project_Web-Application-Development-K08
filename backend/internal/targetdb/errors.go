@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
@@ -60,6 +61,10 @@ func newUnavailableError(databaseID string, err error) *UnavailableError {
 	if errors.As(err, &pgError) {
 		result.SQLState = pgError.Code
 	}
+	var mysqlError *mysqldriver.MySQLError
+	if errors.As(err, &mysqlError) {
+		result.SQLState = string(mysqlError.SQLState[:])
+	}
 	return result
 }
 
@@ -79,6 +84,17 @@ func ClassifyConnectError(err error) FailureReason {
 		case pgError.Code == "3D000":
 			return ReasonDatabaseNotFound
 		case pgError.Code == "53300":
+			return ReasonTooManyClients
+		}
+	}
+	var mysqlError *mysqldriver.MySQLError
+	if errors.As(err, &mysqlError) {
+		switch mysqlError.Number {
+		case 1045:
+			return ReasonAuthentication
+		case 1049:
+			return ReasonDatabaseNotFound
+		case 1040:
 			return ReasonTooManyClients
 		}
 	}

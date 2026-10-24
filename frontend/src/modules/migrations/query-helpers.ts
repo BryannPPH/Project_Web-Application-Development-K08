@@ -7,12 +7,18 @@ export const migrationQueryKeys = {
 
 const statusLabels: Record<MigrationStatus, string> = {
   draft: 'Draft',
-  running: 'Berjalan',
+  running: 'Berjalan…',
   succeeded: 'Berhasil',
-  failed: 'Gagal (rollback)',
-  interrupted: 'Terputus — perlu rekonsiliasi',
+  failed: 'Gagal · di-rollback',
+  interrupted: 'Terputus',
 }
 
 export function migrationStatusLabel(status: MigrationStatus) {
   return statusLabels[status]
+}
+
+export function displayTime(value: string | null) {
+  return value
+    ? new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
+    : '—'
 }

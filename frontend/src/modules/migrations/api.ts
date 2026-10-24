@@ -1,5 +1,5 @@
 import { apiRequest } from '@/lib/api-client'
-import type { DraftInput, MigrationEntry, MigrationPage } from '@/modules/migrations/types'
+import type { DraftInput, ExplainResult, MigrationEntry, MigrationPage } from '@/modules/migrations/types'
 
 function migrationPath(databaseId: string, suffix = '') {
   return `/databases/${encodeURIComponent(databaseId)}/migrations${suffix}`
@@ -27,5 +27,13 @@ export function updateMigration(databaseId: string, migrationId: string, input: 
 export function executeMigration(databaseId: string, migrationId: string) {
   return apiRequest<MigrationEntry>(migrationPath(databaseId, `/${encodeURIComponent(migrationId)}/execute`), {
     method: 'POST',
+  })
+}
+
+// Analisis plan berjalan di transaksi yang selalu di-rollback oleh backend.
+export function explainMigrationSQL(databaseId: string, sql: string, analyze: boolean) {
+  return apiRequest<ExplainResult>(migrationPath(databaseId, '/explain'), {
+    method: 'POST',
+    json: { sql, analyze },
   })
 }

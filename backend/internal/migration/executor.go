@@ -2,6 +2,7 @@ package migration
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"regexp"
@@ -18,6 +19,18 @@ type PGExecutor struct {
 }
 
 func NewPGExecutor(provider targetdb.Provider) *PGExecutor { return &PGExecutor{provider: provider} }
+
+func (e *PGExecutor) Validate(ctx context.Context, databaseID, sqlText string) error {
+	connection, err := e.provider.Open(ctx, databaseID)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = connection.Close(context.WithoutCancel(ctx)) }()
+	if connection.Engine() == targetdb.EngineMySQL {
+		return validateMySQLAtomicPolicy(sqlText)
+	}
+	return nil
+}
 
 func (e *PGExecutor) Execute(ctx context.Context, databaseID, sqlText string) ExecutionResult {
 	connection, err := e.provider.Open(ctx, databaseID)
@@ -37,11 +50,11 @@ func (e *PGExecutor) Execute(ctx context.Context, databaseID, sqlText string) Ex
 		return ExecutionResult{Status: StatusFailed, PublicError: &message, InternalError: fmt.Errorf("begin target transaction: %w", err)}
 	}
 
-	if _, err := tx.Exec(ctx, sqlText, pgx.QueryExecModeSimpleProtocol); err != nil {
+	if _, err := tx.ExecScript(ctx, sqlText); err != nil {
 		public := sanitizeTargetError(err)
 		rollbackCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if rollbackErr := tx.Rollback(rollbackCtx); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
+		if rollbackErr := tx.Rollback(rollbackCtx); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) && !errors.Is(rollbackErr, sql.ErrTxDone) {
 			message := "migration outcome is uncertain; manual reconciliation is required"
 			return ExecutionResult{
 				Status: StatusInterrupted, PublicError: &message,

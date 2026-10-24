@@ -65,6 +65,24 @@ services:
       retries: 10
       start_period: 5s
 
+  mysql-target:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: ${MYSQL_TARGET_DB_NAME:-target_mysql}
+      MYSQL_USER: ${MYSQL_TARGET_DB_USER:-target_owner}
+      MYSQL_PASSWORD: ${MYSQL_TARGET_DB_PASSWORD:-target_dev_password}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_TARGET_ROOT_PASSWORD:-root_dev_password}
+    ports:
+      - "${MYSQL_TARGET_DB_PORT:-55434}:3306"
+    volumes:
+      - mysql-target-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u$$MYSQL_USER -p$$MYSQL_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
   migrate:
     <<: *backend-image
     command: ["/usr/local/bin/migrate", "up"]
@@ -84,6 +102,8 @@ services:
       platform-db:
         condition: service_healthy
       target-db:
+        condition: service_healthy
+      mysql-target:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
@@ -127,4 +147,5 @@ services:
 volumes:
   platform-db-data:
   target-db-data:
+  mysql-target-data:
 
