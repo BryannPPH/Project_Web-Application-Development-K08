@@ -80,10 +80,12 @@ func (f *fakeLocker) Acquire(context.Context, string) (ExecutionLock, error) {
 }
 
 type fakeExecutor struct {
-	result ExecutionResult
-	calls  int
+	result      ExecutionResult
+	calls       int
+	validateErr error
 }
 
+func (f *fakeExecutor) Validate(context.Context, string, string) error { return f.validateErr }
 func (f *fakeExecutor) Execute(context.Context, string, string) ExecutionResult {
 	f.calls++
 	return f.result

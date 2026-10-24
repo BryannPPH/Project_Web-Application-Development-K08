@@ -4,7 +4,7 @@
 
 - `Authorizer` harus menerapkan pemeriksaan view dan edit berdasarkan grant grup.
   Platform admin tidak mendapat bypass implisit.
-- `TargetProvider` membuka koneksi PostgreSQL target berdasarkan `databaseID`.
+- `TargetProvider` membuka koneksi target berdasarkan `databaseID` dan engine.
   Modul migration tidak membaca atau mendekripsi credential.
 
 Daftarkan `handler.RegisterRoutes` dari `app.WithFeatureFactory`. Handler sudah
@@ -20,10 +20,11 @@ migration.ServiceConfig{
 ```
 
 Eksekusi memegang session advisory lock pada platform database dari sebelum
-state diperiksa ulang sampai status terminal disimpan. SQL dijalankan dengan
-simple protocol di dalam satu target transaction, sehingga multi-statement tetap
-atomic. Transaction-control SQL ditolak oleh scanner sebelum draft disimpan dan
-diperiksa lagi tepat sebelum eksekusi.
+state diperiksa ulang sampai status terminal disimpan. PostgreSQL menjalankan
+script dengan simple protocol di dalam satu target transaction. MySQL memecah
+script secara aman dan mengeksekusi DML dalam transaction yang sama; DDL ditolak
+karena implicit commit. Transaction-control SQL ditolak sebelum draft disimpan
+dan diperiksa lagi tepat sebelum eksekusi.
 
 Entry `interrupted` tidak pernah dicoba ulang otomatis. Operasional harus
 memeriksa keadaan target, mencatat hasil rekonsiliasi, lalu memperbaiki status

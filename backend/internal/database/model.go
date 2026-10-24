@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/authz"
+	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/targetdb"
 )
 
 var (
@@ -29,17 +30,18 @@ func (e *ValidationError) Error() string {
 
 // ManagedDatabase adalah metadata koneksi tanpa credential.
 type ManagedDatabase struct {
-	ID            string    `json:"id"`
-	Name          string    `json:"name"`
-	Host          string    `json:"host"`
-	Port          int       `json:"port"`
-	DatabaseName  string    `json:"databaseName"`
-	Username      string    `json:"username"`
-	SSLMode       string    `json:"sslMode"`
-	IsActive      bool      `json:"isActive"`
-	HasCredential bool      `json:"hasCredential"`
-	CreatedAt     time.Time `json:"createdAt"`
-	UpdatedAt     time.Time `json:"updatedAt"`
+	ID            string          `json:"id"`
+	Engine        targetdb.Engine `json:"engine"`
+	Name          string          `json:"name"`
+	Host          string          `json:"host"`
+	Port          int             `json:"port"`
+	DatabaseName  string          `json:"databaseName"`
+	Username      string          `json:"username"`
+	SSLMode       string          `json:"sslMode"`
+	IsActive      bool            `json:"isActive"`
+	HasCredential bool            `json:"hasCredential"`
+	CreatedAt     time.Time       `json:"createdAt"`
+	UpdatedAt     time.Time       `json:"updatedAt"`
 }
 
 // StoredCredential adalah envelope terenkripsi. Tidak pernah di-encode ke JSON.
@@ -50,34 +52,38 @@ type StoredCredential struct {
 
 // AccessibleDatabase adalah DTO untuk user biasa: tanpa host/username/credential.
 type AccessibleDatabase struct {
-	ID           string            `json:"id"`
-	Name         string            `json:"name"`
-	DatabaseName string            `json:"databaseName"`
-	AccessLevel  authz.AccessLevel `json:"accessLevel"`
+	ID           string                `json:"id"`
+	Engine       targetdb.Engine       `json:"engine"`
+	Capabilities targetdb.Capabilities `json:"capabilities"`
+	Name         string                `json:"name"`
+	DatabaseName string                `json:"databaseName"`
+	AccessLevel  authz.AccessLevel     `json:"accessLevel"`
 }
 
 // CreateInput adalah input pembuatan managed database.
 type CreateInput struct {
-	Name         string `json:"name"`
-	Host         string `json:"host"`
-	Port         int    `json:"port"`
-	DatabaseName string `json:"databaseName"`
-	Username     string `json:"username"`
-	Password     string `json:"password"`
-	SSLMode      string `json:"sslMode"`
-	IsActive     *bool  `json:"isActive"`
+	Engine       targetdb.Engine `json:"engine"`
+	Name         string          `json:"name"`
+	Host         string          `json:"host"`
+	Port         int             `json:"port"`
+	DatabaseName string          `json:"databaseName"`
+	Username     string          `json:"username"`
+	Password     string          `json:"password"`
+	SSLMode      string          `json:"sslMode"`
+	IsActive     *bool           `json:"isActive"`
 }
 
 // UpdateInput adalah patch parsial. Password hanya diubah bila dikirim eksplisit.
 type UpdateInput struct {
-	Name         *string `json:"name"`
-	Host         *string `json:"host"`
-	Port         *int    `json:"port"`
-	DatabaseName *string `json:"databaseName"`
-	Username     *string `json:"username"`
-	Password     *string `json:"password"`
-	SSLMode      *string `json:"sslMode"`
-	IsActive     *bool   `json:"isActive"`
+	Engine       *targetdb.Engine `json:"engine"`
+	Name         *string          `json:"name"`
+	Host         *string          `json:"host"`
+	Port         *int             `json:"port"`
+	DatabaseName *string          `json:"databaseName"`
+	Username     *string          `json:"username"`
+	Password     *string          `json:"password"`
+	SSLMode      *string          `json:"sslMode"`
+	IsActive     *bool            `json:"isActive"`
 }
 
 // TestResult adalah hasil test connection yang aman ditampilkan.
@@ -89,6 +95,7 @@ type TestResult struct {
 
 // patch adalah UpdateInput yang sudah dinormalisasi untuk repository.
 type patch struct {
+	Engine       *targetdb.Engine
 	Name         *string
 	Host         *string
 	Port         *int

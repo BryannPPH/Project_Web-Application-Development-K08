@@ -15,6 +15,7 @@ import (
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/authz"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/httpapi"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/shared/apihttp"
+	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/targetdb"
 )
 
 type MigrationService interface {
@@ -190,8 +191,12 @@ func (h *Handler) writeServiceError(w http.ResponseWriter, r *http.Request, err 
 	case errors.Is(err, ErrInvalidInput):
 		writeMigrationError(w, http.StatusBadRequest, "INVALID_INPUT", "migration name or SQL is invalid")
 	case errors.Is(err, ErrSQLPolicy):
-		writeMigrationError(w, http.StatusUnprocessableEntity, "SQL_POLICY_VIOLATION", "transaction control statements are not allowed")
+		writeMigrationError(w, http.StatusUnprocessableEntity, "SQL_POLICY_VIOLATION", "SQL is not allowed by the target transaction policy")
 	default:
+		if public, ok := targetdb.Describe(err); ok {
+			apihttp.WriteError(w, public.Status, public.Code, public.Message)
+			return
+		}
 		h.logger.ErrorContext(r.Context(), "migration request failed", "error", err,
 			"database_id", r.PathValue("databaseId"), "migration_id", r.PathValue("migrationId"))
 		writeMigrationError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error")

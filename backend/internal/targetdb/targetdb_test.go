@@ -90,6 +90,43 @@ func TestPGXConfigQuotesEveryValue(t *testing.T) {
 	}
 }
 
+func TestMySQLConfigAndCapabilities(t *testing.T) {
+	t.Parallel()
+
+	config := validConfig()
+	config.Engine = EngineMySQL
+	config.Port = 3306
+	if err := config.Validate(); err != nil {
+		t.Fatalf("Validate(MySQL) error = %v", err)
+	}
+	config.SSLMode = "prefer"
+	if err := config.Validate(); !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("Validate(MySQL prefer) error = %v, want ErrInvalidConfig", err)
+	}
+	capabilities := CapabilitiesFor(EngineMySQL)
+	if !capabilities.Viewer || !capabilities.TransactionalMigration || capabilities.TransactionalDDL {
+		t.Fatalf("CapabilitiesFor(MySQL) = %+v", capabilities)
+	}
+}
+
+func TestSplitMySQLScript(t *testing.T) {
+	t.Parallel()
+
+	statements, err := splitMySQLScript("INSERT INTO `odd;name` VALUES ('a;b'); # ignored;\nUPDATE items SET value=\"c;d\"")
+	if err != nil {
+		t.Fatalf("splitMySQLScript() error = %v", err)
+	}
+	if len(statements) != 2 || !strings.HasPrefix(statements[0], "INSERT") || !strings.Contains(statements[1], "UPDATE") {
+		t.Fatalf("splitMySQLScript() = %#v", statements)
+	}
+	if _, err := splitMySQLScript("INSERT INTO items VALUES ('unterminated)"); err == nil {
+		t.Fatal("splitMySQLScript() accepted unterminated quote")
+	}
+	if _, err := splitMySQLScript("/*!80000 CREATE TABLE hidden(id BIGINT) */; SELECT 1"); err == nil {
+		t.Fatal("splitMySQLScript() accepted executable comment")
+	}
+}
+
 func TestConnectionConfigStringHidesCredential(t *testing.T) {
 	t.Parallel()
 

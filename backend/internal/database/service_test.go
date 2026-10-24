@@ -80,6 +80,24 @@ func (r *memoryRepository) Update(_ context.Context, id string, changes patch) (
 	if changes.Name != nil {
 		record.Name = *changes.Name
 	}
+	if changes.Engine != nil {
+		record.Engine = *changes.Engine
+	}
+	if changes.Host != nil {
+		record.Host = *changes.Host
+	}
+	if changes.Port != nil {
+		record.Port = *changes.Port
+	}
+	if changes.DatabaseName != nil {
+		record.DatabaseName = *changes.DatabaseName
+	}
+	if changes.Username != nil {
+		record.Username = *changes.Username
+	}
+	if changes.SSLMode != nil {
+		record.SSLMode = *changes.SSLMode
+	}
 	if changes.IsActive != nil {
 		record.IsActive = *changes.IsActive
 	}
@@ -127,6 +145,7 @@ func newFixture(t *testing.T) *fixture {
 
 func validInput() CreateInput {
 	return CreateInput{
+		Engine:       targetdb.EnginePostgreSQL,
 		Name:         "Target",
 		Host:         "localhost",
 		Port:         55433,
@@ -134,6 +153,48 @@ func validInput() CreateInput {
 		Username:     "target_owner",
 		Password:     "target_dev_password",
 		SSLMode:      "disable",
+	}
+}
+
+func TestCreateMySQLDefaultsAndCapabilities(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t)
+	input := validInput()
+	input.Engine = targetdb.EngineMySQL
+	input.Port = 0
+	input.SSLMode = ""
+	created, err := f.service.Create(context.Background(), f.admin, input)
+	if err != nil {
+		t.Fatalf("Create(MySQL) error = %v", err)
+	}
+	if created.Port != 3306 || created.SSLMode != "require" || created.Engine != targetdb.EngineMySQL {
+		t.Fatalf("Create(MySQL) = %+v", created)
+	}
+	f.store.AddDatabase(created.ID, true)
+	f.store.Grant("mysql-readers", created.ID, authz.AccessViewOnly, f.user.UserID)
+	detail, err := f.service.GetAccessible(context.Background(), f.user, created.ID)
+	if err != nil {
+		t.Fatalf("GetAccessible(MySQL) error = %v", err)
+	}
+	if !detail.Capabilities.Viewer || !detail.Capabilities.TransactionalMigration || detail.Capabilities.TransactionalDDL {
+		t.Fatalf("MySQL capabilities = %+v", detail.Capabilities)
+	}
+}
+
+func TestUpdateRejectsEngineChange(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t)
+	created, err := f.service.Create(context.Background(), f.admin, validInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := targetdb.EngineMySQL
+	_, err = f.service.Update(context.Background(), f.admin, created.ID, UpdateInput{Engine: &engine})
+	var validation *ValidationError
+	if !errors.As(err, &validation) || validation.Field != "engine" {
+		t.Fatalf("Update(engine) error = %v", err)
 	}
 }
 

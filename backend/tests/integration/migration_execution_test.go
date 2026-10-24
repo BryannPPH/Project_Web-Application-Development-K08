@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/auth"
@@ -30,6 +29,7 @@ func (allowMigrationAccess) RequireDatabaseEdit(context.Context, auth.Principal,
 
 type integrationTargetProvider struct{ url string }
 type integrationTargetConnection struct{ connection *pgx.Conn }
+type integrationTargetTransaction struct{ transaction pgx.Tx }
 
 func (p integrationTargetProvider) Open(ctx context.Context, _ string) (targetdb.Connection, error) {
 	connection, err := pgx.Connect(ctx, p.url)
@@ -38,19 +38,47 @@ func (p integrationTargetProvider) Open(ctx context.Context, _ string) (targetdb
 	}
 	return integrationTargetConnection{connection: connection}, nil
 }
-func (c integrationTargetConnection) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+func (c integrationTargetConnection) Engine() targetdb.Engine { return targetdb.EnginePostgreSQL }
+func (c integrationTargetConnection) Query(ctx context.Context, sql string, args ...any) (targetdb.Rows, error) {
 	return c.connection.Query(ctx, sql, args...)
 }
-func (c integrationTargetConnection) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
+func (c integrationTargetConnection) QueryRow(ctx context.Context, sql string, args ...any) targetdb.Row {
 	return c.connection.QueryRow(ctx, sql, args...)
 }
-func (c integrationTargetConnection) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+func (c integrationTargetConnection) Exec(ctx context.Context, sql string, args ...any) (targetdb.CommandResult, error) {
 	return c.connection.Exec(ctx, sql, args...)
 }
-func (c integrationTargetConnection) Begin(ctx context.Context) (targetdb.Transaction, error) {
-	return c.connection.Begin(ctx)
+func (c integrationTargetConnection) Begin(ctx context.Context, options ...targetdb.TxOptions) (targetdb.Transaction, error) {
+	var pgOptions pgx.TxOptions
+	if len(options) > 0 && options[0].ReadOnly {
+		pgOptions.AccessMode = pgx.ReadOnly
+	}
+	tx, err := c.connection.BeginTx(ctx, pgOptions)
+	if err != nil {
+		return nil, err
+	}
+	return integrationTargetTransaction{transaction: tx}, nil
 }
 func (c integrationTargetConnection) Close(ctx context.Context) error { return c.connection.Close(ctx) }
+
+func (t integrationTargetTransaction) Query(ctx context.Context, sql string, args ...any) (targetdb.Rows, error) {
+	return t.transaction.Query(ctx, sql, args...)
+}
+func (t integrationTargetTransaction) QueryRow(ctx context.Context, sql string, args ...any) targetdb.Row {
+	return t.transaction.QueryRow(ctx, sql, args...)
+}
+func (t integrationTargetTransaction) Exec(ctx context.Context, sql string, args ...any) (targetdb.CommandResult, error) {
+	return t.transaction.Exec(ctx, sql, args...)
+}
+func (t integrationTargetTransaction) ExecScript(ctx context.Context, sql string) (targetdb.CommandResult, error) {
+	return t.transaction.Exec(ctx, sql, pgx.QueryExecModeSimpleProtocol)
+}
+func (t integrationTargetTransaction) Commit(ctx context.Context) error {
+	return t.transaction.Commit(ctx)
+}
+func (t integrationTargetTransaction) Rollback(ctx context.Context) error {
+	return t.transaction.Rollback(ctx)
+}
 
 func TestMigrationExecutionCommitAndRollback(t *testing.T) {
 	platformURL := os.Getenv("TEST_PLATFORM_DATABASE_URL")

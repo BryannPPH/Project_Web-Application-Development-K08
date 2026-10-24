@@ -32,13 +32,14 @@ func NewPGRepository(database *pgxpool.Pool) *PGRepository {
 
 // selectColumns sengaja tidak memuat credential_ciphertext.
 const selectColumns = `
-	id::text, name, host, port, database_name, username, ssl_mode, is_active,
+	id::text, engine, name, host, port, database_name, username, ssl_mode, is_active,
 	octet_length(credential_ciphertext) > 0, created_at, updated_at`
 
 func scanManagedDatabase(row pgx.Row) (ManagedDatabase, error) {
 	var record ManagedDatabase
 	err := row.Scan(
 		&record.ID,
+		&record.Engine,
 		&record.Name,
 		&record.Host,
 		&record.Port,
@@ -108,11 +109,12 @@ func (r *PGRepository) GetCredential(ctx context.Context, id string) (ManagedDat
 	var record ManagedDatabase
 	var credential StoredCredential
 	err := r.database.QueryRow(ctx, `
-		SELECT id::text, name, host, port, database_name, username, ssl_mode, is_active,
+		SELECT id::text, engine, name, host, port, database_name, username, ssl_mode, is_active,
 		       credential_ciphertext, credential_key_version
 		FROM managed_databases
 		WHERE id = $1::uuid`, id).Scan(
 		&record.ID,
+		&record.Engine,
 		&record.Name,
 		&record.Host,
 		&record.Port,
@@ -136,12 +138,13 @@ func (r *PGRepository) GetCredential(ctx context.Context, id string) (ManagedDat
 func (r *PGRepository) Create(ctx context.Context, record ManagedDatabase, credential StoredCredential) (ManagedDatabase, error) {
 	created, err := scanManagedDatabase(r.database.QueryRow(ctx, `
 		INSERT INTO managed_databases (
-			id, name, host, port, database_name, username,
+			id, engine, name, host, port, database_name, username,
 			credential_ciphertext, credential_key_version, ssl_mode, is_active
 		)
-		VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING `+selectColumns,
 		record.ID,
+		record.Engine,
 		record.Name,
 		record.Host,
 		record.Port,
@@ -168,19 +171,21 @@ func (r *PGRepository) Update(ctx context.Context, id string, changes patch) (Ma
 	// SQL statis: nilai NULL berarti field tidak diubah.
 	updated, err := scanManagedDatabase(r.database.QueryRow(ctx, `
 		UPDATE managed_databases
-		SET name = COALESCE($2, name),
-			host = COALESCE($3, host),
-			port = COALESCE($4, port),
-			database_name = COALESCE($5, database_name),
-			username = COALESCE($6, username),
-			ssl_mode = COALESCE($7, ssl_mode),
-			is_active = COALESCE($8, is_active),
-			credential_ciphertext = COALESCE($9, credential_ciphertext),
-			credential_key_version = COALESCE($10, credential_key_version),
+		SET engine = COALESCE($2, engine),
+			name = COALESCE($3, name),
+			host = COALESCE($4, host),
+			port = COALESCE($5, port),
+			database_name = COALESCE($6, database_name),
+			username = COALESCE($7, username),
+			ssl_mode = COALESCE($8, ssl_mode),
+			is_active = COALESCE($9, is_active),
+			credential_ciphertext = COALESCE($10, credential_ciphertext),
+			credential_key_version = COALESCE($11, credential_key_version),
 			updated_at = CURRENT_TIMESTAMP
 		WHERE id = $1::uuid
 		RETURNING `+selectColumns,
 		id,
+		changes.Engine,
 		changes.Name,
 		changes.Host,
 		changes.Port,

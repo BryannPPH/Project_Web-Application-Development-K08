@@ -68,7 +68,7 @@ func Build(options Options, dependencies app.FeatureDependencies) (app.Protected
 	if err != nil {
 		return nil, Components{}, err
 	}
-	provider := targetdb.NewPGProvider(databases, options.TargetConnectTimeout, dependencies.Logger)
+	provider := targetdb.NewProvider(databases, options.TargetConnectTimeout, dependencies.Logger)
 	viewers, err := viewer.NewService(policy, provider, options.ViewerQueryTimeout)
 	if err != nil {
 		return nil, Components{}, err
