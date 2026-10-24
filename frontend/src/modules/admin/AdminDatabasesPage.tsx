@@ -5,6 +5,7 @@ import { StatusMessage } from '@/components/StatusMessage'
 import { useManagedDatabaseMutations, useManagedDatabases } from '@/modules/admin/api'
 import { readDatabaseForm } from '@/modules/admin/forms'
 import { sslModes, type ConnectionTestResult, type ManagedDatabase } from '@/modules/admin/types'
+import { databaseEngineLabel, type DatabaseEngine } from '@/modules/databases/types'
 
 const reasonLabels: Record<string, string> = {
   timeout: 'koneksi timeout',
@@ -34,6 +35,11 @@ function DatabaseForm({ initial, onDone }: DatabaseFormProps) {
   const mutations = useManagedDatabaseMutations()
   const [message, setMessage] = useState<{ tone: 'info' | 'error'; text: string } | null>(null)
   const editing = !!initial
+  const [engine, setEngine] = useState<DatabaseEngine>(initial?.engine ?? 'postgresql')
+  const [port, setPort] = useState(String(initial?.port ?? 5432))
+  const supportedSSLModes = engine === 'mysql'
+    ? sslModes.filter((mode) => mode === 'disable' || mode === 'require')
+    : sslModes
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -81,6 +87,25 @@ function DatabaseForm({ initial, onDone }: DatabaseFormProps) {
     >
       <div className="form-grid">
         <label className="form-field">
+          Engine
+          <select
+            disabled={editing}
+            name={editing ? undefined : 'engine'}
+            onChange={(event) => {
+              const nextEngine = event.target.value as DatabaseEngine
+              setPort((current) => current === String(engine === 'mysql' ? 3306 : 5432)
+                ? String(nextEngine === 'mysql' ? 3306 : 5432)
+                : current)
+              setEngine(nextEngine)
+            }}
+            value={engine}
+          >
+            <option value="postgresql">PostgreSQL</option>
+            <option value="mysql">MySQL 8.4</option>
+          </select>
+          {editing ? <input name="engine" type="hidden" value={engine} /> : null}
+        </label>
+        <label className="form-field">
           Nama koneksi
           <input defaultValue={initial?.name} name="name" />
         </label>
@@ -90,7 +115,7 @@ function DatabaseForm({ initial, onDone }: DatabaseFormProps) {
         </label>
         <label className="form-field">
           Port
-          <input defaultValue={initial?.port ?? 5432} inputMode="numeric" name="port" />
+          <input inputMode="numeric" name="port" onChange={(event) => setPort(event.target.value)} value={port} />
         </label>
         <label className="form-field">
           Nama database
@@ -113,7 +138,7 @@ function DatabaseForm({ initial, onDone }: DatabaseFormProps) {
         <label className="form-field">
           SSL mode
           <select defaultValue={initial?.sslMode ?? 'require'} name="sslMode">
-            {sslModes.map((mode) => (
+            {supportedSSLModes.map((mode) => (
               <option key={mode} value={mode}>
                 {mode}
               </option>
@@ -179,7 +204,7 @@ export function AdminDatabasesPage() {
   return (
     <div>
       <div className="panel">
-        <h2>{editing ? `Ubah ${editing.name}` : 'Tambah koneksi PostgreSQL'}</h2>
+        <h2>{editing ? `Ubah ${editing.name}` : 'Tambah koneksi database'}</h2>
         <DatabaseForm
           initial={editing ?? undefined}
           key={editing?.id ?? `new-${formKey}`}
@@ -208,6 +233,7 @@ export function AdminDatabasesPage() {
               <thead>
                 <tr>
                   <th>Nama</th>
+                  <th>Engine</th>
                   <th>Target</th>
                   <th>SSL</th>
                   <th>Credential</th>
@@ -219,6 +245,7 @@ export function AdminDatabasesPage() {
                 {databases.data.map((database) => (
                   <tr key={database.id}>
                     <td>{database.name}</td>
+                    <td><span className="badge">{databaseEngineLabel(database.engine)}</span></td>
                     <td>
                       <code>
                         {database.username}@{database.host}:{database.port}/{database.databaseName}

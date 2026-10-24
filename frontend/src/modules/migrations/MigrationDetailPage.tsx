@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import { ApiError } from '@/lib/api-client'
+import { useAccessibleDatabase } from '@/modules/databases/api'
 import { createMigration, executeMigration, getMigration, updateMigration } from '@/modules/migrations/api'
 import { MigrationEditor } from '@/modules/migrations/MigrationEditor'
 import { migrationQueryKeys, migrationStatusLabel } from '@/modules/migrations/query-helpers'
@@ -20,6 +21,7 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
   const { databaseId = '', migrationId = '' } = useParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const database = useAccessibleDatabase(databaseId)
   const detail = useQuery({
     queryKey: migrationQueryKeys.detail(databaseId, migrationId),
     queryFn: ({ signal }) => getMigration(databaseId, migrationId, signal),
@@ -52,7 +54,7 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
   function confirmExecution() {
     if (!entry) return
     const confirmed = window.confirm(
-      `Jalankan migration v${entry.version} pada database ${databaseId}? Seluruh SQL akan dijalankan dalam satu transaction dan draft tidak dapat diedit lagi.`,
+      `Jalankan migration v${entry.version} pada database ${databaseId}? SQL yang didukung akan dijalankan dalam satu transaction dan draft tidak dapat diedit lagi.`,
     )
     if (confirmed) execute.mutate()
   }
@@ -76,12 +78,14 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
       </div>
 
       {entry?.errorMessage ? <p className="migration-alert" role="alert">{entry.errorMessage}</p> : null}
+      {database.data?.capabilities?.transactionalDdl === false ? <p className="migration-alert">Target ini tidak mendukung DDL atomik. Migration hanya dapat berisi SELECT, INSERT, UPDATE, dan DELETE.</p> : null}
       {entry?.status === 'interrupted' ? <p className="migration-alert" role="alert">Execution berikutnya diblokir sampai kondisi target direkonsiliasi secara manual.</p> : null}
       {save.isError ? <ErrorMessage error={save.error} /> : null}
       {execute.isError ? <ErrorMessage error={execute.error} /> : null}
 
       <MigrationEditor
         disabled={!editable}
+        transactionalDdl={database.data?.capabilities?.transactionalDdl}
         initialValue={entry ? { name: entry.name, sql: entry.sql } : undefined}
         onSubmit={(input) => save.mutate(input)}
         pending={busy}

@@ -10,6 +10,7 @@ interface MigrationEditorProps {
   pending?: boolean
   submitLabel: string
   onSubmit: (input: DraftInput) => void
+  transactionalDdl?: boolean
 }
 
 export function MigrationEditor({
@@ -18,6 +19,7 @@ export function MigrationEditor({
   pending = false,
   submitLabel,
   onSubmit,
+  transactionalDdl = true,
 }: MigrationEditorProps) {
   const [name, setName] = useState(initialValue.name)
   const [sql, setSQL] = useState(initialValue.sql)
@@ -49,7 +51,9 @@ export function MigrationEditor({
         <textarea aria-describedby="sql-help" disabled={disabled || pending} onChange={(event) => setSQL(event.target.value)} rows={18} spellCheck={false} value={sql} />
       </label>
       <p className="migration-help" id="sql-help">
-        Seluruh SQL dijalankan dalam satu transaction. BEGIN, COMMIT, ROLLBACK, dan kontrol transaction lain tidak diperbolehkan.
+        {!transactionalDdl
+          ? 'Target ini hanya menerima statement DML transaksional (SELECT, INSERT, UPDATE, DELETE). DDL ditolak karena dapat melakukan implicit commit.'
+          : 'Seluruh SQL dijalankan dalam satu transaction. BEGIN, COMMIT, ROLLBACK, dan kontrol transaction lain tidak diperbolehkan.'}
       </p>
       {validation ? <p className="migration-alert" role="alert">{validation}</p> : null}
       {!disabled ? (

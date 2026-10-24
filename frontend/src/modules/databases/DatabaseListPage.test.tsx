@@ -19,8 +19,8 @@ describe('DatabaseListPage', () => {
       url.pathname === '/api/v1/databases'
         ? jsonResponse({
             databases: [
-              { id: 'db-1', name: 'Warehouse', databaseName: 'warehouse', accessLevel: 'view_only' },
-              { id: 'db-2', name: 'Sales', databaseName: 'sales', accessLevel: 'view_edit' },
+              { id: 'db-1', name: 'Warehouse', databaseName: 'warehouse', engine: 'postgresql', capabilities: { viewer: true, transactionalMigration: true, transactionalDdl: true }, accessLevel: 'view_only' },
+              { id: 'db-2', name: 'Sales', databaseName: 'sales', engine: 'mysql', capabilities: { viewer: true, transactionalMigration: true, transactionalDdl: false }, accessLevel: 'view_edit' },
             ],
           })
         : undefined,

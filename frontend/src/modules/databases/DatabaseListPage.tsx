@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { describeError } from '@/components/error-message'
 import { StatusMessage } from '@/components/StatusMessage'
 import { useAccessibleDatabases } from '@/modules/databases/api'
-import { accessLevelLabel } from '@/modules/databases/types'
+import { accessLevelLabel, databaseEngineLabel } from '@/modules/databases/types'
 
 export function DatabaseListPage() {
   const databases = useAccessibleDatabases()
@@ -42,6 +42,7 @@ export function DatabaseListPage() {
               <tr>
                 <th>Nama</th>
                 <th>Database</th>
+                <th>Engine</th>
                 <th>Akses</th>
                 <th aria-label="Aksi" />
               </tr>
@@ -53,6 +54,7 @@ export function DatabaseListPage() {
                   <td>
                     <code>{database.databaseName}</code>
                   </td>
+                  <td><span className="badge">{databaseEngineLabel(database.engine)}</span></td>
                   <td>
                     <span
                       className={

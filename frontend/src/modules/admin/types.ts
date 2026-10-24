@@ -1,5 +1,5 @@
 import type { PlatformRole } from '@/modules/auth/types'
-import type { AccessLevel } from '@/modules/databases/types'
+import type { AccessLevel, DatabaseEngine } from '@/modules/databases/types'
 
 export interface AdminUser {
   id: string
@@ -45,6 +45,7 @@ export const sslModes: SSLMode[] = ['disable', 'allow', 'prefer', 'require', 've
 export interface ManagedDatabase {
   id: string
   name: string
+  engine: DatabaseEngine
   host: string
   port: number
   databaseName: string
@@ -58,6 +59,7 @@ export interface ManagedDatabase {
 
 export interface ManagedDatabaseInput {
   name: string
+  engine: DatabaseEngine
   host: string
   port: number
   databaseName: string

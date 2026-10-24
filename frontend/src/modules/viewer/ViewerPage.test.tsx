@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ViewerPage } from '@/modules/viewer/ViewerPage'
 import { errorResponse, jsonResponse, mockFetch, regularUser, renderRoute } from '@/test/platform-test-utils'
 
-const database = { id: 'db-1', name: 'Warehouse', databaseName: 'warehouse', accessLevel: 'view_only' }
+const database = { id: 'db-1', name: 'Warehouse', databaseName: 'warehouse', engine: 'postgresql', capabilities: { viewer: true, transactionalMigration: true, transactionalDdl: true }, accessLevel: 'view_only' }
 const tablePath = '/api/v1/databases/db-1/schemas/public/tables/customers'
 
 afterEach(() => {

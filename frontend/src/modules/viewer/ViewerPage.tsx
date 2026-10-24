@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { describeError } from '@/components/error-message'
 import { StatusMessage } from '@/components/StatusMessage'
 import { useAccessibleDatabase, useAccessibleDatabases } from '@/modules/databases/api'
-import { accessLevelLabel } from '@/modules/databases/types'
+import { accessLevelLabel, databaseEngineLabel } from '@/modules/databases/types'
 import { useSchemas, useTableDetail, useTables } from '@/modules/viewer/api'
 import { TableData } from '@/modules/viewer/TableData'
 import { TableStructure } from '@/modules/viewer/TableStructure'
@@ -40,7 +40,7 @@ export function ViewerPage() {
         <div>
           <h1>{database.data.name}</h1>
           <span className="muted">
-            <code>{database.data.databaseName}</code> ·{' '}
+            <code>{database.data.databaseName}</code> · {databaseEngineLabel(database.data.engine)} ·{' '}
             <span className="badge">{accessLevelLabel(database.data.accessLevel)}</span>
           </span>
         </div>

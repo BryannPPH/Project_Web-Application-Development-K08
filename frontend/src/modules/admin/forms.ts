@@ -1,4 +1,5 @@
 import type { ManagedDatabaseInput, SSLMode } from '@/modules/admin/types'
+import type { DatabaseEngine } from '@/modules/databases/types'
 
 // Validasi di frontend hanya untuk UX; backend tetap memvalidasi ulang.
 
@@ -18,10 +19,12 @@ export function validateNewUser(username: string, password: string) {
 export function readDatabaseForm(form: HTMLFormElement, requirePassword: boolean) {
   const data = new FormData(form)
   const text = (key: string) => String(data.get(key) ?? '').trim()
+  const engine = (text('engine') || 'postgresql') as DatabaseEngine
   const input: ManagedDatabaseInput = {
     name: text('name'),
+    engine,
     host: text('host'),
-    port: Number(text('port') || 5432),
+    port: Number(text('port') || (engine === 'mysql' ? 3306 : 5432)),
     databaseName: text('databaseName'),
     username: text('username'),
     sslMode: (text('sslMode') || 'require') as SSLMode,
