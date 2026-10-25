@@ -85,7 +85,7 @@ export function MigrationEditor({
         <Icon name="info" size={14} />
         {transactionalDdl
           ? 'Seluruh SQL dijalankan dalam satu transaction. BEGIN, COMMIT, ROLLBACK, dan kontrol transaction lain tidak diperbolehkan.'
-          : 'Target ini hanya menerima statement DML transaksional (SELECT, INSERT, UPDATE, DELETE). DDL ditolak karena dapat melakukan implicit commit.'}
+          : 'SELECT, INSERT, UPDATE, dan DELETE dapat dijalankan dalam satu transaksi. DDL (CREATE, ALTER, DROP) ditolak karena dapat melakukan implicit commit.'}
       </p>
       {validation ? (
         <p className="form-error" role="alert">

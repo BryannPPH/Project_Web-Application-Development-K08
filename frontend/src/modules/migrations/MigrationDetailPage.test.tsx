@@ -1,11 +1,19 @@
 import { cleanup, fireEvent, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import type { AccessibleDatabase } from '@/modules/databases/types'
 import type { MigrationEntry } from '@/modules/migrations/types'
 import { MigrationDetailPage } from '@/modules/migrations/MigrationDetailPage'
 import { jsonResponse, migrationEntry, mockFetch, regularUser, renderRoute, senjaImage } from '@/test/platform-test-utils'
 
-const database = { id: 'db-1', name: 'Target Lokal', databaseName: 'target_db', accessLevel: 'view_edit' }
+const database: AccessibleDatabase = {
+  id: 'db-1',
+  name: 'Target Lokal',
+  databaseName: 'target_db',
+  engine: 'postgresql',
+  capabilities: { viewer: true, transactionalMigration: true, transactionalDdl: true },
+  accessLevel: 'view_edit',
+}
 
 afterEach(() => {
   cleanup()
@@ -13,9 +21,9 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-function renderDetail(entry: MigrationEntry) {
+function renderDetail(entry: MigrationEntry, target: AccessibleDatabase = database) {
   const fetchMock = mockFetch((url) => {
-    if (url.pathname === '/api/v1/databases/db-1') return jsonResponse({ database })
+    if (url.pathname === '/api/v1/databases/db-1') return jsonResponse({ database: target })
     if (url.pathname === '/api/v1/databases/db-1/migrations/m1') return jsonResponse(entry)
     return undefined
   })
@@ -84,5 +92,16 @@ describe('MigrationDetailPage', () => {
     expect(await screen.findByLabelText('Nama migration')).toBeDisabled()
     expect(screen.queryByRole('button', { name: /Jalankan/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Simpan perubahan' })).not.toBeInTheDocument()
+  })
+
+  it('draft DML MySQL tidak ditandai sebagai DDL yang ditolak', async () => {
+    renderDetail(
+      migrationEntry({ status: 'draft', sql: "INSERT INTO bonus_mysql_manual (id, code) VALUES (1, 'ok');" }),
+      { ...database, engine: 'mysql', capabilities: { viewer: true, transactionalMigration: true, transactionalDdl: false } },
+    )
+
+    expect(await screen.findByText(/SELECT, INSERT, UPDATE, dan DELETE dapat dijalankan/)).toBeInTheDocument()
+    expect(screen.queryByText('DDL tidak didukung pada target ini')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Jalankan v1' })).toBeEnabled()
   })
 })

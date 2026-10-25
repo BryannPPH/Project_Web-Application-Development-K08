@@ -105,11 +105,6 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
       </div>
 
       {entry ? <MigrationResult entry={entry} /> : null}
-      {!transactionalDdl && editable ? (
-        <StatusMessage title="DDL tidak didukung pada target ini" tone="warning">
-          Target ini tidak mendukung DDL atomik. Migration hanya dapat berisi SELECT, INSERT, UPDATE, dan DELETE.
-        </StatusMessage>
-      ) : null}
       {save.isError ? <ErrorMessage error={save.error} /> : null}
       {execute.isError ? <ErrorMessage error={execute.error} /> : null}
 

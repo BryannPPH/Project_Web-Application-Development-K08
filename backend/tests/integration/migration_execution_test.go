@@ -2,6 +2,7 @@ package integration_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -218,6 +219,18 @@ func TestMigrationExecutionCommitAndRollback(t *testing.T) {
 	recovered, err := repository.Get(ctx, databaseID, orphaned.ID)
 	if err != nil || recovered.Status != migration.StatusInterrupted || recovered.ErrorMessage == nil {
 		t.Fatalf("recovered migration = %#v, error %v", recovered, err)
+	}
+
+	blocked, err := service.CreateDraft(ctx, principal, databaseID, "blocked by interrupted fixture", "SELECT 2")
+	if err != nil {
+		t.Fatalf("create draft after interrupted migration: %v", err)
+	}
+	if _, err := service.Execute(ctx, principal, databaseID, blocked.ID); !errors.Is(err, migration.ErrWrongOrder) {
+		t.Fatalf("execute migration after interrupted migration error = %v, want ErrWrongOrder", err)
+	}
+	stillDraft, err := repository.Get(ctx, databaseID, blocked.ID)
+	if err != nil || stillDraft.Status != migration.StatusDraft {
+		t.Fatalf("blocked migration status = %s, error %v; want draft", stillDraft.Status, err)
 	}
 
 	const concurrentDrafts = 8

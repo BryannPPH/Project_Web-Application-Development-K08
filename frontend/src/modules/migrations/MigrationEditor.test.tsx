@@ -44,6 +44,7 @@ describe('MigrationEditor', () => {
   it('menampilkan batas DDL berdasarkan capability target', () => {
     render(<MigrationEditor onSubmit={vi.fn()} submitLabel="Simpan" transactionalDdl={false} />)
 
-    expect(screen.getByText(/DDL ditolak/)).toBeInTheDocument()
+    expect(screen.getByText(/SELECT, INSERT, UPDATE, dan DELETE dapat dijalankan/)).toBeInTheDocument()
+    expect(screen.getByText(/DDL \(CREATE, ALTER, DROP\) ditolak/)).toBeInTheDocument()
   })
 })
