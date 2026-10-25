@@ -128,6 +128,20 @@ Target MySQL contoh dapat didaftarkan dengan engine `MySQL 8.4`, host
 `mysql-target`, port `3306`, database/username/password dari variabel
 `MYSQL_TARGET_DB_*`, dan SSL mode `disable`.
 
+### 6. Isi target PostgreSQL dengan data universitas
+
+Seed opsional ini membuat delapan schema domain, puluhan table/view, serta
+ratusan ribu row untuk mencoba viewer, schema diff, migration, dan EXPLAIN:
+
+```bash
+make seed-university
+```
+
+Command dapat dijalankan ulang. Setiap eksekusi hanya menghapus dan membuat
+ulang schema `campus`, `people`, `academics`, `admissions`, `finance`,
+`library`, `research`, dan `reporting` pada `target-db`. Schema lain tidak
+diubah. Rincian dataset ada di `database/seeds/university/README.md`.
+
 ## Operasional Docker
 
 Lihat status seluruh service:
