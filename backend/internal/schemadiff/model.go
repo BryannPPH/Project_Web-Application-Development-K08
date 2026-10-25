@@ -135,8 +135,8 @@ type Result struct {
 	Changes   []Change        `json:"changes"`
 	SQL       string          `json:"sql"`
 	Summary   Summary         `json:"summary"`
-	// Executable false bila engine target tidak bisa menjalankan DDL sebagai
-	// migration atomik (MySQL); SQL tetap dapat ditinjau dan disalin.
+	// Executable menandakan SQL diff dapat diteruskan sebagai migration.
+	// Engine MySQL mengeksekusi DDL tanpa jaminan rollback lintas statement.
 	Executable bool     `json:"executable"`
 	Notes      []string `json:"notes"`
 }

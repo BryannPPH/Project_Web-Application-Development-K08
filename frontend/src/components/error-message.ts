@@ -24,7 +24,7 @@ const messages: Record<string, string> = {
   INVALID_CSRF: 'Token keamanan tidak valid. Muat ulang halaman lalu coba lagi.',
   INVALID_INPUT: 'Input tidak valid. Periksa kembali isian Anda.',
   SQL_POLICY_VIOLATION:
-    'SQL tidak diizinkan: kontrol transaksi (BEGIN/COMMIT/ROLLBACK) dikelola server, dan target MySQL hanya menerima DML.',
+    'SQL tidak diizinkan oleh kebijakan migration target. Kontrol transaksi dikelola server; migration MySQL harus memisahkan DDL dan DML.',
   MIGRATION_CONFLICT: 'Migration ini sudah tidak berstatus draft.',
   MIGRATION_ORDER_BLOCKED: 'Migration sebelumnya harus dijalankan atau diselesaikan terlebih dahulu.',
   ENGINE_MISMATCH: 'Schema sumber dan target harus memakai engine database yang sama.',

@@ -2,7 +2,6 @@ package integration_test
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -108,7 +107,7 @@ func TestMySQLViewerAndTransactionalMigration(t *testing.T) {
 	}
 
 	executor := migration.NewPGExecutor(provider)
-	if err := executor.Validate(ctx, config.DatabaseID, "ALTER TABLE `"+table+"` ADD COLUMN unsafe INT"); !errors.Is(err, migration.ErrSQLPolicy) {
+	if err := executor.Validate(ctx, config.DatabaseID, "ALTER TABLE `"+table+"` ADD COLUMN safe_column INT"); err != nil {
 		t.Fatalf("MySQL DDL validation error = %v", err)
 	}
 	insert := "INSERT INTO `" + table + "` (id, code, quantity) VALUES (1, 'first', 1)"

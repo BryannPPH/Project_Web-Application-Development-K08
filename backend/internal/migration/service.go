@@ -170,7 +170,7 @@ func (s *Service) Execute(ctx context.Context, principal auth.Principal, databas
 	executionCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 	result := s.executor.Execute(executionCtx, databaseID, entry.SQL)
-	if result.Status != StatusSucceeded && result.Status != StatusFailed && result.Status != StatusInterrupted {
+	if result.Status != StatusSucceeded && result.Status != StatusFailed && result.Status != StatusInterrupted && result.Status != StatusNeedsReconciliation {
 		result.Status = StatusInterrupted
 		message := "migration outcome is uncertain; manual reconciliation is required"
 		result.PublicError = &message

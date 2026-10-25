@@ -118,14 +118,17 @@ func TestSanitizeTargetErrorRemovesDSNCredentials(t *testing.T) {
 	}
 }
 
-func TestValidateRejectsMySQLDDL(t *testing.T) {
+func TestValidateAllowsMySQLDDLAndRejectsMixedStatements(t *testing.T) {
 	t.Parallel()
 	connection := &fakeTargetConnection{engine: targetdb.EngineMySQL}
 	executor := NewPGExecutor(&fakeTargetProvider{connection: connection})
-	if err := executor.Validate(context.Background(), "database", "CREATE TABLE items(id bigint)"); !errors.Is(err, ErrSQLPolicy) {
-		t.Fatalf("Validate() error = %v, want ErrSQLPolicy", err)
+	if err := executor.Validate(context.Background(), "database", "CREATE TABLE items(id bigint)"); err != nil {
+		t.Fatalf("Validate(DDL) error = %v", err)
 	}
 	if err := executor.Validate(context.Background(), "database", "INSERT INTO items VALUES (1); UPDATE items SET id=2"); err != nil {
 		t.Fatalf("Validate(transactional DML) error = %v", err)
+	}
+	if err := executor.Validate(context.Background(), "database", "ALTER TABLE items ADD COLUMN label TEXT; INSERT INTO items VALUES (1)"); !errors.Is(err, ErrSQLPolicy) {
+		t.Fatalf("Validate(mixed DDL/DML) error = %v, want ErrSQLPolicy", err)
 	}
 }

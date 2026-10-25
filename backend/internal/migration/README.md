@@ -22,15 +22,18 @@ migration.ServiceConfig{
 Eksekusi memegang session advisory lock pada platform database dari sebelum
 state diperiksa ulang sampai status terminal disimpan. PostgreSQL menjalankan
 script dengan simple protocol di dalam satu target transaction. MySQL memecah
-script secara aman dan mengeksekusi DML dalam transaction yang sama; DDL ditolak
-karena implicit commit. Transaction-control SQL ditolak sebelum draft disimpan
-dan diperiksa lagi tepat sebelum eksekusi.
+script secara aman: DML dijalankan dalam satu transaction, sedangkan DDL table
+yang diizinkan dijalankan satu per satu tanpa transaction pembungkus. DDL MySQL
+melakukan implicit commit; jika sebuah statement gagal, status menjadi
+`needs_reconciliation` karena perubahan sebelumnya mungkin sudah diterapkan.
+DDL dan DML tidak boleh dicampur dalam satu migration. Transaction-control SQL
+ditolak sebelum draft disimpan dan diperiksa lagi tepat sebelum eksekusi.
 
-Entry `interrupted` tidak pernah dicoba ulang otomatis. Operasional harus
-memeriksa keadaan target, mencatat hasil rekonsiliasi, lalu memperbaiki status
-melalui prosedur administratif yang diaudit. `Repository.RecoverRunning` hanya
-disediakan sebagai primitive recovery eksplisit; jangan panggil otomatis saat
-startup.
+Entry `interrupted` dan `needs_reconciliation` tidak pernah dicoba ulang
+otomatis. Operasional harus memeriksa keadaan target, mencatat hasil
+rekonsiliasi, lalu memperbaiki status melalui prosedur administratif yang
+diaudit. `Repository.RecoverRunning` hanya disediakan sebagai primitive recovery
+eksplisit; jangan panggil otomatis saat startup.
 
 Status HTTP utama: `201` create, `200` read/update/execute, `400` validasi,
 `401` tanpa session, `403` tanpa grant/CSRF, `404` tidak ditemukan, `409`

@@ -41,10 +41,10 @@ describe('MigrationEditor', () => {
     expect(screen.queryByRole('button', { name: 'Simpan' })).not.toBeInTheDocument()
   })
 
-  it('menampilkan batas DDL berdasarkan capability target', () => {
+  it('menampilkan aturan DDL non-transaksional berdasarkan capability target', () => {
     render(<MigrationEditor onSubmit={vi.fn()} submitLabel="Simpan" transactionalDdl={false} />)
 
-    expect(screen.getByText(/SELECT, INSERT, UPDATE, dan DELETE dapat dijalankan/)).toBeInTheDocument()
-    expect(screen.getByText(/DDL \(CREATE, ALTER, DROP\) ditolak/)).toBeInTheDocument()
+    expect(screen.getByText(/DML \(SELECT, INSERT, UPDATE, DELETE\) dijalankan dalam satu transaksi/)).toBeInTheDocument()
+    expect(screen.getByText(/DDL didukung terpisah, tetapi melakukan implicit commit/)).toBeInTheDocument()
   })
 })

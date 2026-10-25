@@ -33,7 +33,9 @@ func TestMySQLExplainAnalyzeNeverPersists(t *testing.T) {
 		"INSERT INTO `"+child+"` VALUES (1, 1), (2, 2)",
 		"ANALYZE TABLE `"+table+"`",
 	)
-	t.Cleanup(func() { execAll(t, provider, config.DatabaseID, "DROP TABLE IF EXISTS `"+child+"`", "DROP TABLE IF EXISTS `"+table+"`") })
+	t.Cleanup(func() {
+		execAll(t, provider, config.DatabaseID, "DROP TABLE IF EXISTS `"+child+"`", "DROP TABLE IF EXISTS `"+table+"`")
+	})
 
 	users := newBonusUsers(config.DatabaseID)
 	service, err := migration.NewExplainService(users.policy, provider, migration.ServiceConfig{})
@@ -43,7 +45,7 @@ func TestMySQLExplainAnalyzeNeverPersists(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	// MySQL target hanya menerima DML: DDL ditolak oleh kebijakan yang sama dengan migration.
+	// EXPLAIN hanya menerima query DML meskipun migration MySQL mendukung DDL.
 	if _, err := service.Explain(ctx, users.editor, config.DatabaseID, "ALTER TABLE `"+table+"` ADD COLUMN x INT", false); !errors.Is(err, migration.ErrSQLPolicy) {
 		t.Fatalf("MySQL DDL explain error = %v", err)
 	}
@@ -156,13 +158,13 @@ func TestMySQLSchemaDiffRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compare: %v", err)
 	}
-	if result.Identical || result.Executable || result.Engine != targetdb.EngineMySQL || result.Summary.Destructive != 2 {
+	if result.Identical || !result.Executable || result.Engine != targetdb.EngineMySQL || result.Summary.Destructive != 2 {
 		t.Fatalf("MySQL diff summary = %+v executable=%v", result.Summary, result.Executable)
 	}
 	t.Logf("generated MySQL SQL:\n%s", result.SQL)
 
-	// SQL MySQL tidak bisa dijalankan sebagai migration atomik, jadi round trip
-	// dijalankan langsung per statement untuk membuktikan SQL-nya valid.
+	// DDL MySQL tidak berbagi satu transaction, jadi fixture menerapkan tiap
+	// statement sendiri untuk membuktikan SQL diff menghasilkan schema yang valid.
 	var statements []string
 	for _, change := range result.Changes {
 		statements = append(statements, change.SQL...)

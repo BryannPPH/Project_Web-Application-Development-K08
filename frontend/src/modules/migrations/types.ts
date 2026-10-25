@@ -4,6 +4,7 @@ export type MigrationStatus =
   | 'succeeded'
   | 'failed'
   | 'interrupted'
+  | 'needs_reconciliation'
 
 export interface MigrationEntry {
   id: string

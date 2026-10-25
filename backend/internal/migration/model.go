@@ -5,15 +5,16 @@ import "time"
 type Status string
 
 const (
-	StatusDraft       Status = "draft"
-	StatusRunning     Status = "running"
-	StatusSucceeded   Status = "succeeded"
-	StatusFailed      Status = "failed"
-	StatusInterrupted Status = "interrupted"
+	StatusDraft               Status = "draft"
+	StatusRunning             Status = "running"
+	StatusSucceeded           Status = "succeeded"
+	StatusFailed              Status = "failed"
+	StatusInterrupted         Status = "interrupted"
+	StatusNeedsReconciliation Status = "needs_reconciliation"
 )
 
 func (s Status) Terminal() bool {
-	return s == StatusSucceeded || s == StatusFailed || s == StatusInterrupted
+	return s == StatusSucceeded || s == StatusFailed || s == StatusInterrupted || s == StatusNeedsReconciliation
 }
 
 type Entry struct {

@@ -144,7 +144,7 @@ func (r *PGRepository) MarkRunning(ctx context.Context, databaseID, migrationID,
 }
 
 func (r *PGRepository) MarkTerminal(ctx context.Context, databaseID, migrationID string, status Status, publicError *string, now time.Time) (Entry, error) {
-	if status != StatusSucceeded && status != StatusFailed && status != StatusInterrupted {
+	if status != StatusSucceeded && status != StatusFailed && status != StatusInterrupted && status != StatusNeedsReconciliation {
 		return Entry{}, ErrInvalidInput
 	}
 	entry, err := scanEntry(r.pool.QueryRow(ctx, `

@@ -191,7 +191,7 @@ func (h *Handler) writeServiceError(w http.ResponseWriter, r *http.Request, err 
 	case errors.Is(err, ErrInvalidInput):
 		writeMigrationError(w, http.StatusBadRequest, "INVALID_INPUT", "migration name or SQL is invalid")
 	case errors.Is(err, ErrSQLPolicy):
-		writeMigrationError(w, http.StatusUnprocessableEntity, "SQL_POLICY_VIOLATION", "SQL is not allowed by the target transaction policy")
+		writeMigrationError(w, http.StatusUnprocessableEntity, "SQL_POLICY_VIOLATION", "SQL is not allowed by the target migration policy")
 	default:
 		if public, ok := targetdb.Describe(err); ok {
 			apihttp.WriteError(w, public.Status, public.Code, public.Message)

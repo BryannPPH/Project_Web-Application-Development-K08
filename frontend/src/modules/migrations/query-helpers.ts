@@ -11,6 +11,7 @@ const statusLabels: Record<MigrationStatus, string> = {
   succeeded: 'Berhasil',
   failed: 'Gagal · di-rollback',
   interrupted: 'Terputus',
+  needs_reconciliation: 'Perlu rekonsiliasi',
 }
 
 export function migrationStatusLabel(status: MigrationStatus) {

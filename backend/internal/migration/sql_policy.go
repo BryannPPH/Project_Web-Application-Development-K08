@@ -20,27 +20,98 @@ func validateSQLPolicy(sqlText string) error {
 }
 
 func validateMySQLAtomicPolicy(sqlText string) error {
+	mode, err := classifyMySQLMigration(sqlText)
+	if err != nil {
+		return err
+	}
+	if mode != mysqlMigrationDML {
+		return fmt.Errorf("%w: DDL is not supported by transactional SQL operations", ErrSQLPolicy)
+	}
+	return nil
+}
+
+type mysqlMigrationMode uint8
+
+const (
+	mysqlMigrationDML mysqlMigrationMode = iota + 1
+	mysqlMigrationDDL
+)
+
+func validateMySQLMigrationPolicy(sqlText string) error {
+	_, err := classifyMySQLMigration(sqlText)
+	return err
+}
+
+func classifyMySQLMigration(sqlText string) (mysqlMigrationMode, error) {
 	if hasMySQLExecutableComment(sqlText) {
-		return fmt.Errorf("%w: MySQL executable comments are not permitted", ErrSQLPolicy)
+		return 0, fmt.Errorf("%w: MySQL executable comments are not permitted", ErrSQLPolicy)
 	}
 	statements, err := topLevelStatementWords(sqlText)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrSQLPolicy, err)
+		return 0, fmt.Errorf("%w: %v", ErrSQLPolicy, err)
 	}
 	if len(statements) == 0 {
-		return ErrSQLPolicy
+		return 0, ErrSQLPolicy
 	}
+	mode := mysqlMigrationMode(0)
 	for _, words := range statements {
 		if len(words) == 0 {
 			continue
 		}
+		if transactionControl(words) {
+			return 0, fmt.Errorf("%w: transaction control is managed by the server", ErrSQLPolicy)
+		}
 		switch words[0] {
 		case "INSERT", "UPDATE", "DELETE", "SELECT":
+			if mode == mysqlMigrationDDL {
+				return 0, fmt.Errorf("%w: MySQL DDL and DML must use separate migrations", ErrSQLPolicy)
+			}
+			mode = mysqlMigrationDML
+		case "CREATE", "ALTER", "DROP":
+			if !allowedMySQLDDL(words) {
+				return 0, fmt.Errorf("%w: this MySQL DDL statement is not supported", ErrSQLPolicy)
+			}
+			if mode == mysqlMigrationDML {
+				return 0, fmt.Errorf("%w: MySQL DDL and DML must use separate migrations", ErrSQLPolicy)
+			}
+			mode = mysqlMigrationDDL
 		default:
-			return fmt.Errorf("%w: MySQL atomic mode only permits transactional DML", ErrSQLPolicy)
+			return 0, fmt.Errorf("%w: MySQL migrations only permit DML or supported table DDL", ErrSQLPolicy)
+		}
+		if mode == mysqlMigrationDDL && words[0] == "CREATE" && words[1] == "TABLE" && containsWord(words, "SELECT") {
+			return 0, fmt.Errorf("%w: CREATE TABLE SELECT is not supported in MySQL DDL migrations", ErrSQLPolicy)
 		}
 	}
-	return nil
+	if mode == 0 {
+		return 0, ErrSQLPolicy
+	}
+	return mode, nil
+}
+
+func allowedMySQLDDL(words []string) bool {
+	if len(words) < 2 {
+		return false
+	}
+	switch words[0] {
+	case "CREATE":
+		return words[1] == "TABLE" || words[1] == "INDEX" ||
+			(len(words) > 2 && words[1] == "UNIQUE" && words[2] == "INDEX")
+	case "ALTER":
+		return words[1] == "TABLE"
+	case "DROP":
+		return words[1] == "TABLE" || words[1] == "INDEX"
+	default:
+		return false
+	}
+}
+
+func containsWord(words []string, target string) bool {
+	for _, word := range words {
+		if word == target {
+			return true
+		}
+	}
+	return false
 }
 
 func hasMySQLExecutableComment(input string) bool {
@@ -178,9 +249,7 @@ func topLevelStatementWords(input string) ([][]string, error) {
 				for index < len(input) && isIdentifierPart(rune(input[index])) {
 					index++
 				}
-				if len(words) < 4 {
-					words = append(words, strings.ToUpper(input[start:index]))
-				}
+				words = append(words, strings.ToUpper(input[start:index]))
 			} else {
 				index++
 			}

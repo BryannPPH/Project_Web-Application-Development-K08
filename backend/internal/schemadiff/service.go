@@ -70,11 +70,11 @@ func (s *Service) Compare(ctx context.Context, principal auth.Principal, request
 
 	result := Diff(desired, current)
 	result.Source, result.Target = request.Source, request.Target
-	result.Executable = current.Engine == targetdb.EnginePostgreSQL
+	result.Executable = true
 	result.Notes = []string{"SQL ini adalah kandidat otomatis. Tinjau dan ubah bila perlu sebelum dijadikan draft migration."}
-	if !result.Executable {
+	if current.Engine == targetdb.EngineMySQL {
 		result.Notes = append(result.Notes,
-			"Target MySQL melakukan implicit commit pada DDL sehingga SQL ini tidak dapat dijalankan sebagai migration atomik; salin dan jalankan secara terkontrol.")
+			"DDL MySQL dapat melakukan implicit commit. Jika satu statement gagal, perubahan sebelumnya mungkin sudah diterapkan dan target perlu direkonsiliasi.")
 	}
 	if result.Summary.Destructive > 0 {
 		result.Notes = append(result.Notes, "Ada perubahan destruktif (menghapus table/kolom). Pastikan data sudah dicadangkan.")

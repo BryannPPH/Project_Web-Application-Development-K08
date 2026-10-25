@@ -16,14 +16,16 @@ export function MigrationListPage() {
     queryFn: ({ signal }) => listMigrations(databaseId, signal),
     enabled: databaseId !== '',
   })
-  const interrupted = query.data?.items.some((entry) => entry.status === 'interrupted')
+  const reconciliationRequired = query.data?.items.some(
+    (entry) => entry.status === 'interrupted' || entry.status === 'needs_reconciliation',
+  )
 
   return (
     <section>
       <div className="page-header">
         <div className="page-header__text">
           <h1>Riwayat migration</h1>
-          <p className="muted">Versi linear terbaru ditampilkan lebih dulu. Setiap migration berjalan dalam satu transaksi.</p>
+          <p className="muted">Versi linear terbaru ditampilkan lebih dulu. Status dan SQL tercatat di riwayat.</p>
         </div>
         <div className="page-header__actions">
           <Link className="button button--secondary" to={`/databases/${databaseId}`}>
@@ -46,9 +48,9 @@ export function MigrationListPage() {
       {query.data && !query.data.canEdit ? (
         <StatusMessage tone="info">Anda memiliki akses View Only: riwayat dapat dibaca, tetapi tidak dapat membuat migration.</StatusMessage>
       ) : null}
-      {interrupted ? (
+      {reconciliationRequired ? (
         <StatusMessage title="Execution diblokir" tone="warning">
-          Ada migration berstatus Terputus. Hubungi admin untuk merekonsiliasi kondisi database sebelum menjalankan migration baru.
+          Ada migration yang membutuhkan rekonsiliasi. Periksa kondisi database target dan hubungi admin sebelum menjalankan migration baru.
         </StatusMessage>
       ) : null}
 

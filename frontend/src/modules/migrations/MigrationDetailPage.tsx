@@ -66,9 +66,10 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
 
   function confirmExecution() {
     if (!entry) return
-    const confirmed = window.confirm(
-      `Jalankan v${entry.version} (${entry.name}) pada ${databaseName}?\n\nDijalankan dalam satu transaksi; jika gagal semua perubahan dibatalkan. Draft tidak dapat diedit lagi.`,
-    )
+    const executionNote = transactionalDdl
+      ? 'Dijalankan dalam satu transaksi; jika gagal semua perubahan dibatalkan.'
+      : 'DML dijalankan dalam transaksi. DDL melakukan implicit commit; jika gagal, sebagian perubahan mungkin sudah diterapkan dan target perlu direkonsiliasi.'
+    const confirmed = window.confirm(`Jalankan v${entry.version} (${entry.name}) pada ${databaseName}?\n\n${executionNote}\nDraft tidak dapat diedit lagi.`)
     if (confirmed) execute.mutate()
   }
 
@@ -104,7 +105,7 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
         ) : null}
       </div>
 
-      {entry ? <MigrationResult entry={entry} /> : null}
+      {entry ? <MigrationResult entry={entry} transactionalDdl={transactionalDdl} /> : null}
       {save.isError ? <ErrorMessage error={save.error} /> : null}
       {execute.isError ? <ErrorMessage error={execute.error} /> : null}
 
@@ -127,7 +128,7 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
             <ul className="migration-rules">
               <li>
                 <Icon name="check" size={14} />
-                Dijalankan dalam satu transaksi
+                {transactionalDdl ? 'Dijalankan dalam satu transaksi' : 'DML transaksional; DDL dapat melakukan implicit commit'}
               </li>
               <li>
                 <Icon name="close" size={14} />
@@ -136,7 +137,7 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
               {!transactionalDdl ? (
                 <li>
                   <Icon name="alert" size={14} />
-                  Hanya DML: DDL (CREATE/ALTER/DROP) ditolak
+                  DDL terpisah dari DML; jika gagal, target mungkin perlu direkonsiliasi
                 </li>
               ) : null}
               <li>
@@ -172,14 +173,18 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
 }
 
 // Panel hasil execution bersama Senja (konfeti, putar balik jam, kabel lepas).
-function MigrationResult({ entry }: { entry: MigrationEntry }) {
+function MigrationResult({ entry, transactionalDdl }: { entry: MigrationEntry; transactionalDdl: boolean }) {
   if (entry.status === 'succeeded') {
     return (
       <div className="migration-result migration-result--success" role="status">
         <img alt="" src={senja.success} />
         <div>
           <strong>Migration berhasil dijalankan</strong>
-          <p>Semua perubahan v{entry.version} sudah diterapkan dalam satu transaksi.</p>
+          <p>
+            {transactionalDdl
+              ? `Semua perubahan v${entry.version} sudah diterapkan dalam satu transaksi.`
+              : `Semua statement v${entry.version} berhasil diterapkan. DML bersifat transaksional; DDL MySQL memakai implicit commit.`}
+          </p>
         </div>
       </div>
     )
@@ -200,8 +205,20 @@ function MigrationResult({ entry }: { entry: MigrationEntry }) {
       <div className="migration-result migration-result--warning" role="alert">
         <img alt="" src={senja.unplugged} />
         <div>
-          <strong>Execution terputus</strong>
-          <p>Execution berikutnya diblokir sampai kondisi target direkonsiliasi secara manual. Hubungi admin.</p>
+          <strong>Hasil execution tidak pasti</strong>
+          <p>Execution berikutnya diblokir sampai kondisi target direkonsiliasi. Hubungi admin.</p>
+          {entry.errorMessage ? <pre>{entry.errorMessage}</pre> : null}
+        </div>
+      </div>
+    )
+  }
+  if (entry.status === 'needs_reconciliation') {
+    return (
+      <div className="migration-result migration-result--warning" role="alert">
+        <img alt="" src={senja.unplugged} />
+        <div>
+          <strong>Target perlu direkonsiliasi</strong>
+          <p>DDL MySQL dapat menyisakan perubahan sebelumnya. Migration berikutnya diblokir sampai kondisi target diperiksa.</p>
           {entry.errorMessage ? <pre>{entry.errorMessage}</pre> : null}
         </div>
       </div>

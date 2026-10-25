@@ -263,3 +263,9 @@ func splitMySQLScript(script string) ([]string, error) {
 	}
 	return statements, nil
 }
+
+// SplitMySQLScript memisahkan script menjadi statement MySQL tanpa memotong
+// semicolon di dalam string, identifier, atau komentar.
+func SplitMySQLScript(script string) ([]string, error) {
+	return splitMySQLScript(script)
+}
