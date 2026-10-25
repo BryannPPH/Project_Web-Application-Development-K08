@@ -70,7 +70,7 @@ describe('MigrationDetailPage', () => {
   it('menampilkan migration terputus dengan Senja kabel lepas', async () => {
     renderDetail(migrationEntry({ status: 'interrupted' }))
 
-    expect(await screen.findByText('Execution terputus')).toBeInTheDocument()
+    expect(await screen.findByText('Hasil execution tidak pasti')).toBeInTheDocument()
     expect(senjaImage('unplugged')).toBeInTheDocument()
   })
 
@@ -94,13 +94,13 @@ describe('MigrationDetailPage', () => {
     expect(screen.queryByRole('button', { name: 'Simpan perubahan' })).not.toBeInTheDocument()
   })
 
-  it('draft DML MySQL tidak ditandai sebagai DDL yang ditolak', async () => {
+  it('draft DML MySQL menjelaskan transaksi DML dan aturan DDL', async () => {
     renderDetail(
       migrationEntry({ status: 'draft', sql: "INSERT INTO bonus_mysql_manual (id, code) VALUES (1, 'ok');" }),
       { ...database, engine: 'mysql', capabilities: { viewer: true, transactionalMigration: true, transactionalDdl: false } },
     )
 
-    expect(await screen.findByText(/SELECT, INSERT, UPDATE, dan DELETE dapat dijalankan/)).toBeInTheDocument()
+    expect(await screen.findByText(/DML \(SELECT, INSERT, UPDATE, DELETE\) dijalankan dalam satu transaksi/)).toBeInTheDocument()
     expect(screen.queryByText('DDL tidak didukung pada target ini')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Jalankan v1' })).toBeEnabled()
   })

@@ -17,9 +17,11 @@ import (
 type handlerServiceStub struct {
 	createEntry Entry
 	createErr   error
+	createCalls int
 }
 
 func (s *handlerServiceStub) CreateDraft(context.Context, auth.Principal, string, string, string) (Entry, error) {
+	s.createCalls++
 	return s.createEntry, s.createErr
 }
 func (*handlerServiceStub) UpdateDraft(context.Context, auth.Principal, string, string, string, string) (Entry, error) {
@@ -48,6 +50,43 @@ func TestCreateHandlerReturnsCreatedDraft(t *testing.T) {
 
 	if recorder.Code != http.StatusCreated || !strings.Contains(recorder.Body.String(), `"id":"created"`) {
 		t.Fatalf("response status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if got := recorder.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", got)
+	}
+}
+
+func TestCreateHandlerRejectsUnknownFieldsAndMultipleJSONValues(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "unknown field", body: `{"name":"widgets","sql":"SELECT 1","extra":true}`},
+		{name: "multiple objects", body: `{"name":"widgets","sql":"SELECT 1"} {}`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			stub := &handlerServiceStub{}
+			request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(test.body))
+			request.SetPathValue("databaseId", "8d728274-b56e-4f93-8893-5b02d76a58cb")
+			request = request.WithContext(auth.WithPrincipal(request.Context(), auth.Principal{UserID: "user"}))
+			recorder := httptest.NewRecorder()
+			recorder.Header().Set("X-Request-ID", "json-validation-test")
+
+			NewHandler(stub, slog.New(slog.NewTextHandler(io.Discard, nil))).create(recorder, request)
+
+			if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), `"code":"INVALID_JSON"`) {
+				t.Fatalf("response status=%d body=%s", recorder.Code, recorder.Body.String())
+			}
+			if !strings.Contains(recorder.Body.String(), `"requestId":"json-validation-test"`) {
+				t.Fatalf("response did not preserve requestId: %s", recorder.Body.String())
+			}
+			if stub.createCalls != 0 {
+				t.Fatalf("service called %d times for invalid JSON", stub.createCalls)
+			}
+		})
 	}
 }
 

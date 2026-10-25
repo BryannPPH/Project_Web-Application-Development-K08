@@ -90,8 +90,15 @@ func TestMigrationThroughProductionHTTPStack(t *testing.T) {
 	})
 
 	successSQL := "CREATE TABLE " + quotedTable + " (id bigint PRIMARY KEY); INSERT INTO " + quotedTable + " VALUES (1)"
-	created := harness.call(http.MethodPost, base,
-		map[string]string{"name": "create integration table", "sql": "SELECT 1"}, editor, http.StatusCreated)
+	createdResponse := harness.do(http.MethodPost, base,
+		map[string]string{"name": "create integration table", "sql": "SELECT 1"}, &editor, true)
+	if createdResponse.Code != http.StatusCreated {
+		t.Fatalf("create migration = %d %s", createdResponse.Code, createdResponse.Body.String())
+	}
+	if got := createdResponse.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("migration Cache-Control = %q, want no-store", got)
+	}
+	created := decodeMap(createdResponse.Body.Bytes())
 	migrationID, _ := created["id"].(string)
 	if migrationID == "" || created["status"] != "draft" {
 		t.Fatalf("created migration = %v", created)
