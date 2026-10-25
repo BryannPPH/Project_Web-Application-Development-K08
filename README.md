@@ -284,6 +284,7 @@ Setiap managed database memiliki urutan migration linear dengan status:
 | `failed` | SQL transaksional gagal dan perubahan di-rollback |
 | `interrupted` | Hasil tidak pasti dan membutuhkan rekonsiliasi manual |
 | `needs_reconciliation` | DDL MySQL gagal; periksa kondisi target sebelum migration berikutnya |
+| `reconciled` | Kondisi target sudah diperiksa dan dicatat; ini bukan status sukses migration |
 
 Backend melarang transaction control statement seperti `BEGIN`, `COMMIT`, dan
 `ROLLBACK` di dalam SQL migration karena transaction dikelola oleh executor.
@@ -296,7 +297,12 @@ pembungkus. MySQL melakukan implicit commit pada DDL, sehingga DDL tidak dapat
 di-rollback bersama sebagai satu rangkaian. Karena itu DDL dan DML harus berada
 di migration berbeda. Jika statement DDL gagal, status menjadi
 `needs_reconciliation` dan migration berikutnya diblokir sampai kondisi target
-diperiksa.
+diperiksa. User dengan akses `view_edit` dapat mencatat rekonsiliasi dari detail
+migration setelah memeriksa target. Aksi meminta konfirmasi dan catatan, serta
+menyimpan status sebelumnya, pelaksana, dan waktu. Rekonsiliasi tidak menjalankan
+ulang SQL dan tidak menyatakan migration berhasil; gunakan migration baru untuk
+menerapkan perubahan yang masih diperlukan. `interrupted` juga memakai alur yang
+sama.
 
 `view_edit` mengizinkan user menjalankan migration melalui aplikasi, tetapi
 tidak menambahkan privilege pada akun database target. Koneksi menggunakan
@@ -304,7 +310,7 @@ credential yang disimpan untuk managed database; akun tersebut harus memiliki
 privilege SQL yang diperlukan pada database target (misalnya `ALTER` untuk
 mengubah tabel). Berikan privilege dengan cakupan sesempit mungkin. Kegagalan
 privilege dari target tetap dicatat sebagai kegagalan migration; DDL MySQL
-memerlukan pemeriksaan kondisi schema sebelum status rekonsiliasi diselesaikan.
+memerlukan pemeriksaan kondisi schema sebelum status rekonsiliasi dicatat.
 
 Saat backend start, entry `running` yang tertinggal dari proses sebelumnya
 diubah menjadi `interrupted`. Implementasi Milestone 1 mengasumsikan satu
