@@ -96,21 +96,41 @@ func TestMigrationExecutionCommitAndRollback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("connect platform database: %v", err)
 	}
-	defer platform.Close()
+	t.Cleanup(platform.Close)
 	target, err := pgx.Connect(ctx, targetURL)
 	if err != nil {
 		t.Fatalf("connect target database: %v", err)
 	}
-	defer func() { _ = target.Close(context.Background()) }()
+	t.Cleanup(func() {
+		if err := target.Close(context.Background()); err != nil {
+			t.Errorf("close target database: %v", err)
+		}
+	})
 
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
 	table := "migration_atomic_" + suffix
 	username := "migration_user_" + suffix
 	databaseName := "migration_database_" + suffix
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cleanupCancel()
+		if _, err := target.Exec(cleanupCtx, `DROP TABLE IF EXISTS `+table); err != nil {
+			t.Errorf("cleanup target table: %v", err)
+		}
+	})
+
 	var userID, databaseID string
 	if err := platform.QueryRow(ctx, `INSERT INTO users (username,password_hash) VALUES ($1,'test-only') RETURNING id::text`, username).Scan(&userID); err != nil {
 		t.Fatalf("create migration user: %v", err)
 	}
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cleanupCancel()
+		if _, err := platform.Exec(cleanupCtx, `DELETE FROM users WHERE id=$1`, userID); err != nil {
+			t.Errorf("cleanup migration user: %v", err)
+		}
+	})
+
 	if err := platform.QueryRow(ctx, `INSERT INTO managed_databases
 		(name,host,database_name,username,credential_ciphertext,ssl_mode)
 		VALUES ($1,'localhost','target_db','target_owner',$2,'disable') RETURNING id::text`, databaseName, []byte("test-only")).Scan(&databaseID); err != nil {
@@ -119,10 +139,12 @@ func TestMigrationExecutionCommitAndRollback(t *testing.T) {
 	t.Cleanup(func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cleanupCancel()
-		_, _ = target.Exec(cleanupCtx, `DROP TABLE IF EXISTS `+table)
-		_, _ = platform.Exec(cleanupCtx, `DELETE FROM migration_entries WHERE database_id=$1`, databaseID)
-		_, _ = platform.Exec(cleanupCtx, `DELETE FROM managed_databases WHERE id=$1`, databaseID)
-		_, _ = platform.Exec(cleanupCtx, `DELETE FROM users WHERE id=$1`, userID)
+		if _, err := platform.Exec(cleanupCtx, `DELETE FROM migration_entries WHERE database_id=$1`, databaseID); err != nil {
+			t.Errorf("cleanup migration entries: %v", err)
+		}
+		if _, err := platform.Exec(cleanupCtx, `DELETE FROM managed_databases WHERE id=$1`, databaseID); err != nil {
+			t.Errorf("cleanup managed database: %v", err)
+		}
 	})
 
 	repository := migration.NewPGRepository(platform)
