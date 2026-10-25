@@ -269,6 +269,42 @@
   background: var(--warning-soft);
 }
 
+.migration-reconciliation > div {
+  width: 100%;
+}
+
+.migration-reconciliation__label,
+.migration-reconciliation__confirm {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.875rem;
+  font-weight: 600;
+}
+
+.migration-reconciliation__note {
+  display: block;
+  width: 100%;
+  min-height: 6rem;
+  margin-top: 0.375rem;
+  border: 1px solid var(--warning-line);
+  border-radius: var(--radius-sm);
+  padding: 0.625rem 0.75rem;
+  color: var(--ink);
+  background: var(--surface);
+  resize: vertical;
+}
+
+.migration-reconciliation__confirm {
+  margin-bottom: 1rem;
+  font-weight: 500;
+}
+
+.migration-reconciliation__confirm input {
+  width: 1rem;
+  height: 1rem;
+}
+
 @media (max-width: 900px) {
   .migration-layout {
     grid-template-columns: minmax(0, 1fr);

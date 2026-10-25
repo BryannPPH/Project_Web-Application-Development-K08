@@ -107,6 +107,7 @@ func (s *Service) List(ctx context.Context, principal auth.Principal, databaseID
 		page.CanEdit = true
 		for index := range page.Items {
 			page.Items[index].CanEdit = true
+			page.Items[index].CanReconcile = needsReconciliation(page.Items[index].Status)
 		}
 	}
 	return page, nil
@@ -124,8 +125,54 @@ func (s *Service) Get(ctx context.Context, principal auth.Principal, databaseID,
 		entry.ErrorMessage = sanitizeForViewer(entry.ErrorMessage)
 	} else {
 		entry.CanEdit = true
+		entry.CanReconcile = needsReconciliation(entry.Status)
 	}
 	return entry, nil
+}
+
+func (s *Service) Reconcile(ctx context.Context, principal auth.Principal, databaseID, migrationID, note string) (Entry, error) {
+	if err := s.authorizer.RequireDatabaseEdit(ctx, principal, databaseID); err != nil {
+		return Entry{}, err
+	}
+	note = strings.TrimSpace(note)
+	if len([]rune(note)) < 10 || len([]rune(note)) > 1000 {
+		return Entry{}, ErrInvalidInput
+	}
+	lock, err := s.locker.Acquire(ctx, databaseID)
+	if err != nil {
+		return Entry{}, fmt.Errorf("acquire reconciliation lock: %w", err)
+	}
+	defer func() {
+		releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if releaseErr := lock.Release(releaseCtx); releaseErr != nil {
+			s.logger.Error("release migration reconciliation lock", "database_id", databaseID, "error", releaseErr)
+		}
+	}()
+	if err := s.authorizer.RequireDatabaseEdit(ctx, principal, databaseID); err != nil {
+		return Entry{}, err
+	}
+	entry, err := s.repository.Get(ctx, databaseID, migrationID)
+	if err != nil {
+		return Entry{}, err
+	}
+	if !needsReconciliation(entry.Status) {
+		return Entry{}, ErrConflict
+	}
+	creatorUsername, executorUsername := entry.CreatedByUsername, entry.ExecutedByUsername
+	entry, err = s.repository.Reconcile(ctx, databaseID, migrationID, principal.UserID, note, s.clock.Now())
+	if err != nil {
+		return Entry{}, err
+	}
+	entry.CanEdit = true
+	entry.CreatedByUsername = creatorUsername
+	entry.ExecutedByUsername = executorUsername
+	entry.ReconciledByUsername = &principal.Username
+	return entry, nil
+}
+
+func needsReconciliation(status Status) bool {
+	return status == StatusInterrupted || status == StatusNeedsReconciliation
 }
 
 func (s *Service) Execute(ctx context.Context, principal auth.Principal, databaseID, migrationID string) (Entry, error) {

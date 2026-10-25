@@ -110,6 +110,27 @@ func TestMySQLViewerAndTransactionalMigration(t *testing.T) {
 	if err := executor.Validate(ctx, config.DatabaseID, "ALTER TABLE `"+table+"` ADD COLUMN safe_column INT"); err != nil {
 		t.Fatalf("MySQL DDL validation error = %v", err)
 	}
+	ddlSuccess := executor.Execute(ctx, config.DatabaseID, "ALTER TABLE `"+table+"` ADD COLUMN safe_column INT")
+	if ddlSuccess.Status != migration.StatusSucceeded {
+		t.Fatalf("MySQL successful DDL migration = %+v", ddlSuccess)
+	}
+	ddlPartial := executor.Execute(ctx, config.DatabaseID,
+		"ALTER TABLE `"+table+"` ADD COLUMN partial_column INT; ALTER TABLE `"+table+"` ADD COLUMN partial_column INT")
+	if ddlPartial.Status != migration.StatusNeedsReconciliation {
+		t.Fatalf("MySQL partially failed DDL migration = %+v", ddlPartial)
+	}
+	verifyConnection, err := provider.Open(ctx, config.DatabaseID)
+	if err != nil {
+		t.Fatalf("reopen MySQL target to inspect partial DDL: %v", err)
+	}
+	defer func() { _ = verifyConnection.Close(context.Background()) }()
+	for _, column := range []string{"safe_column", "partial_column"} {
+		var count int
+		if err := verifyConnection.QueryRow(ctx, `SELECT COUNT(*) FROM information_schema.columns
+			WHERE table_schema=? AND table_name=? AND column_name=?`, config.Database, table, column).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("MySQL column %q count = %d, error %v", column, count, err)
+		}
+	}
 	insert := "INSERT INTO `" + table + "` (id, code, quantity) VALUES (1, 'first', 1)"
 	if result := executor.Execute(ctx, config.DatabaseID, insert); result.Status != migration.StatusSucceeded {
 		t.Fatalf("MySQL successful migration = %+v", result)

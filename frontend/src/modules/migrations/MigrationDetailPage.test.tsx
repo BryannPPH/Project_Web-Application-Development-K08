@@ -2,6 +2,7 @@ import { cleanup, fireEvent, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { AccessibleDatabase } from '@/modules/databases/types'
+import { clearCsrfToken, setCsrfToken } from '@/lib/csrf-token'
 import type { MigrationEntry } from '@/modules/migrations/types'
 import { MigrationDetailPage } from '@/modules/migrations/MigrationDetailPage'
 import { jsonResponse, migrationEntry, mockFetch, regularUser, renderRoute, senjaImage } from '@/test/platform-test-utils'
@@ -17,6 +18,7 @@ const database: AccessibleDatabase = {
 
 afterEach(() => {
   cleanup()
+  clearCsrfToken()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
@@ -72,6 +74,58 @@ describe('MigrationDetailPage', () => {
 
     expect(await screen.findByText('Hasil execution tidak pasti')).toBeInTheDocument()
     expect(senjaImage('unplugged')).toBeInTheDocument()
+  })
+
+  it('mencatat rekonsiliasi setelah editor mengonfirmasi pemeriksaan target', async () => {
+    setCsrfToken('csrf-test')
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const unresolved = migrationEntry({ status: 'needs_reconciliation', canReconcile: true })
+    const reconciled = migrationEntry({
+      status: 'reconciled',
+      reconciledFrom: 'needs_reconciliation',
+      reconciledBy: 'user-1',
+      reconciledByUsername: 'operator',
+      reconciledAt: '2026-10-25T03:00:00Z',
+      reconciliationNote: 'items masih belum memiliki label maupun index.',
+    })
+    let didReconcile = false
+    const fetchMock = mockFetch((url) => {
+      if (url.pathname === '/api/v1/databases/db-1') return jsonResponse({ database })
+      if (url.pathname === '/api/v1/databases/db-1/migrations/m1') return jsonResponse(didReconcile ? reconciled : unresolved)
+      if (url.pathname.endsWith('/m1/reconcile')) {
+        didReconcile = true
+        return jsonResponse(reconciled)
+      }
+      return undefined
+    })
+    renderRoute(<MigrationDetailPage />, {
+      route: '/databases/db-1/migrations/m1',
+      path: '/databases/:databaseId/migrations/:migrationId',
+      user: regularUser,
+    })
+
+    fireEvent.change(await screen.findByLabelText('Catatan pemeriksaan'), {
+      target: { value: 'items masih belum memiliki label maupun index.' },
+    })
+    const confirmInspection = screen.getByLabelText('Saya sudah memeriksa kondisi database target.')
+    fireEvent.click(confirmInspection)
+    fireEvent.click(screen.getByRole('button', { name: 'Catat rekonsiliasi' }))
+
+    expect(await screen.findByText('Kondisi target sudah diperiksa')).toBeInTheDocument()
+    expect(screen.getByText(/Ini bukan berarti SQL migration berhasil/)).toBeInTheDocument()
+    const request = fetchMock.mock.calls.find(([input]) => String(input).endsWith('/m1/reconcile'))
+    expect(request?.[1]?.method).toBe('POST')
+    expect(JSON.parse(String(request?.[1]?.body))).toEqual({
+      inspectedTarget: true,
+      note: 'items masih belum memiliki label maupun index.',
+    })
+  })
+
+  it('tidak menyediakan aksi rekonsiliasi untuk View Only', async () => {
+    renderDetail(migrationEntry({ status: 'needs_reconciliation', canEdit: false, canReconcile: false }))
+
+    expect(await screen.findByText('Target perlu direkonsiliasi')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Catat rekonsiliasi' })).not.toBeInTheDocument()
   })
 
   it('draft milik view-edit dapat dijalankan setelah konfirmasi yang menyebut targetnya', async () => {

@@ -1,5 +1,5 @@
 import { apiRequest } from '@/lib/api-client'
-import type { DraftInput, ExplainResult, MigrationEntry, MigrationPage } from '@/modules/migrations/types'
+import type { DraftInput, ExplainResult, MigrationEntry, MigrationPage, ReconciliationInput } from '@/modules/migrations/types'
 
 function migrationPath(databaseId: string, suffix = '') {
   return `/databases/${encodeURIComponent(databaseId)}/migrations${suffix}`
@@ -27,6 +27,13 @@ export function updateMigration(databaseId: string, migrationId: string, input: 
 export function executeMigration(databaseId: string, migrationId: string) {
   return apiRequest<MigrationEntry>(migrationPath(databaseId, `/${encodeURIComponent(migrationId)}/execute`), {
     method: 'POST',
+  })
+}
+
+export function reconcileMigration(databaseId: string, migrationId: string, input: ReconciliationInput) {
+  return apiRequest<MigrationEntry>(migrationPath(databaseId, `/${encodeURIComponent(migrationId)}/reconcile`), {
+    method: 'POST',
+    json: input,
   })
 }
 

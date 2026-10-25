@@ -94,7 +94,13 @@ export function migrationEntry(overrides: Partial<MigrationEntry> = {}): Migrati
     startedAt: null,
     finishedAt: null,
     errorMessage: null,
+    reconciledFrom: null,
+    reconciledBy: null,
+    reconciledByUsername: null,
+    reconciledAt: null,
+    reconciliationNote: null,
     canEdit: true,
+    canReconcile: false,
     ...overrides,
   }
 }

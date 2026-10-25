@@ -30,10 +30,15 @@ DDL dan DML tidak boleh dicampur dalam satu migration. Transaction-control SQL
 ditolak sebelum draft disimpan dan diperiksa lagi tepat sebelum eksekusi.
 
 Entry `interrupted` dan `needs_reconciliation` tidak pernah dicoba ulang
-otomatis. Operasional harus memeriksa keadaan target, mencatat hasil
-rekonsiliasi, lalu memperbaiki status melalui prosedur administratif yang
-diaudit. `Repository.RecoverRunning` hanya disediakan sebagai primitive recovery
-eksplisit; jangan panggil otomatis saat startup.
+otomatis. User `view_edit` dapat merekonsiliasi entry melalui endpoint
+`POST /api/v1/databases/{databaseId}/migrations/{migrationId}/reconcile` setelah
+memeriksa target. Request wajib mengonfirmasi pemeriksaan dan menyertakan catatan
+10–1000 karakter. Perubahan status menyimpan status asal, user, waktu, dan
+catatan; aksi tidak menjalankan ulang SQL. Status `reconciled` membuka urutan
+migration berikutnya, tetapi tidak menyatakan SQL lama berhasil. Gunakan draft
+baru untuk perubahan target yang masih diperlukan. `Repository.RecoverRunning`
+hanya disediakan sebagai primitive recovery eksplisit; jangan panggil otomatis
+saat startup.
 
 Status HTTP utama: `201` create, `200` read/update/execute, `400` validasi,
 `401` tanpa session, `403` tanpa grant/CSRF, `404` tidak ditemukan, `409`

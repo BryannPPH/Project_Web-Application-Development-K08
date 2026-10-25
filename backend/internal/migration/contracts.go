@@ -19,6 +19,7 @@ type Repository interface {
 	Get(context.Context, string, string) (Entry, error)
 	MarkRunning(context.Context, string, string, string, time.Time) (Entry, error)
 	MarkTerminal(context.Context, string, string, Status, *string, time.Time) (Entry, error)
+	Reconcile(context.Context, string, string, string, string, time.Time) (Entry, error)
 	RecoverRunning(context.Context, time.Time, string) (int64, error)
 }
 

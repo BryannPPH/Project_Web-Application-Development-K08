@@ -150,4 +150,48 @@ func TestMigrationThroughProductionHTTPStack(t *testing.T) {
 		detail["createdByUsername"] != editorUsername || detail["executedByUsername"] != editorUsername {
 		t.Fatalf("view-only migration detail = %v", detail)
 	}
+
+	unresolved := harness.call(http.MethodPost, base,
+		map[string]string{"name": "reconcile fixture", "sql": "SELECT 1"}, editor, http.StatusCreated)
+	unresolvedID, _ := unresolved["id"].(string)
+	if _, err := harness.database.Exec(context.Background(), `UPDATE migration_entries
+		SET status='needs_reconciliation', started_at=CURRENT_TIMESTAMP, finished_at=CURRENT_TIMESTAMP,
+			error_message='fixture requires target inspection'
+		WHERE id=$1::uuid`, unresolvedID); err != nil {
+		t.Fatalf("mark reconciliation fixture: %v", err)
+	}
+	reconcilePath := base + "/" + unresolvedID + "/reconcile"
+	if response := harness.do(http.MethodPost, reconcilePath,
+		map[string]any{"inspectedTarget": true, "note": "Verified target schema during integration test."}, &viewer, true); response.Code != http.StatusForbidden {
+		t.Fatalf("view-only reconciliation = %d %s", response.Code, response.Body.String())
+	}
+	if response := harness.do(http.MethodPost, reconcilePath,
+		map[string]any{"inspectedTarget": true, "note": "Verified target schema during integration test."}, &editor, false); response.Code != http.StatusForbidden || errorCode(response) != "INVALID_CSRF" {
+		t.Fatalf("reconciliation without csrf = %d %s", response.Code, response.Body.String())
+	}
+	if response := harness.do(http.MethodPost, reconcilePath,
+		map[string]any{"inspectedTarget": false, "note": "Verified target schema during integration test."}, &editor, true); response.Code != http.StatusBadRequest {
+		t.Fatalf("unconfirmed reconciliation = %d %s", response.Code, response.Body.String())
+	}
+	if response := harness.do(http.MethodPost, reconcilePath,
+		map[string]any{"inspectedTarget": true, "note": "Verified target schema during integration test."}, &editor, true); response.Code != http.StatusOK {
+		t.Fatalf("reconciliation = %d %s", response.Code, response.Body.String())
+	}
+	reconciled := decodeMap(harness.do(http.MethodGet, base+"/"+unresolvedID, nil, &viewer, false).Body.Bytes())
+	if reconciled["status"] != "reconciled" || reconciled["reconciledFrom"] != "needs_reconciliation" ||
+		reconciled["reconciledBy"] != editorID || reconciled["reconciledByUsername"] != editorUsername ||
+		reconciled["reconciliationNote"] != "Verified target schema during integration test." || reconciled["reconciledAt"] == nil {
+		t.Fatalf("reconciled detail = %v", reconciled)
+	}
+	if reconciled["canReconcile"] != false || reconciled["canEdit"] != false {
+		t.Fatalf("view-only reconciled capabilities = %v", reconciled)
+	}
+
+	nextDraft := harness.call(http.MethodPost, base,
+		map[string]string{"name": "after reconciliation", "sql": "SELECT 1"}, editor, http.StatusCreated)
+	nextID, _ := nextDraft["id"].(string)
+	nextResult := harness.call(http.MethodPost, base+"/"+nextID+"/execute", nil, editor, http.StatusOK)
+	if nextResult["status"] != "succeeded" {
+		t.Fatalf("migration after reconciliation = %v", nextResult)
+	}
 }

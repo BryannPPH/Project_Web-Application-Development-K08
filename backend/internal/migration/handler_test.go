@@ -15,9 +15,12 @@ import (
 )
 
 type handlerServiceStub struct {
-	createEntry Entry
-	createErr   error
-	createCalls int
+	createEntry    Entry
+	createErr      error
+	createCalls    int
+	reconcileEntry Entry
+	reconcileErr   error
+	reconcileCalls int
 }
 
 func (s *handlerServiceStub) CreateDraft(context.Context, auth.Principal, string, string, string) (Entry, error) {
@@ -35,6 +38,10 @@ func (*handlerServiceStub) Get(context.Context, auth.Principal, string, string) 
 }
 func (*handlerServiceStub) Execute(context.Context, auth.Principal, string, string) (Entry, error) {
 	return Entry{}, nil
+}
+func (s *handlerServiceStub) Reconcile(context.Context, auth.Principal, string, string, string) (Entry, error) {
+	s.reconcileCalls++
+	return s.reconcileEntry, s.reconcileErr
 }
 
 func TestCreateHandlerReturnsCreatedDraft(t *testing.T) {
@@ -102,6 +109,39 @@ func TestCreateHandlerRejectsInvalidIdentifierBeforeService(t *testing.T) {
 
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestReconcileHandlerRequiresInspectionConfirmation(t *testing.T) {
+	t.Parallel()
+	stub := &handlerServiceStub{}
+	handler := NewHandler(stub, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"inspectedTarget":false,"note":"checked table state"}`))
+	request.SetPathValue("databaseId", "8d728274-b56e-4f93-8893-5b02d76a58cb")
+	request.SetPathValue("migrationId", "8d728274-b56e-4f93-8893-5b02d76a58cb")
+	request = request.WithContext(auth.WithPrincipal(request.Context(), auth.Principal{UserID: "user"}))
+	recorder := httptest.NewRecorder()
+	handler.reconcile(recorder, request)
+	if recorder.Code != http.StatusBadRequest || stub.reconcileCalls != 0 {
+		t.Fatalf("status=%d service calls=%d body=%s", recorder.Code, stub.reconcileCalls, recorder.Body.String())
+	}
+}
+
+func TestReconcileHandlerReturnsRecordedEntry(t *testing.T) {
+	t.Parallel()
+	stub := &handlerServiceStub{reconcileEntry: Entry{ID: "reconciled", Status: StatusReconciled}}
+	handler := NewHandler(stub, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"inspectedTarget":true,"note":"Verified target schema manually."}`))
+	request.SetPathValue("databaseId", "8d728274-b56e-4f93-8893-5b02d76a58cb")
+	request.SetPathValue("migrationId", "8d728274-b56e-4f93-8893-5b02d76a58cb")
+	request = request.WithContext(auth.WithPrincipal(request.Context(), auth.Principal{UserID: "user"}))
+	recorder := httptest.NewRecorder()
+	handler.reconcile(recorder, request)
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"status":"reconciled"`) {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if got := recorder.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", got)
 	}
 }
 

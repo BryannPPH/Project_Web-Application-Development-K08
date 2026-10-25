@@ -29,6 +29,8 @@ type fakeRepository struct {
 	entry                                 Entry
 	page                                  Page
 	getCalls, runningCalls, terminalCalls int
+	reconcileCalls                        int
+	reconcileNote, reconciledBy           string
 	terminalErr                           error
 	recovered                             int64
 	recoverErr                            error
@@ -59,6 +61,15 @@ func (f *fakeRepository) MarkTerminal(_ context.Context, _, _ string, status Sta
 	}
 	entry := f.entry
 	entry.Status, entry.ErrorMessage, entry.FinishedAt = status, message, &now
+	return entry, nil
+}
+func (f *fakeRepository) Reconcile(_ context.Context, _, _, reconciledBy, note string, now time.Time) (Entry, error) {
+	f.reconcileCalls++
+	f.reconcileNote, f.reconciledBy = note, reconciledBy
+	entry := f.entry
+	from := entry.Status
+	entry.Status, entry.ReconciledFrom, entry.ReconciledBy = StatusReconciled, &from, &reconciledBy
+	entry.ReconciledAt, entry.ReconciliationNote = &now, &note
 	return entry, nil
 }
 func (f *fakeRepository) RecoverRunning(_ context.Context, _ time.Time, reason string) (int64, error) {
@@ -144,6 +155,58 @@ func TestExecutePersistsInterruptedOutcome(t *testing.T) {
 	if err != nil || entry.Status != StatusInterrupted {
 		t.Fatalf("Execute() = %#v, %v", entry, err)
 	}
+}
+
+func TestReconcileRecordsInspectionAndReleasesExecutionLock(t *testing.T) {
+	t.Parallel()
+	repository := &fakeRepository{entry: Entry{ID: "migration", DatabaseID: "database", Status: StatusNeedsReconciliation, CreatedByUsername: "author"}}
+	authorizer := &fakeAuthorizer{}
+	lock := &fakeLock{}
+	service := newTestService(t, repository, authorizer, &fakeLocker{lock: lock}, &fakeExecutor{})
+	entry, err := service.Reconcile(context.Background(), auth.Principal{UserID: "reviewer", Username: "reviewer_name"},
+		"database", "migration", "  Confirmed target schema after inspection.  ")
+	if err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+	if entry.Status != StatusReconciled || entry.ReconciledFrom == nil || *entry.ReconciledFrom != StatusNeedsReconciliation ||
+		entry.ReconciledBy == nil || *entry.ReconciledBy != "reviewer" || entry.ReconciledByUsername == nil || *entry.ReconciledByUsername != "reviewer_name" {
+		t.Fatalf("reconciled entry = %#v", entry)
+	}
+	if repository.reconcileNote != "Confirmed target schema after inspection." || authorizer.editCalls != 2 || !lock.released {
+		t.Fatalf("note=%q edit checks=%d lock released=%v", repository.reconcileNote, authorizer.editCalls, lock.released)
+	}
+}
+
+func TestReconcileRequiresEditAndUnresolvedState(t *testing.T) {
+	t.Parallel()
+	t.Run("requires edit access", func(t *testing.T) {
+		repository := &fakeRepository{entry: Entry{Status: StatusInterrupted}}
+		authorizer := &fakeAuthorizer{editErr: authz.ErrDatabaseEditForbidden}
+		service := newTestService(t, repository, authorizer, &fakeLocker{lock: &fakeLock{}}, &fakeExecutor{})
+		if _, err := service.Reconcile(context.Background(), auth.Principal{UserID: "viewer"}, "database", "migration", "Inspected target state."); !errors.Is(err, authz.ErrDatabaseEditForbidden) {
+			t.Fatalf("Reconcile() error = %v", err)
+		}
+		if repository.reconcileCalls != 0 {
+			t.Fatalf("repository called %d times without edit access", repository.reconcileCalls)
+		}
+	})
+	t.Run("only unresolved states", func(t *testing.T) {
+		repository := &fakeRepository{entry: Entry{Status: StatusSucceeded}}
+		service := newTestService(t, repository, &fakeAuthorizer{}, &fakeLocker{lock: &fakeLock{}}, &fakeExecutor{})
+		if _, err := service.Reconcile(context.Background(), auth.Principal{UserID: "editor"}, "database", "migration", "Inspected target state."); !errors.Is(err, ErrConflict) {
+			t.Fatalf("Reconcile() error = %v, want conflict", err)
+		}
+		if repository.reconcileCalls != 0 {
+			t.Fatalf("repository called %d times for resolved migration", repository.reconcileCalls)
+		}
+	})
+	t.Run("requires meaningful note", func(t *testing.T) {
+		repository := &fakeRepository{entry: Entry{Status: StatusInterrupted}}
+		service := newTestService(t, repository, &fakeAuthorizer{}, &fakeLocker{lock: &fakeLock{}}, &fakeExecutor{})
+		if _, err := service.Reconcile(context.Background(), auth.Principal{UserID: "editor"}, "database", "migration", "short"); !errors.Is(err, ErrInvalidInput) {
+			t.Fatalf("Reconcile() error = %v, want invalid input", err)
+		}
+	})
 }
 
 func TestViewerHistorySanitizesErrorDetails(t *testing.T) {

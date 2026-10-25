@@ -233,6 +233,20 @@ func TestMigrationExecutionCommitAndRollback(t *testing.T) {
 		t.Fatalf("blocked migration status = %s, error %v; want draft", stillDraft.Status, err)
 	}
 
+	reconciled, err := service.Reconcile(ctx, principal, databaseID, orphaned.ID,
+		"Verified target state after the interrupted migration; no partial SQL was applied.")
+	if err != nil || reconciled.Status != migration.StatusReconciled || reconciled.ReconciledFrom == nil ||
+		*reconciled.ReconciledFrom != migration.StatusInterrupted || reconciled.ReconciledBy == nil ||
+		*reconciled.ReconciledBy != userID || reconciled.ReconciledAt == nil || reconciled.ReconciliationNote == nil {
+		t.Fatalf("reconciled migration = %#v, error %v", reconciled, err)
+	}
+	if reconciled.ReconciledByUsername == nil || *reconciled.ReconciledByUsername != username {
+		t.Fatalf("reconciled by username = %v, want %q", reconciled.ReconciledByUsername, username)
+	}
+	if next, executeErr := service.Execute(ctx, principal, databaseID, blocked.ID); executeErr != nil || next.Status != migration.StatusSucceeded {
+		t.Fatalf("execute after reconciliation = status %s, error %v", next.Status, executeErr)
+	}
+
 	const concurrentDrafts = 8
 	versions := make(chan int64, concurrentDrafts)
 	errorsFound := make(chan error, concurrentDrafts)

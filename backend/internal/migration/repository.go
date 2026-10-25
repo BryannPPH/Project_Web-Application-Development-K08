@@ -17,11 +17,13 @@ type PGRepository struct {
 func NewPGRepository(pool *pgxpool.Pool) *PGRepository { return &PGRepository{pool: pool} }
 
 const entryColumns = `id::text, database_id::text, version, name, sql_text, status,
-created_by::text, executed_by::text, created_at, started_at, finished_at, error_message`
+created_by::text, executed_by::text, created_at, started_at, finished_at, error_message,
+reconciled_from_status, reconciled_by::text, reconciled_at, reconciliation_note`
 
 const readableEntryColumns = `m.id::text, m.database_id::text, m.version, m.name, m.sql_text, m.status,
 m.created_by::text, m.executed_by::text, m.created_at, m.started_at, m.finished_at, m.error_message,
-creator.username, executor.username`
+ m.reconciled_from_status, m.reconciled_by::text, m.reconciled_at, m.reconciliation_note,
+creator.username, executor.username, reconciler.username`
 
 func (r *PGRepository) CreateDraft(ctx context.Context, databaseID, name, sqlText, creatorID string, now time.Time) (Entry, error) {
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
@@ -60,7 +62,8 @@ func (r *PGRepository) UpdateDraft(ctx context.Context, databaseID, migrationID,
 		SELECT `+readableEntryColumns+`
 		FROM updated m
 		JOIN users creator ON creator.id=m.created_by
-		LEFT JOIN users executor ON executor.id=m.executed_by`, databaseID, migrationID, name, sqlText, now)
+		LEFT JOIN users executor ON executor.id=m.executed_by
+		LEFT JOIN users reconciler ON reconciler.id=m.reconciled_by`, databaseID, migrationID, name, sqlText, now)
 	entry, err := scanReadableEntry(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Entry{}, r.classifyMissingOrConflict(ctx, databaseID, migrationID)
@@ -73,6 +76,7 @@ func (r *PGRepository) List(ctx context.Context, databaseID string, options List
 		FROM migration_entries m
 		JOIN users creator ON creator.id=m.created_by
 		LEFT JOIN users executor ON executor.id=m.executed_by
+		LEFT JOIN users reconciler ON reconciler.id=m.reconciled_by
 		WHERE m.database_id=$1::uuid
 		ORDER BY m.version DESC LIMIT $2 OFFSET $3`, databaseID, options.Limit, options.Offset)
 	if err != nil {
@@ -97,6 +101,7 @@ func (r *PGRepository) Get(ctx context.Context, databaseID, migrationID string) 
 		FROM migration_entries m
 		JOIN users creator ON creator.id=m.created_by
 		LEFT JOIN users executor ON executor.id=m.executed_by
+		LEFT JOIN users reconciler ON reconciler.id=m.reconciled_by
 		WHERE m.database_id=$1::uuid AND m.id=$2::uuid`, databaseID, migrationID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Entry{}, ErrNotFound
@@ -117,7 +122,7 @@ func (r *PGRepository) MarkRunning(ctx context.Context, databaseID, migrationID,
 			SELECT 1 FROM migration_entries current
 			JOIN migration_entries earlier ON earlier.database_id=current.database_id AND earlier.version < current.version
 			WHERE current.database_id=$1::uuid AND current.id=$2::uuid
-			AND earlier.status NOT IN ('succeeded','failed')
+			AND earlier.status NOT IN ('succeeded','failed','reconciled')
 		)`, databaseID, migrationID).Scan(&blocked)
 	if err != nil {
 		return Entry{}, mapRepositoryError(err)
@@ -157,6 +162,20 @@ func (r *PGRepository) MarkTerminal(ctx context.Context, databaseID, migrationID
 	return entry, mapRepositoryError(err)
 }
 
+func (r *PGRepository) Reconcile(ctx context.Context, databaseID, migrationID, reconciledBy, note string, now time.Time) (Entry, error) {
+	entry, err := scanEntry(r.pool.QueryRow(ctx, `
+		UPDATE migration_entries
+		SET status='reconciled', reconciled_from_status=status, reconciled_by=$3::uuid,
+			reconciled_at=$4, reconciliation_note=$5, updated_at=$4
+		WHERE database_id=$1::uuid AND id=$2::uuid
+		AND status IN ('interrupted','needs_reconciliation')
+		RETURNING `+entryColumns, databaseID, migrationID, reconciledBy, now, note))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Entry{}, r.classifyMissingOrConflict(ctx, databaseID, migrationID)
+	}
+	return entry, mapRepositoryError(err)
+}
+
 func (r *PGRepository) RecoverRunning(ctx context.Context, before time.Time, reason string) (int64, error) {
 	command, err := r.pool.Exec(ctx, `UPDATE migration_entries
 		SET status='interrupted', error_message=$2, finished_at=$1, updated_at=$1
@@ -186,25 +205,34 @@ func scanEntry(row rowScanner) (Entry, error) {
 	var executedBy *string
 	err := row.Scan(&entry.ID, &entry.DatabaseID, &entry.Version, &entry.Name, &entry.SQL,
 		&entry.Status, &entry.CreatedBy, &executedBy, &entry.CreatedAt, &entry.StartedAt,
-		&entry.FinishedAt, &entry.ErrorMessage)
+		&entry.FinishedAt, &entry.ErrorMessage, &entry.ReconciledFrom, &entry.ReconciledBy,
+		&entry.ReconciledAt, &entry.ReconciliationNote)
 	entry.ExecutedBy = executedBy
 	return entry, err
 }
 
 func scanReadableEntry(row rowScanner) (Entry, error) {
 	var entry Entry
+	var reconciledByUsername *string
 	err := row.Scan(&entry.ID, &entry.DatabaseID, &entry.Version, &entry.Name, &entry.SQL,
 		&entry.Status, &entry.CreatedBy, &entry.ExecutedBy, &entry.CreatedAt, &entry.StartedAt,
-		&entry.FinishedAt, &entry.ErrorMessage, &entry.CreatedByUsername, &entry.ExecutedByUsername)
+		&entry.FinishedAt, &entry.ErrorMessage, &entry.ReconciledFrom, &entry.ReconciledBy,
+		&entry.ReconciledAt, &entry.ReconciliationNote, &entry.CreatedByUsername, &entry.ExecutedByUsername,
+		&reconciledByUsername)
+	entry.ReconciledByUsername = reconciledByUsername
 	return entry, err
 }
 
 func scanReadableEntryWithTotal(row rowScanner) (Entry, int64, error) {
 	var entry Entry
 	var total int64
+	var reconciledByUsername *string
 	err := row.Scan(&entry.ID, &entry.DatabaseID, &entry.Version, &entry.Name, &entry.SQL,
 		&entry.Status, &entry.CreatedBy, &entry.ExecutedBy, &entry.CreatedAt, &entry.StartedAt,
-		&entry.FinishedAt, &entry.ErrorMessage, &entry.CreatedByUsername, &entry.ExecutedByUsername, &total)
+		&entry.FinishedAt, &entry.ErrorMessage, &entry.ReconciledFrom, &entry.ReconciledBy,
+		&entry.ReconciledAt, &entry.ReconciliationNote, &entry.CreatedByUsername, &entry.ExecutedByUsername,
+		&reconciledByUsername, &total)
+	entry.ReconciledByUsername = reconciledByUsername
 	return entry, total, err
 }
 

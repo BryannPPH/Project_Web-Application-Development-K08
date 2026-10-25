@@ -5,6 +5,7 @@ export type MigrationStatus =
   | 'failed'
   | 'interrupted'
   | 'needs_reconciliation'
+  | 'reconciled'
 
 export interface MigrationEntry {
   id: string
@@ -21,7 +22,18 @@ export interface MigrationEntry {
   startedAt: string | null
   finishedAt: string | null
   errorMessage: string | null
+  reconciledFrom: MigrationStatus | null
+  reconciledBy: string | null
+  reconciledByUsername: string | null
+  reconciledAt: string | null
+  reconciliationNote: string | null
   canEdit: boolean
+  canReconcile: boolean
+}
+
+export interface ReconciliationInput {
+  inspectedTarget: true
+  note: string
 }
 
 export interface MigrationPage {

@@ -24,6 +24,7 @@ type MigrationService interface {
 	List(context.Context, auth.Principal, string, ListOptions) (Page, error)
 	Get(context.Context, auth.Principal, string, string) (Entry, error)
 	Execute(context.Context, auth.Principal, string, string) (Entry, error)
+	Reconcile(context.Context, auth.Principal, string, string, string) (Entry, error)
 }
 
 type Handler struct {
@@ -46,11 +47,17 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, security *httpapi.AuthMiddl
 	mux.Handle("GET /api/v1/databases/{databaseId}/migrations/{migrationId}", read(http.HandlerFunc(h.detail)))
 	mux.Handle("PATCH /api/v1/databases/{databaseId}/migrations/{migrationId}", mutate(http.HandlerFunc(h.update)))
 	mux.Handle("POST /api/v1/databases/{databaseId}/migrations/{migrationId}/execute", mutate(http.HandlerFunc(h.execute)))
+	mux.Handle("POST /api/v1/databases/{databaseId}/migrations/{migrationId}/reconcile", mutate(http.HandlerFunc(h.reconcile)))
 }
 
 type draftRequest struct {
 	Name string `json:"name"`
 	SQL  string `json:"sql"`
+}
+
+type reconcileRequest struct {
+	InspectedTarget bool   `json:"inspectedTarget"`
+	Note            string `json:"note"`
 }
 
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
@@ -129,6 +136,27 @@ func (h *Handler) execute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	entry, err := h.service.Execute(r.Context(), principal, databaseID, r.PathValue("migrationId"))
+	if err != nil {
+		h.writeServiceError(w, r, err)
+		return
+	}
+	writeMigrationJSON(w, http.StatusOK, entry)
+}
+
+func (h *Handler) reconcile(w http.ResponseWriter, r *http.Request) {
+	databaseID, principal, ok := requestIdentity(w, r, true)
+	if !ok {
+		return
+	}
+	var request reconcileRequest
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	if !request.InspectedTarget {
+		writeMigrationError(w, http.StatusBadRequest, "INVALID_INPUT", "target inspection must be confirmed")
+		return
+	}
+	entry, err := h.service.Reconcile(r.Context(), principal, databaseID, r.PathValue("migrationId"), request.Note)
 	if err != nil {
 		h.writeServiceError(w, r, err)
 		return

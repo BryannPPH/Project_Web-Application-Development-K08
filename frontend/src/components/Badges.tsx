@@ -22,6 +22,7 @@ const statusStyles: Record<MigrationStatus, { className: string; icon: IconName 
   failed: { className: 'badge badge--danger', icon: 'error' },
   interrupted: { className: 'badge badge--warning', icon: 'alert' },
   needs_reconciliation: { className: 'badge badge--warning', icon: 'alert' },
+  reconciled: { className: 'badge badge--info', icon: 'check' },
 }
 
 export function MigrationStatusBadge({ status }: { status: MigrationStatus }) {
