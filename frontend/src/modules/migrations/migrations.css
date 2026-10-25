@@ -29,13 +29,13 @@
   vertical-align: 0.15em;
 }
 
-.migration-table a {
+.migration-table .migration-name-link {
   color: var(--ink);
   font-weight: 600;
   text-decoration: none;
 }
 
-.migration-table a:hover {
+.migration-table .migration-name-link:hover {
   color: var(--action);
   text-decoration: underline;
 }

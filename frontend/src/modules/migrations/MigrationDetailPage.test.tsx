@@ -39,10 +39,24 @@ describe('MigrationDetailPage', () => {
   })
 
   it('menampilkan hasil sukses dengan Senja melompat', async () => {
-    renderDetail(migrationEntry({ status: 'succeeded', executedBy: 'admin', finishedAt: '2026-10-20T09:01:00Z' }))
+    renderDetail(migrationEntry({
+      status: 'succeeded',
+      createdBy: 'df814edc-05bb-4866-8ffd-79f813170483',
+      createdByUsername: 'admin_m1',
+      executedBy: 'df814edc-05bb-4866-8ffd-79f813170483',
+      executedByUsername: 'admin_m1',
+      finishedAt: '2026-10-20T09:01:00Z',
+      sql: 'CREATE TABLE public.m1_demo_items (id BIGINT PRIMARY KEY);',
+    }))
 
     expect(await screen.findByText('Migration berhasil dijalankan')).toBeInTheDocument()
     expect(senjaImage('success')).toBeInTheDocument()
+    expect(screen.getByLabelText('SQL')).toHaveValue('CREATE TABLE public.m1_demo_items (id BIGINT PRIMARY KEY);')
+    expect(screen.getByLabelText('SQL')).toBeDisabled()
+    expect(screen.getByText('dibuat oleh admin_m1')).toBeInTheDocument()
+    expect(screen.getByText('oleh admin_m1')).toBeInTheDocument()
+    expect(screen.queryByText(/df814edc/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Jalankan/ })).not.toBeInTheDocument()
   })
 
   it('menampilkan migration terputus dengan Senja kabel lepas', async () => {

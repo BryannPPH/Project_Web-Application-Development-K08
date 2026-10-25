@@ -90,7 +90,7 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
           {entry ? (
             <div className="page-header__meta">
               <MigrationStatusBadge status={entry.status} />
-              <span className="muted">dibuat oleh {entry.createdBy}</span>
+              <span className="muted">dibuat oleh {entry.createdByUsername || 'Pengguna tidak tersedia'}</span>
             </div>
           ) : null}
         </div>
@@ -161,7 +161,7 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
                 <li className={entry.startedAt ? 'is-done' : undefined}>
                   <strong>Dimulai</strong>
                   <span>{displayTime(entry.startedAt)}</span>
-                  {entry.executedBy ? <span>oleh {entry.executedBy}</span> : null}
+                  {entry.executedBy ? <span>oleh {entry.executedByUsername || 'Pengguna tidak tersedia'}</span> : null}
                 </li>
                 <li className={entry.finishedAt ? 'is-done' : undefined}>
                   <strong>Selesai</strong>

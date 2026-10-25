@@ -66,6 +66,9 @@ func (s *Service) CreateDraft(ctx context.Context, principal auth.Principal, dat
 	}
 	entry, err := s.repository.CreateDraft(ctx, databaseID, name, sqlText, principal.UserID, s.clock.Now())
 	entry.CanEdit = err == nil
+	if err == nil {
+		entry.CreatedByUsername = principal.Username
+	}
 	return entry, err
 }
 
@@ -158,6 +161,7 @@ func (s *Service) Execute(ctx context.Context, principal auth.Principal, databas
 		return Entry{}, err
 	}
 
+	creatorUsername := entry.CreatedByUsername
 	entry, err = s.repository.MarkRunning(ctx, databaseID, migrationID, principal.UserID, s.clock.Now())
 	if err != nil {
 		return Entry{}, err
@@ -186,6 +190,8 @@ func (s *Service) Execute(ctx context.Context, principal auth.Principal, databas
 			"migration_id", migrationID, "status", result.Status, "error", safeError(result.InternalError))
 	}
 	terminal.CanEdit = true
+	terminal.CreatedByUsername = creatorUsername
+	terminal.ExecutedByUsername = &principal.Username
 	return terminal, nil
 }
 

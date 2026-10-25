@@ -20,6 +20,7 @@ func TestMigrationThroughProductionHTTPStack(t *testing.T) {
 	harness.createUser("admin_migration", auth.PlatformRoleAdmin)
 	viewerID := harness.createUser("migration_viewer", auth.PlatformRoleUser)
 	editorID := harness.createUser("migration_editor", auth.PlatformRoleUser)
+	editorUsername := harness.name("migration_editor")
 	harness.createUser("migration_outsider", auth.PlatformRoleUser)
 	admin := harness.login("admin_migration")
 
@@ -101,7 +102,9 @@ func TestMigrationThroughProductionHTTPStack(t *testing.T) {
 		t.Fatalf("updated migration SQL = %v", updated["sql"])
 	}
 	executed := harness.call(http.MethodPost, base+"/"+migrationID+"/execute", nil, editor, http.StatusOK)
-	if executed["status"] != "succeeded" || executed["executedBy"] != editorID || executed["finishedAt"] == nil {
+	if executed["status"] != "succeeded" || executed["executedBy"] != editorID ||
+		executed["createdByUsername"] != editorUsername || executed["executedByUsername"] != editorUsername ||
+		executed["finishedAt"] == nil {
 		t.Fatalf("successful execution = %v", executed)
 	}
 
@@ -128,12 +131,16 @@ func TestMigrationThroughProductionHTTPStack(t *testing.T) {
 		t.Fatalf("view-only history = %v", history)
 	}
 	latest, _ := items[0].(map[string]any)
+	if latest["createdByUsername"] != editorUsername || latest["executedByUsername"] != editorUsername {
+		t.Fatalf("migration history usernames = %v", latest)
+	}
 	errorMessage, _ := latest["errorMessage"].(string)
 	if errorMessage == "" || strings.Contains(errorMessage, "migration_table_that_does_not_exist") {
 		t.Fatalf("view-only error message was not sanitized: %q", errorMessage)
 	}
 	detail := harness.call(http.MethodGet, base+"/"+failedID, nil, viewer, http.StatusOK)
-	if detail["canEdit"] != false || detail["status"] != "failed" {
+	if detail["canEdit"] != false || detail["status"] != "failed" ||
+		detail["createdByUsername"] != editorUsername || detail["executedByUsername"] != editorUsername {
 		t.Fatalf("view-only migration detail = %v", detail)
 	}
 }

@@ -73,6 +73,7 @@ export function MigrationListPage() {
                 <th>Status</th>
                 <th>Dibuat</th>
                 <th>Dieksekusi</th>
+                <th>Aksi</th>
               </tr>
             </thead>
             <tbody>
@@ -82,13 +83,19 @@ export function MigrationListPage() {
                     <span className="migration-version">v{entry.version}</span>
                   </td>
                   <td data-label="Nama">
-                    <Link to={entry.id}>{entry.name}</Link>
+                    <Link className="migration-name-link" to={entry.id}>{entry.name}</Link>
                   </td>
                   <td data-label="Status">
                     <MigrationStatusBadge status={entry.status} />
                   </td>
                   <td data-label="Dibuat">{displayTime(entry.createdAt)}</td>
                   <td data-label="Dieksekusi">{displayTime(entry.finishedAt ?? entry.startedAt)}</td>
+                  <td className="cell-actions" data-label="Aksi">
+                    <Link className="button button--secondary button--small" to={entry.id}>
+                      <Icon name="eye" size={14} />
+                      Lihat detail
+                    </Link>
+                  </td>
                 </tr>
               ))}
             </tbody>

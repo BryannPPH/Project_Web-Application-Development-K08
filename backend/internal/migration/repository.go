@@ -19,6 +19,10 @@ func NewPGRepository(pool *pgxpool.Pool) *PGRepository { return &PGRepository{po
 const entryColumns = `id::text, database_id::text, version, name, sql_text, status,
 created_by::text, executed_by::text, created_at, started_at, finished_at, error_message`
 
+const readableEntryColumns = `m.id::text, m.database_id::text, m.version, m.name, m.sql_text, m.status,
+m.created_by::text, m.executed_by::text, m.created_at, m.started_at, m.finished_at, m.error_message,
+creator.username, executor.username`
+
 func (r *PGRepository) CreateDraft(ctx context.Context, databaseID, name, sqlText, creatorID string, now time.Time) (Entry, error) {
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -48,10 +52,16 @@ func (r *PGRepository) CreateDraft(ctx context.Context, databaseID, name, sqlTex
 
 func (r *PGRepository) UpdateDraft(ctx context.Context, databaseID, migrationID, name, sqlText string, now time.Time) (Entry, error) {
 	row := r.pool.QueryRow(ctx, `
-		UPDATE migration_entries SET name=$3, sql_text=$4, updated_at=$5
-		WHERE database_id=$1::uuid AND id=$2::uuid AND status='draft'
-		RETURNING `+entryColumns, databaseID, migrationID, name, sqlText, now)
-	entry, err := scanEntry(row)
+		WITH updated AS (
+			UPDATE migration_entries SET name=$3, sql_text=$4, updated_at=$5
+			WHERE database_id=$1::uuid AND id=$2::uuid AND status='draft'
+			RETURNING *
+		)
+		SELECT `+readableEntryColumns+`
+		FROM updated m
+		JOIN users creator ON creator.id=m.created_by
+		LEFT JOIN users executor ON executor.id=m.executed_by`, databaseID, migrationID, name, sqlText, now)
+	entry, err := scanReadableEntry(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Entry{}, r.classifyMissingOrConflict(ctx, databaseID, migrationID)
 	}
@@ -59,9 +69,12 @@ func (r *PGRepository) UpdateDraft(ctx context.Context, databaseID, migrationID,
 }
 
 func (r *PGRepository) List(ctx context.Context, databaseID string, options ListOptions) (Page, error) {
-	rows, err := r.pool.Query(ctx, `SELECT `+entryColumns+`, count(*) OVER()
-		FROM migration_entries WHERE database_id=$1::uuid
-		ORDER BY version DESC LIMIT $2 OFFSET $3`, databaseID, options.Limit, options.Offset)
+	rows, err := r.pool.Query(ctx, `SELECT `+readableEntryColumns+`, count(*) OVER()
+		FROM migration_entries m
+		JOIN users creator ON creator.id=m.created_by
+		LEFT JOIN users executor ON executor.id=m.executed_by
+		WHERE m.database_id=$1::uuid
+		ORDER BY m.version DESC LIMIT $2 OFFSET $3`, databaseID, options.Limit, options.Offset)
 	if err != nil {
 		return Page{}, mapRepositoryError(err)
 	}
@@ -69,7 +82,7 @@ func (r *PGRepository) List(ctx context.Context, databaseID string, options List
 
 	page := Page{Items: make([]Entry, 0), Limit: options.Limit, Offset: options.Offset}
 	for rows.Next() {
-		entry, total, err := scanEntryWithTotal(rows)
+		entry, total, err := scanReadableEntryWithTotal(rows)
 		if err != nil {
 			return Page{}, err
 		}
@@ -80,8 +93,11 @@ func (r *PGRepository) List(ctx context.Context, databaseID string, options List
 }
 
 func (r *PGRepository) Get(ctx context.Context, databaseID, migrationID string) (Entry, error) {
-	entry, err := scanEntry(r.pool.QueryRow(ctx, `SELECT `+entryColumns+`
-		FROM migration_entries WHERE database_id=$1::uuid AND id=$2::uuid`, databaseID, migrationID))
+	entry, err := scanReadableEntry(r.pool.QueryRow(ctx, `SELECT `+readableEntryColumns+`
+		FROM migration_entries m
+		JOIN users creator ON creator.id=m.created_by
+		LEFT JOIN users executor ON executor.id=m.executed_by
+		WHERE m.database_id=$1::uuid AND m.id=$2::uuid`, databaseID, migrationID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Entry{}, ErrNotFound
 	}
@@ -175,12 +191,20 @@ func scanEntry(row rowScanner) (Entry, error) {
 	return entry, err
 }
 
-func scanEntryWithTotal(row rowScanner) (Entry, int64, error) {
+func scanReadableEntry(row rowScanner) (Entry, error) {
+	var entry Entry
+	err := row.Scan(&entry.ID, &entry.DatabaseID, &entry.Version, &entry.Name, &entry.SQL,
+		&entry.Status, &entry.CreatedBy, &entry.ExecutedBy, &entry.CreatedAt, &entry.StartedAt,
+		&entry.FinishedAt, &entry.ErrorMessage, &entry.CreatedByUsername, &entry.ExecutedByUsername)
+	return entry, err
+}
+
+func scanReadableEntryWithTotal(row rowScanner) (Entry, int64, error) {
 	var entry Entry
 	var total int64
 	err := row.Scan(&entry.ID, &entry.DatabaseID, &entry.Version, &entry.Name, &entry.SQL,
 		&entry.Status, &entry.CreatedBy, &entry.ExecutedBy, &entry.CreatedAt, &entry.StartedAt,
-		&entry.FinishedAt, &entry.ErrorMessage, &total)
+		&entry.FinishedAt, &entry.ErrorMessage, &entry.CreatedByUsername, &entry.ExecutedByUsername, &total)
 	return entry, total, err
 }
 

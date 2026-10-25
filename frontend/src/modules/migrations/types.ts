@@ -13,7 +13,9 @@ export interface MigrationEntry {
   sql: string
   status: MigrationStatus
   createdBy: string
+  createdByUsername: string
   executedBy: string | null
+  executedByUsername: string | null
   createdAt: string
   startedAt: string | null
   finishedAt: string | null
