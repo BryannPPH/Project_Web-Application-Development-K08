@@ -28,15 +28,24 @@ type MigrationService interface {
 }
 
 type Handler struct {
-	service MigrationService
-	logger  *slog.Logger
+	service             MigrationService
+	logger              *slog.Logger
+	maxSQLJSONBodyBytes int64
 }
 
 func NewHandler(service MigrationService, logger *slog.Logger) *Handler {
+	return newHandler(service, logger, DefaultMaxSQLBytes)
+}
+
+func newHandler(service MigrationService, logger *slog.Logger, maxSQLBytes int) *Handler {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Handler{service: service, logger: logger}
+	return &Handler{
+		service:             service,
+		logger:              logger,
+		maxSQLJSONBodyBytes: maxMigrationJSONBodyBytes(maxSQLBytes),
+	}
 }
 
 func (h *Handler) RegisterRoutes(mux *http.ServeMux, security *httpapi.AuthMiddleware) {
@@ -66,7 +75,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var request draftRequest
-	if !decodeJSON(w, r, &request) {
+	if !decodeJSON(w, r, &request, h.maxSQLJSONBodyBytes) {
 		return
 	}
 	entry, err := h.service.CreateDraft(r.Context(), principal, databaseID, request.Name, request.SQL)
@@ -83,7 +92,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var request draftRequest
-	if !decodeJSON(w, r, &request) {
+	if !decodeJSON(w, r, &request, h.maxSQLJSONBodyBytes) {
 		return
 	}
 	entry, err := h.service.UpdateDraft(r.Context(), principal, databaseID, r.PathValue("migrationId"), request.Name, request.SQL)
@@ -149,7 +158,7 @@ func (h *Handler) reconcile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var request reconcileRequest
-	if !decodeJSON(w, r, &request) {
+	if !decodeJSON(w, r, &request, apihttp.MaxJSONBodyBytes) {
 		return
 	}
 	if !request.InspectedTarget {
@@ -189,19 +198,44 @@ func queryInteger(r *http.Request, name string, fallback int) (int, bool) {
 	return value, err == nil
 }
 
-func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {
-	r.Body = http.MaxBytesReader(w, r.Body, DefaultMaxSQLBytes+4096)
+const (
+	maxJSONByteExpansion = int64(6)
+	jsonMetadataBytes    = int64(4 * 1024)
+)
+
+func maxMigrationJSONBodyBytes(maxSQLBytes int) int64 {
+	if maxSQLBytes <= 0 {
+		maxSQLBytes = DefaultMaxSQLBytes
+	}
+	return int64(maxSQLBytes)*maxJSONByteExpansion + jsonMetadataBytes
+}
+
+func decodeJSON(w http.ResponseWriter, r *http.Request, target any, maxBodyBytes int64) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
+		if isRequestTooLarge(err) {
+			writeMigrationError(w, http.StatusRequestEntityTooLarge, "REQUEST_TOO_LARGE", "request body is too large")
+			return false
+		}
 		writeMigrationError(w, http.StatusBadRequest, "INVALID_JSON", "request body is invalid")
 		return false
 	}
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		if isRequestTooLarge(err) {
+			writeMigrationError(w, http.StatusRequestEntityTooLarge, "REQUEST_TOO_LARGE", "request body is too large")
+			return false
+		}
 		writeMigrationError(w, http.StatusBadRequest, "INVALID_JSON", "request body must contain one JSON object")
 		return false
 	}
 	return true
+}
+
+func isRequestTooLarge(err error) bool {
+	var maxBytesError *http.MaxBytesError
+	return errors.As(err, &maxBytesError)
 }
 
 func (h *Handler) writeServiceError(w http.ResponseWriter, r *http.Request, err error) {

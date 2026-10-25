@@ -2,6 +2,7 @@ package migration
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -18,13 +19,15 @@ type handlerServiceStub struct {
 	createEntry    Entry
 	createErr      error
 	createCalls    int
+	createSQL      string
 	reconcileEntry Entry
 	reconcileErr   error
 	reconcileCalls int
 }
 
-func (s *handlerServiceStub) CreateDraft(context.Context, auth.Principal, string, string, string) (Entry, error) {
+func (s *handlerServiceStub) CreateDraft(_ context.Context, _ auth.Principal, _, _, sqlText string) (Entry, error) {
 	s.createCalls++
+	s.createSQL = sqlText
 	return s.createEntry, s.createErr
 }
 func (*handlerServiceStub) UpdateDraft(context.Context, auth.Principal, string, string, string, string) (Entry, error) {
@@ -60,6 +63,55 @@ func TestCreateHandlerReturnsCreatedDraft(t *testing.T) {
 	}
 	if got := recorder.Header().Get("Cache-Control"); got != "no-store" {
 		t.Fatalf("Cache-Control = %q, want no-store", got)
+	}
+}
+
+func TestCreateHandlerAcceptsEscapedSQLNearLimit(t *testing.T) {
+	t.Parallel()
+	sqlText := "SELECT 1;" + strings.Repeat("\n", DefaultMaxSQLBytes-len("SELECT 1;"))
+	body, err := json.Marshal(draftRequest{Name: "escaped_sql", SQL: sqlText})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(body) <= DefaultMaxSQLBytes+4096 {
+		t.Fatalf("encoded body size = %d, test must exceed the old HTTP limit", len(body))
+	}
+
+	stub := &handlerServiceStub{createEntry: Entry{ID: "created", Status: StatusDraft}}
+	handler := NewHandler(stub, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(string(body)))
+	request.SetPathValue("databaseId", "8d728274-b56e-4f93-8893-5b02d76a58cb")
+	request = request.WithContext(auth.WithPrincipal(request.Context(), auth.Principal{UserID: "user"}))
+	recorder := httptest.NewRecorder()
+
+	handler.create(recorder, request)
+
+	if recorder.Code != http.StatusCreated || stub.createCalls != 1 {
+		t.Fatalf("status=%d service calls=%d body=%s", recorder.Code, stub.createCalls, recorder.Body.String())
+	}
+	if stub.createSQL != sqlText {
+		t.Fatal("decoded SQL did not match the submitted SQL")
+	}
+}
+
+func TestCreateHandlerRejectsBodyBeyondJSONEnvelope(t *testing.T) {
+	t.Parallel()
+	stub := &handlerServiceStub{}
+	handler := NewHandler(stub, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	body := `{"name":"oversized","sql":"` + strings.Repeat("x", int(handler.maxSQLJSONBodyBytes)) + `"}`
+	request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+	request.SetPathValue("databaseId", "8d728274-b56e-4f93-8893-5b02d76a58cb")
+	request = request.WithContext(auth.WithPrincipal(request.Context(), auth.Principal{UserID: "user"}))
+	recorder := httptest.NewRecorder()
+
+	handler.create(recorder, request)
+
+	if recorder.Code != http.StatusRequestEntityTooLarge ||
+		!strings.Contains(recorder.Body.String(), `"code":"REQUEST_TOO_LARGE"`) {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if stub.createCalls != 0 {
+		t.Fatalf("service called %d times for an oversized body", stub.createCalls)
 	}
 }
 

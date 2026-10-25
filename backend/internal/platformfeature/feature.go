@@ -67,7 +67,7 @@ func FeatureFactory(startupContext context.Context, options Options) app.Feature
 		if err != nil {
 			return nil, fmt.Errorf("configure migration explain: %w", err)
 		}
-		explainHandler := migration.NewExplainHandler(explainService, dependencies.Logger)
+		explainHandler := migration.NewExplainHandler(explainService, dependencies.Logger, options.Migration.MaxSQLBytes)
 		diffService, err := schemadiff.NewService(components.Authz, components.TargetProvider)
 		if err != nil {
 			return nil, fmt.Errorf("configure schema diff: %w", err)

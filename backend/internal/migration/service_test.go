@@ -107,10 +107,14 @@ type fixedClock struct{ current time.Time }
 func (f fixedClock) Now() time.Time { return f.current }
 
 func newTestService(t *testing.T, repository *fakeRepository, authorizer *fakeAuthorizer, locker *fakeLocker, executor *fakeExecutor) *Service {
+	return newTestServiceWithConfig(t, repository, authorizer, locker, executor, ServiceConfig{})
+}
+
+func newTestServiceWithConfig(t *testing.T, repository *fakeRepository, authorizer *fakeAuthorizer, locker *fakeLocker, executor *fakeExecutor, config ServiceConfig) *Service {
 	t.Helper()
 	service, err := NewService(repository, authorizer, locker, executor,
 		fixedClock{current: time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)},
-		slog.New(slog.NewTextHandler(io.Discard, nil)), ServiceConfig{})
+		slog.New(slog.NewTextHandler(io.Discard, nil)), config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,6 +237,29 @@ func TestDraftValidationRejectsEmptyAndTransactionControl(t *testing.T) {
 	}
 	if _, err := service.CreateDraft(context.Background(), principal, "database", "name", "BEGIN; SELECT 1"); !errors.Is(err, ErrSQLPolicy) {
 		t.Fatalf("transaction SQL error = %v", err)
+	}
+}
+
+func TestDraftValidationRejectsSQLAboveConfiguredLimit(t *testing.T) {
+	t.Parallel()
+	service := newTestServiceWithConfig(
+		t,
+		&fakeRepository{},
+		&fakeAuthorizer{},
+		&fakeLocker{},
+		&fakeExecutor{},
+		ServiceConfig{MaxSQLBytes: 10},
+	)
+
+	_, err := service.CreateDraft(
+		context.Background(),
+		auth.Principal{UserID: "user"},
+		"database",
+		"name",
+		"SELECT 12345",
+	)
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("oversized SQL error = %v, want invalid input", err)
 	}
 }
 

@@ -16,13 +16,18 @@ type Explainer interface {
 
 // ExplainHandler melayani POST /api/v1/databases/{databaseId}/migrations/explain.
 type ExplainHandler struct {
-	service Explainer
-	errors  *Handler
+	service             Explainer
+	errors              *Handler
+	maxSQLJSONBodyBytes int64
 }
 
-func NewExplainHandler(service Explainer, logger *slog.Logger) *ExplainHandler {
+func NewExplainHandler(service Explainer, logger *slog.Logger, maxSQLBytes int) *ExplainHandler {
 	// Pemetaan error dipinjam dari Handler migration agar kode error konsisten.
-	return &ExplainHandler{service: service, errors: NewHandler(nil, logger)}
+	return &ExplainHandler{
+		service:             service,
+		errors:              newHandler(nil, logger, maxSQLBytes),
+		maxSQLJSONBodyBytes: maxMigrationJSONBodyBytes(maxSQLBytes),
+	}
 }
 
 func (h *ExplainHandler) RegisterRoutes(mux *http.ServeMux, security *httpapi.AuthMiddleware) {
@@ -40,7 +45,7 @@ func (h *ExplainHandler) explain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var request explainRequest
-	if !decodeJSON(w, r, &request) {
+	if !decodeJSON(w, r, &request, h.maxSQLJSONBodyBytes) {
 		return
 	}
 	result, err := h.service.Explain(r.Context(), principal, databaseID, request.SQL, request.Analyze)

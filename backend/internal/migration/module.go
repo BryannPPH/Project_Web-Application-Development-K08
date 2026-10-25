@@ -42,7 +42,7 @@ func NewModule(
 	if err := recoverRunning(ctx, repository, logger, time.Now().UTC()); err != nil {
 		return nil, err
 	}
-	return NewHandler(service, logger), nil
+	return newHandler(service, logger, service.maxSQLBytes), nil
 }
 
 const recoveryReason = "migration execution was interrupted by a server restart; manual reconciliation is required"
