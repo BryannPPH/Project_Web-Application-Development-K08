@@ -1,9 +1,63 @@
 # Database Management Platform
 
-Database Management Platform adalah proyek Milestone 1 IF3110 Pengembangan
-Aplikasi Web. Aplikasi menyediakan authentication, administrasi user dan group,
-kontrol akses database, PostgreSQL/MySQL viewer read-only, serta migration executor
-transactional.
+Database Management Platform (DBMP) adalah aplikasi web untuk mengelola akses dan
+perubahan pada database PostgreSQL maupun MySQL dari satu antarmuka. Aplikasi ini
+dibuat untuk Milestone 1 IF3110 Pengembangan Aplikasi Web, dengan fokus pada
+kontrol akses berbasis group, database viewer read-only, dan migration yang
+tercatat.
+
+## Authors
+
+| Nama | NIM |
+|---|---|
+| Stefani Angeline Oroh | 13524064 |
+| Bryan Pratama Putra Hendra | 13524067 |
+| Angelina Andra Alanna | 13524079 |
+
+## Struktur Program
+
+```text
+.
+├── backend/
+│   ├── cmd/
+│   │   ├── api/                    # HTTP API server
+│   │   ├── bootstrap-admin/        # Membuat platform admin pertama
+│   │   └── migrate/                # Menjalankan migration platform
+│   ├── internal/
+│   │   ├── app/                    # Komposisi dependency dan startup aplikasi
+│   │   ├── auth/                   # Login, password, dan bootstrap admin
+│   │   ├── authz/                  # Resolusi hak akses user ke database
+│   │   ├── database/               # Managed database dan enkripsi credential
+│   │   ├── group/                  # Group dan membership
+│   │   ├── migration/              # Draft, eksekusi, EXPLAIN, dan recovery
+│   │   ├── platformdb/             # Koneksi ke database internal platform
+│   │   ├── schemadiff/             # Introspeksi dan perbandingan schema
+│   │   ├── session/                # Session cookie dan lifecycle session
+│   │   ├── targetdb/               # Koneksi dan driver target PostgreSQL/MySQL
+│   │   ├── user/                   # Administrasi user
+│   │   ├── viewer/                 # Schema, table, metadata, dan row viewer
+│   │   └── shared/                 # Komponen bersama backend
+│   ├── migrations/                 # Goose migration untuk schema platform
+│   └── tests/integration/          # Pengujian dengan database nyata
+├── database/
+│   └── seeds/university/           # Dataset universitas untuk target PostgreSQL
+├── frontend/
+│   └── src/
+│       ├── app/                    # Router, halaman utama, dan setup aplikasi
+│       ├── components/             # Komponen UI bersama
+│       ├── lib/                    # API client dan utilitas frontend
+│       ├── modules/                # Fitur auth, admin, database, viewer, migration
+│       └── styles/                 # Style global dan token tampilan
+├── compose.yml                     # Seluruh service untuk development lokal
+├── Makefile                        # Shortcut command development dan testing
+├── TESTING.md                      # Checklist pengujian manual dan otomatis
+└── .env.example                    # Contoh konfigurasi lokal
+```
+
+Backend mengelompokkan kode berdasarkan domain di `internal/`; frontend
+mengelompokkan layar dan API berdasarkan fitur di `modules/`. Migration platform
+berada di `backend/migrations/`, sedangkan migration yang dibuat pengguna
+disimpan pada database platform dan dijalankan ke target yang dipilih.
 
 ## Fitur Milestone 1
 
@@ -13,7 +67,7 @@ transactional.
 - PostgreSQL dan MySQL 8.4 viewer untuk schema, table/view, struktur, index, constraint, dan row.
 - Migration history dengan draft, versioning, commit, rollback, dan recovery.
 - Enkripsi credential managed database menggunakan AES-256-GCM.
-- Unit test, integration test PostgreSQL, race detector, dan frontend test.
+- Unit test, integration test PostgreSQL/MySQL, dan frontend test.
 
 ## Teknologi
 
@@ -140,7 +194,8 @@ make seed-university
 Command dapat dijalankan ulang. Setiap eksekusi hanya menghapus dan membuat
 ulang schema `campus`, `people`, `academics`, `admissions`, `finance`,
 `library`, `research`, dan `reporting` pada `target-db`. Schema lain tidak
-diubah. Rincian dataset ada di `database/seeds/university/README.md`.
+diubah. Rincian jumlah data dan contoh query tersedia di
+[panduan seed universitas](./database/seeds/university/README.md).
 
 ## Operasional Docker
 
@@ -195,6 +250,8 @@ host. Gunakan mode ini ketika aktif mengembangkan source.
 - Go 1.26 atau lebih baru;
 - Bun 1.3 atau lebih baru;
 - Docker dengan Docker Compose v2.
+
+Pastikan `.env` sudah dibuat mengikuti langkah **Siapkan environment** di atas.
 
 Install dependency frontend:
 
@@ -316,22 +373,6 @@ Saat backend start, entry `running` yang tertinggal dari proses sebelumnya
 diubah menjadi `interrupted`. Implementasi Milestone 1 mengasumsikan satu
 instance backend aktif.
 
-## Testing
-
-Panduan automated test, manual test, data fixture, authorization matrix,
-migration commit/rollback, security checklist, dan kriteria kelulusan tersedia di
-[TESTING.md](./TESTING.md).
-
-Pemeriksaan utama:
-
-```bash
-make backend-test
-make backend-integration-test
-make frontend-check
-```
-
-Integration test membutuhkan target database terkait yang healthy.
-
 ## Command Makefile
 
 | Command | Kegunaan |
@@ -349,28 +390,8 @@ Integration test membutuhkan target database terkait yang healthy.
 | `make backend-run` | Jalankan backend dari host |
 | `make frontend-dev` | Jalankan Vite development server |
 | `make backend-test` | Jalankan seluruh backend test |
-| `make backend-integration-test` | Jalankan integration test PostgreSQL |
+| `make backend-integration-test` | Jalankan integration test dengan PostgreSQL dan MySQL |
 | `make frontend-check` | Typecheck, lint, test, dan build frontend |
-
-## Struktur Repository
-
-```text
-.
-├── backend/
-│   ├── cmd/                  # api, migrate, bootstrap-admin
-│   ├── internal/             # domain dan infrastructure backend
-│   ├── migrations/           # schema internal platform
-│   ├── tests/integration/    # integration test PostgreSQL
-│   └── Dockerfile
-├── frontend/
-│   ├── src/                  # React application
-│   ├── Dockerfile
-│   └── nginx.conf
-├── compose.yml
-├── Makefile
-├── TESTING.md
-└── .env.example
-```
 
 ## Catatan Production
 
