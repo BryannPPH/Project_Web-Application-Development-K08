@@ -1,9 +1,3 @@
-// Package platformaccess merangkai modul Person 2 (authz, user, group, managed
-// database, targetdb, viewer) menjadi satu app.FeatureFactory.
-//
-// Composition root (internal/app) tetap milik integration owner; package ini
-// hanya membangun dependency dan mendaftarkan route melalui kontrak
-// app.WithFeatureFactory, tanpa global singleton.
 package platformaccess
 
 import (
@@ -28,8 +22,6 @@ type Options struct {
 	ViewerQueryTimeout   time.Duration
 }
 
-// Components berisi service yang dapat dipakai modul lain (mis. migration
-// Person 3) tanpa mengimpor repository konkret.
 type Components struct {
 	Authz          authz.Service
 	TargetProvider targetdb.Provider

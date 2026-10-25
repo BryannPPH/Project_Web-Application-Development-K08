@@ -26,8 +26,6 @@ import (
 
 const platformTestPassword = "integration-password-123"
 
-// platformHarness menyalakan seluruh stack HTTP (auth + fitur Person 2) di atas
-// PostgreSQL platform sungguhan. Fixture diberi prefix unik dan dibersihkan.
 type platformHarness struct {
 	t        *testing.T
 	database *pgxpool.Pool

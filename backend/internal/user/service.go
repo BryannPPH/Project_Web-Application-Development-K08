@@ -50,7 +50,6 @@ func (s *Service) Get(ctx context.Context, principal auth.Principal, id string) 
 	return s.repository.Get(ctx, id)
 }
 
-// Create membuat user baru dengan password yang di-hash memakai hasher Person 1.
 func (s *Service) Create(ctx context.Context, principal auth.Principal, input CreateInput) (User, error) {
 	if err := s.policy.RequirePlatformAdmin(ctx, principal); err != nil {
 		return User{}, err
