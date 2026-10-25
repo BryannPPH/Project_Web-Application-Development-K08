@@ -6,6 +6,12 @@ dibuat untuk Milestone 1 IF3110 Pengembangan Aplikasi Web, dengan fokus pada
 kontrol akses berbasis group, database viewer read-only, dan migration yang
 tercatat.
 
+## Preview Aplikasi
+
+Cuplikan tampilan aplikasi DB Manager.
+
+![Preview aplikasi DB Manager](assets/db-manager-preview.gif)
+
 ## Authors
 
 | Nama | NIM |
