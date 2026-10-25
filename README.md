@@ -280,16 +280,31 @@ Setiap managed database memiliki urutan migration linear dengan status:
 |---|---|
 | `draft` | Nama dan SQL masih dapat diubah |
 | `running` | Sedang dijalankan pada target database |
-| `succeeded` | Seluruh SQL berhasil dan transaction di-commit |
-| `failed` | SQL gagal dan transaction di-rollback |
+| `succeeded` | Seluruh SQL berhasil diterapkan; jaminan transaksi bergantung pada engine dan jenis SQL |
+| `failed` | SQL transaksional gagal dan perubahan di-rollback |
 | `interrupted` | Hasil tidak pasti dan membutuhkan rekonsiliasi manual |
+| `needs_reconciliation` | DDL MySQL gagal; periksa kondisi target sebelum migration berikutnya |
 
 Backend melarang transaction control statement seperti `BEGIN`, `COMMIT`, dan
 `ROLLBACK` di dalam SQL migration karena transaction dikelola oleh executor.
 
-Pada PostgreSQL, DML dan DDL dijalankan atomik dalam satu transaction. MySQL
-hanya menerima `SELECT`, `INSERT`, `UPDATE`, dan `DELETE`; DDL ditolak sebelum
-eksekusi karena implicit commit MySQL tidak dapat memenuhi jaminan rollback penuh.
+Pada PostgreSQL, DML dan DDL dijalankan dalam satu transaction. Pada MySQL, DML
+(`SELECT`, `INSERT`, `UPDATE`, `DELETE`) dijalankan dalam transaction, sedangkan
+DDL table/index yang didukung (`CREATE TABLE`, `ALTER TABLE`, `DROP TABLE`,
+`CREATE INDEX`, `DROP INDEX`) dijalankan satu per satu tanpa transaction
+pembungkus. MySQL melakukan implicit commit pada DDL, sehingga DDL tidak dapat
+di-rollback bersama sebagai satu rangkaian. Karena itu DDL dan DML harus berada
+di migration berbeda. Jika statement DDL gagal, status menjadi
+`needs_reconciliation` dan migration berikutnya diblokir sampai kondisi target
+diperiksa.
+
+`view_edit` mengizinkan user menjalankan migration melalui aplikasi, tetapi
+tidak menambahkan privilege pada akun database target. Koneksi menggunakan
+credential yang disimpan untuk managed database; akun tersebut harus memiliki
+privilege SQL yang diperlukan pada database target (misalnya `ALTER` untuk
+mengubah tabel). Berikan privilege dengan cakupan sesempit mungkin. Kegagalan
+privilege dari target tetap dicatat sebagai kegagalan migration; DDL MySQL
+memerlukan pemeriksaan kondisi schema sebelum status rekonsiliasi diselesaikan.
 
 Saat backend start, entry `running` yang tertinggal dari proses sebelumnya
 diubah menjadi `interrupted`. Implementasi Milestone 1 mengasumsikan satu
