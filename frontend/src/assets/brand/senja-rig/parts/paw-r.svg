@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="20 40 310 430" width="310" height="430">
+  <!-- Senja rig layer "paw-r". Generated from senja-rig.svg by scripts/build-rig.mjs; edit the master. -->
+  <g id="paw-r" data-pivot="238 346">
+                <path fill="#FB7339" d="M254,344 C258,352 254,361 244,363 C234,365 224,362 222,354 C220,346 224,340 230,339 L250,338 Z"/>
+        <path fill="none" stroke="#C9502A" stroke-width="1.5" stroke-linecap="round" d="M242,355 L241,362 M233,355 L233,362"/>
+      </g>
+</svg>

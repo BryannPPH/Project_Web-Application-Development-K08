@@ -1,0 +1,26 @@
+/* Rig Senja: kotak berproporsi sama dengan viewBox rig (310 x 430).
+ * Tinggi diatur oleh pemakai (mis. .hero__art); lebar mengikuti rasio.
+ * overflow visible: lengan terangkat dan lompatan boleh keluar dari kotak. */
+.senja-rig {
+  display: block;
+  aspect-ratio: 310 / 430;
+}
+
+.senja-rig svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* Kostum: semua lapisan kostum disembunyikan, lalu hanya kostum terpilih yang tampil. */
+.senja-rig [data-outfit] {
+  display: none;
+}
+
+.senja-rig[data-outfit='pagi'] [data-outfit='pagi'],
+.senja-rig[data-outfit='siang'] [data-outfit='siang'],
+.senja-rig[data-outfit='sore'] [data-outfit='sore'],
+.senja-rig[data-outfit='malam'] [data-outfit='malam'] {
+  display: inline;
+}

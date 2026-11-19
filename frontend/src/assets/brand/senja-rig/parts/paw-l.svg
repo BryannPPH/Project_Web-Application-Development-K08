@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="20 40 310 430" width="310" height="430">
+  <!-- Senja rig layer "paw-l". Generated from senja-rig.svg by scripts/build-rig.mjs; edit the master. -->
+  <g id="paw-l" data-pivot="178 346">
+        <path fill="#FB7339" d="M162,344 C158,352 162,361 172,363 C182,365 192,362 194,354 C196,346 192,340 186,339 L166,338 Z"/>
+        <path fill="none" stroke="#C9502A" stroke-width="1.5" stroke-linecap="round" d="M174,355 L175,362 M183,355 L183,362"/>
+        <g id="paw-l-pad" opacity="0">
+          <ellipse fill="#3E2236" cx="178" cy="352" rx="14" ry="12"/>
+          <ellipse fill="#F7787A" cx="178" cy="348.5" rx="5.5" ry="4.6"/>
+          <circle fill="#F7787A" cx="171" cy="356" r="2.6"/>
+          <circle fill="#F7787A" cx="178" cy="359.5" r="2.6"/>
+          <circle fill="#F7787A" cx="185.5" cy="356.5" r="2.6"/>
+        </g>
+      </g>
+</svg>
