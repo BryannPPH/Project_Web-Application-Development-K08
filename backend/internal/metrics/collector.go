@@ -103,6 +103,9 @@ func (c *Collector) collectPool(ch chan<- prometheus.Metric) {
 // migrationStatuses: semua status di CHECK constraint, supaya status dengan 0 baris tetap muncul.
 var migrationStatuses = []string{"draft", "running", "succeeded", "failed", "interrupted", "needs_reconciliation", "reconciled"}
 
+// finishedStatuses: status yang punya started_at dan finished_at (histogram durasi).
+var finishedStatuses = []string{"succeeded", "failed", "interrupted", "needs_reconciliation", "reconciled"}
+
 func (c *Collector) collectMigrations(ctx context.Context, ch chan<- prometheus.Metric) error {
 	counts := make(map[string]float64, len(migrationStatuses))
 	for _, status := range migrationStatuses {
@@ -136,6 +139,7 @@ func (c *Collector) collectMigrations(ctx context.Context, ch chan<- prometheus.
 		return fmt.Errorf("load migration durations: %w", err)
 	}
 	defer durations.Close()
+	seen := make(map[string]bool, len(finishedStatuses))
 	for durations.Next() {
 		var status string
 		var count uint64
@@ -153,8 +157,23 @@ func (c *Collector) collectMigrations(ctx context.Context, ch chan<- prometheus.
 			buckets[upper] = bucketCounts[i]
 		}
 		ch <- prometheus.MustNewConstHistogram(c.migrationDuration, count, sum, buckets, status)
+		seen[status] = true
 	}
-	return durations.Err()
+	if err := durations.Err(); err != nil {
+		return err
+	}
+	// Status selesai tanpa baris tetap dikirim bernilai 0, supaya kejadian pertama
+	// terbaca sebagai kenaikan 0 -> 1 oleh increase()/rate().
+	empty := make(map[float64]uint64, len(durationBuckets))
+	for _, upper := range durationBuckets {
+		empty[upper] = 0
+	}
+	for _, status := range finishedStatuses {
+		if !seen[status] {
+			ch <- prometheus.MustNewConstHistogram(c.migrationDuration, 0, 0, empty, status)
+		}
+	}
+	return nil
 }
 
 // durationQuery menghitung count, sum, dan isi tiap bucket per status di SQL.

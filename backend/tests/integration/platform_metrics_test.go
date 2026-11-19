@@ -52,3 +52,29 @@ func TestMetricsAgainstPlatformDatabase(t *testing.T) {
 		}
 	}
 }
+
+// Status selesai tanpa data tetap muncul bernilai 0, supaya kegagalan pertama
+// terhitung oleh increase() sebagai kenaikan 0 -> 1.
+func TestMetricsExposeEveryFinishedStatus(t *testing.T) {
+	databaseURL := os.Getenv("TEST_PLATFORM_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_PLATFORM_DATABASE_URL is not set")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatalf("connect platform database: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	registry := prometheus.NewRegistry()
+	registry.MustRegister(metrics.NewCollector(pool, nil))
+	recorder := httptest.NewRecorder()
+	metrics.Handler(registry, "").ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	for _, status := range []string{"succeeded", "failed", "interrupted", "needs_reconciliation", "reconciled"} {
+		if !strings.Contains(recorder.Body.String(), `dbmp_migration_duration_seconds_count{status="`+status+`"}`) {
+			t.Errorf("duration histogram is missing status %q", status)
+		}
+	}
+}
