@@ -1,3 +1,19 @@
+/*
+ * FILE INI UNTUK APA (admin/api.ts)
+ * GUIDEBOOK: §2.8 + §4.7 (CSRF lewat apiRequest)
+ * Semua pemanggilan API halaman admin, dibungkus hook React Query:
+ *   useQuery    -> AMBIL data (useAdminUsers, useAdminGroups, useGroupMembers,
+ *                  useGroupGrants, useManagedDatabases)
+ *   useMutation -> UBAH data (useUserMutations, useGroupMutations,
+ *                  useManagedDatabaseMutations)
+ * Pola setiap mutation:
+ *   1. mutationFn  -> panggil apiRequest (POST/PATCH/PUT/DELETE). apiRequest milik
+ *                     Person 1 otomatis menambah header X-CSRF-Token untuk mutasi.
+ *   2. onSuccess   -> invalidate cache 'admin' -> React Query fetch ulang data
+ *                     yang terkait, sehingga tabel di layar langsung ter-update.
+ * Perumpamaan: papan pengumuman. Setiap ada perubahan, papan lama dicopot
+ * (invalidate) lalu dicetak ulang dari data terbaru di server.
+ */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { apiRequest } from '@/lib/api-client'
@@ -22,10 +38,12 @@ export const adminQueryKeys = {
   databases: ['admin', 'databases'] as const,
 }
 
+// Singkatan: setiap ID yang masuk URL di-encode supaya aman.
 const id = encodeURIComponent
 
 // ---- Users ----
 
+// useAdminUsers: GET /admin/users untuk tabel user.
 export function useAdminUsers() {
   return useQuery({
     queryKey: adminQueryKeys.users,
@@ -46,6 +64,7 @@ export interface UpdateUserInput {
   isActive?: boolean
 }
 
+// useUserMutations: create (POST), update role/status (PATCH), resetPassword (POST).
 export function useUserMutations() {
   const queryClient = useQueryClient()
   // Membership menampilkan status user, jadi invalidasi seluruh cache admin.
@@ -75,6 +94,7 @@ export function useUserMutations() {
 
 // ---- Groups, members, grants ----
 
+// useAdminGroups: GET /admin/groups.
 export function useAdminGroups() {
   return useQuery({
     queryKey: adminQueryKeys.groups,
@@ -83,6 +103,7 @@ export function useAdminGroups() {
   })
 }
 
+// useGroupMembers: anggota satu group (panel "Kelola").
 export function useGroupMembers(groupId: string) {
   return useQuery({
     queryKey: adminQueryKeys.members(groupId),
@@ -92,6 +113,7 @@ export function useGroupMembers(groupId: string) {
   })
 }
 
+// useGroupGrants: database yang bisa diakses satu group.
 export function useGroupGrants(groupId: string) {
   return useQuery({
     queryKey: adminQueryKeys.groupGrants(groupId),
@@ -101,6 +123,7 @@ export function useGroupGrants(groupId: string) {
   })
 }
 
+// useGroupMutations: CRUD group, tambah/hapus anggota, set/cabut akses database.
 export function useGroupMutations() {
   const queryClient = useQueryClient()
   const invalidate = () => queryClient.invalidateQueries({ queryKey: adminQueryKeys.all })
@@ -163,6 +186,7 @@ export function useGroupMutations() {
 
 // ---- Managed databases ----
 
+// useManagedDatabases: GET /admin/databases (tanpa password).
 export function useManagedDatabases() {
   return useQuery({
     queryKey: adminQueryKeys.databases,
@@ -171,6 +195,8 @@ export function useManagedDatabases() {
   })
 }
 
+// useManagedDatabaseMutations: create/update/remove koneksi + testStored/testDraft.
+// Selain cache admin, cache 'databases' (menu Database user) juga di-invalidate.
 export function useManagedDatabaseMutations() {
   const queryClient = useQueryClient()
   const invalidate = () => {

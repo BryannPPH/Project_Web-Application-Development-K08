@@ -1,3 +1,11 @@
+/*
+ * FILE INI UNTUK APA (admin/forms.ts)
+ * GUIDEBOOK: §2.8 (validasi frontend = UX saja)
+ * Validasi form di sisi browser (nama, host, port, dll.) supaya user langsung
+ * dapat pesan error tanpa menunggu server. Ini HANYA untuk kenyamanan (UX);
+ * backend tetap memvalidasi ulang semuanya karena request bisa dikirim lewat Postman.
+ * Saat EDIT koneksi, password kosong artinya "jangan ganti password".
+ */
 import type { ManagedDatabaseInput, SSLMode } from '@/modules/admin/types'
 import type { DatabaseEngine } from '@/modules/databases/types'
 
@@ -6,7 +14,7 @@ import type { DatabaseEngine } from '@/modules/databases/types'
 export function validateNewUser(username: string, password: string) {
   const trimmed = username.trim()
   if (trimmed.length < 3 || trimmed.length > 64 || /\s/.test(trimmed)) {
-    return 'Username harus 3–64 karakter tanpa spasi.'
+    return 'Username harus 3 sampai 64 karakter tanpa spasi.'
   }
   if (password.length < 8) {
     return 'Password minimal 8 karakter.'
