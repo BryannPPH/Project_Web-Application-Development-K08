@@ -154,6 +154,7 @@ func TestMigrationExecutionCommitAndRollback(t *testing.T) {
 		allowMigrationAccess{},
 		migration.NewPGAdvisoryLocker(platform),
 		migration.NewPGExecutor(integrationTargetProvider{url: targetURL}),
+		approveAll{},
 		migration.RealClock{},
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 		migration.ServiceConfig{ExecutionTimeout: 10 * time.Second},
@@ -203,13 +204,14 @@ func TestMigrationExecutionCommitAndRollback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create interrupted draft: %v", err)
 	}
-	if _, err := repository.MarkRunning(ctx, databaseID, orphaned.ID, userID, time.Now().UTC()); err != nil {
+	if _, err := repository.MarkRunning(ctx, databaseID, orphaned.ID, userID, orphaned.Revision, time.Now().UTC()); err != nil {
 		t.Fatalf("mark interrupted fixture running: %v", err)
 	}
 	if _, err := migration.NewModule(
 		ctx,
 		platform,
 		allowMigrationAccess{},
+		approveAll{},
 		integrationTargetProvider{url: targetURL},
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 		migration.ServiceConfig{ExecutionTimeout: 10 * time.Second},
@@ -280,3 +282,8 @@ func TestMigrationExecutionCommitAndRollback(t *testing.T) {
 		t.Fatalf("allocated %d concurrent versions, want %d", len(seen), concurrentDrafts)
 	}
 }
+
+// approveAll: gerbang approval yang selalu mengizinkan (test ini fokus ke eksekusi).
+type approveAll struct{}
+
+func (approveAll) RequireApproved(context.Context, string, string, string, int64) error { return nil }

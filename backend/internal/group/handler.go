@@ -39,6 +39,40 @@ func (h *Handler) Register(mux *http.ServeMux, security *httpapi.AuthMiddleware)
 	mux.Handle("PUT /api/v1/admin/groups/{id}/databases/{databaseId}", write(h.upsertGrant))
 	mux.Handle("DELETE /api/v1/admin/groups/{id}/databases/{databaseId}", write(h.deleteGrant))
 	mux.Handle("GET /api/v1/admin/databases/{id}/grants", read(h.listDatabaseGrants))
+
+	mux.Handle("PUT /api/v1/admin/groups/{id}/leader", write(h.setLeader))
+	mux.Handle("DELETE /api/v1/admin/groups/{id}/leader", write(h.clearLeader))
+}
+
+func (h *Handler) setLeader(w http.ResponseWriter, r *http.Request) {
+	principal, ok := requirePrincipal(w, r)
+	if !ok {
+		return
+	}
+	var input SetLeaderInput
+	if err := apihttp.DecodeJSON(w, r, &input); err != nil {
+		apihttp.WriteError(w, http.StatusBadRequest, "INVALID_BODY", "invalid request body")
+		return
+	}
+	record, err := h.service.SetLeader(r.Context(), principal, r.PathValue("id"), input)
+	if err != nil {
+		h.writeError(w, r, "set group leader", err)
+		return
+	}
+	apihttp.WriteJSON(w, http.StatusOK, map[string]any{"group": record})
+}
+
+func (h *Handler) clearLeader(w http.ResponseWriter, r *http.Request) {
+	principal, ok := requirePrincipal(w, r)
+	if !ok {
+		return
+	}
+	record, err := h.service.ClearLeader(r.Context(), principal, r.PathValue("id"))
+	if err != nil {
+		h.writeError(w, r, "clear group leader", err)
+		return
+	}
+	apihttp.WriteJSON(w, http.StatusOK, map[string]any{"group": record})
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
@@ -241,7 +275,18 @@ func (h *Handler) writeError(w http.ResponseWriter, r *http.Request, operation s
 		apihttp.WriteError(w, http.StatusNotFound, "GRANT_NOT_FOUND", "grant not found")
 	case errors.Is(err, ErrDuplicateName):
 		apihttp.WriteError(w, http.StatusConflict, "GROUP_NAME_TAKEN", "group name already exists")
+	case errors.Is(err, ErrLeaderNotMember):
+		writeLeaderError(w, "LEADER_NOT_MEMBER", "leader must be a member of the group")
+	case errors.Is(err, ErrLeaderInactive):
+		writeLeaderError(w, "LEADER_INACTIVE", "leader must be an active user")
 	default:
 		apihttp.InternalError(w, r, h.logger, operation, err)
 	}
+}
+
+// writeLeaderError: 400 dengan field "userId" supaya UI bisa menandai pilihan leader.
+func writeLeaderError(w http.ResponseWriter, code, message string) {
+	apihttp.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]string{
+		"code": code, "message": message, "requestId": apihttp.RequestID(w), "field": "userId",
+	}})
 }

@@ -16,11 +16,12 @@ func NewModule(
 	ctx context.Context,
 	platformDatabase *pgxpool.Pool,
 	authorizer Authorizer,
+	approvals ApprovalGate,
 	targets targetdb.Provider,
 	logger *slog.Logger,
 	config ServiceConfig,
 ) (*Handler, error) {
-	if ctx == nil || platformDatabase == nil || authorizer == nil || targets == nil {
+	if ctx == nil || platformDatabase == nil || authorizer == nil || approvals == nil || targets == nil {
 		return nil, errors.New("migration module dependencies are required")
 	}
 	if logger == nil {
@@ -32,6 +33,7 @@ func NewModule(
 		authorizer,
 		NewPGAdvisoryLocker(platformDatabase),
 		NewPGExecutor(targets),
+		approvals,
 		RealClock{},
 		logger,
 		config,

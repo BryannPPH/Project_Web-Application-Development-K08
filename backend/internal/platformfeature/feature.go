@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/app"
+	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/approval"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/database"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/httpapi"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/migration"
@@ -49,10 +50,18 @@ func FeatureFactory(startupContext context.Context, options Options) app.Feature
 		ctx, cancel := context.WithTimeout(startupContext, startupTimeout)
 		defer cancel()
 
+		// Approval dibuat sebelum migration karena menjadi gerbang eksekusinya.
+		approvals, err := approval.NewService(approval.NewPGRepository(dependencies.Database), components.Authz, nil)
+		if err != nil {
+			return nil, fmt.Errorf("configure approval: %w", err)
+		}
+		approvalHandler := approval.NewHandler(approvals, dependencies.Logger)
+
 		migrationHandler, err := migration.NewModule(
 			ctx,
 			dependencies.Database,
 			components.Authz,
+			approvals,
 			components.TargetProvider,
 			dependencies.Logger,
 			options.Migration,
@@ -77,6 +86,7 @@ func FeatureFactory(startupContext context.Context, options Options) app.Feature
 		return func(mux *http.ServeMux, security *httpapi.AuthMiddleware) {
 			platformRegistrar(mux, security)
 			migrationHandler.RegisterRoutes(mux, security)
+			approvalHandler.RegisterRoutes(mux, security)
 			explainHandler.RegisterRoutes(mux, security)
 			diffHandler.RegisterRoutes(mux, security)
 		}, nil
