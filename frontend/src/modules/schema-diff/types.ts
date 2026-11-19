@@ -1,3 +1,10 @@
+/*
+ * FILE INI UNTUK APA (schema-diff/types.ts) - BONUS 2
+ * Tipe TypeScript yang sama bentuknya dengan backend/internal/schemadiff/model.go:
+ *   SchemaRef        = {databaseId, schema}            (Ref di Go)
+ *   SchemaChange     = satu perubahan + SQL-nya         (Change di Go)
+ *   SchemaDiffResult = seluruh hasil perbandingan       (Result di Go)
+ */
 import type { DatabaseEngine } from '@/modules/databases/types'
 
 export interface SchemaRef {

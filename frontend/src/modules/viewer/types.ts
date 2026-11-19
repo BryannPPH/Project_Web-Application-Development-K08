@@ -1,3 +1,9 @@
+/*
+ * FILE INI UNTUK APA (viewer/types.ts)
+ * GUIDEBOOK: §2.8
+ * Tipe TypeScript untuk response viewer (schema, tabel, kolom, constraint, index,
+ * halaman data) + label Bahasa Indonesia. Bentuknya mengikuti backend/internal/viewer/model.go.
+ */
 export interface SchemaSummary {
   name: string
   owner: string

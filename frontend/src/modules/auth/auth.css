@@ -53,7 +53,27 @@
   height: 1.75rem;
 }
 
-/* ---------- Hutan senja ---------- */
+/* ---------- Hutan senja ----------
+ * CARA KERJA ANIMASI DI LAYAR LOGIN (semua murni CSS, tanpa JavaScript):
+ *   @keyframes = "naskah" gerakan: keadaan di 0% (from) .. 100% (to).
+ *   animation: <nama> <durasi> <easing> <delay?> infinite [alternate];
+ *     - infinite  : diulang terus
+ *     - alternate : bolak-balik (0->100 lalu 100->0), jadi tidak "loncat"
+ *     - linear    : kecepatan konstan (cocok untuk geser latar)
+ *     - ease-in-out : pelan-cepat-pelan (cocok untuk gerak makhluk hidup)
+ *   Yang dianimasikan hanya background-position, transform, dan opacity.
+ *   transform & opacity diproses GPU (compositor) -> halus dan tidak memicu
+ *   layout ulang. React tidak terlibat sama sekali setelah render pertama.
+ *
+ * Daftar animasi:
+ *   forest-scroll  22s   pohon bergeser 1 ubin ke kiri (lambat, latar jauh)
+ *   grass-scroll   1.4s  rumput bergeser 1 ubin ke kiri (cepat, latar dekat)
+ *   firefly        4s    kunang-kunang berkedip + melayang (bolak-balik)
+ *   (Senja berjalan bukan CSS: rig animasi SenjaRig, klip "walk" 1s = 2 langkah)
+ *   senja-shadow   1s    bayangan mengecil saat maskot terangkat (sinkron dengan walk)
+ *   lantern-glow   2.6s  cahaya lentera berdenyut (bolak-balik)
+ *   bubble-pop     420ms balon chat muncul SEKALI (tidak infinite)
+ */
 
 .forest {
   position: absolute;
@@ -87,7 +107,10 @@
   height: clamp(180px, 30vh, 280px);
 }
 
-/* Ubin pohon 3:1 diulang ke samping dan digeser satu ubin per putaran. */
+/* Ubin pohon 3:1 diulang ke samping dan digeser satu ubin per putaran.
+ * background-size: auto 100% -> tinggi ubin = tinggi elemen (--trees-h),
+ * lebar ubin otomatis = 3 x --trees-h (karena SVG-nya 1200x400).
+ * repeat-x -> ubin diulang ke kanan-kiri tanpa batas. */
 .forest__trees {
   --trees-h: clamp(230px, 40vh, 380px);
 
@@ -99,6 +122,10 @@
   animation: forest-scroll 22s linear infinite;
 }
 
+/* Dari posisi 0 (default) ke -(lebar 1 ubin). Karena ubin berulang, posisi
+ * akhir terlihat SAMA PERSIS dengan posisi awal -> saat animasi mengulang dari
+ * 0 tidak ada lompatan (seamless loop). Negatif = bergeser ke kiri, jadi
+ * Senja seolah berjalan ke kanan. 'linear' = kecepatan konstan. */
 @keyframes forest-scroll {
   to {
     background-position: calc(var(--trees-h) * -3) 100%;
@@ -122,7 +149,12 @@
   animation: grass-scroll 1.4s linear infinite;
 }
 
-/* Rumput di depan bergeser lebih cepat daripada pohon (parallax). */
+/* Rumput di depan bergeser lebih cepat daripada pohon (parallax).
+ * Gambar rumput (SVG inline di atas) lebarnya 140px, jadi digeser tepat
+ * -140px = 1 ubin -> seamless loop, sama prinsipnya dengan forest-scroll.
+ * Kecepatan: 140px / 1.4s = 100 px/detik, jauh lebih cepat dari pohon
+ * (contoh --trees-h 380px: 1140px / 22s ~ 52 px/detik). Beda kecepatan inilah
+ * yang memberi kesan kedalaman. */
 @keyframes grass-scroll {
   to {
     background-position: -140px 100%;
@@ -136,9 +168,14 @@
   border-radius: 999px;
   background: #fff3c4;
   box-shadow: 0 0 10px 4px rgb(255 214 140 / 75%);
+  /* animation-delay tiap kunang-kunang diisi dari LoginForest.tsx (inline style),
+   * sehingga 8 kunang-kunang tidak berkedip bersamaan. */
   animation: firefly 4s ease-in-out infinite alternate;
 }
 
+/* Redup -> terang -> agak redup sambil melayang 10px ke kanan, 14px ke atas.
+ * Dengan 'alternate' animasi lalu berjalan mundur, jadi kunang-kunang
+ * melayang pelan bolak-balik, bukan teleport kembali ke awal. */
 @keyframes firefly {
   0% {
     opacity: 0.15;
@@ -173,7 +210,10 @@
   display: block;
 }
 
-/* Bayangan lembut di rumput, mengecil saat Senja melompat kecil. */
+/* Bayangan lembut di rumput, mengecil saat Senja terangkat di tiap langkah.
+ * ::after = elemen semu buatan CSS (tidak ada di JSX). Durasinya 1s, SAMA
+ * dengan klip "walk" rig Senja (badan terangkat di 25% dan 75%), jadi bayangan
+ * mengecil + memudar tepat saat badan Senja terangkat. */
 .login-hero__senja::after {
   content: '';
   position: absolute;
@@ -186,10 +226,12 @@
   background: rgb(54 84 34 / 35%);
   filter: blur(3px);
   transform: translateX(-50%);
-  animation: senja-shadow 0.9s ease-in-out infinite;
+  animation: senja-shadow 1s ease-in-out infinite;
 }
 
-/* Cahaya hangat dari lentera Senja. */
+/* Cahaya hangat dari lentera Senja. Berdenyut (membesar + menerang lalu
+ * kembali) lewat lantern-glow 2.6s alternate. Durasinya sengaja beda dari
+ * langkah (0.9s) supaya tidak terlihat mekanis/serempak. */
 .login-hero__glow {
   position: absolute;
   top: 58%;
@@ -201,32 +243,18 @@
   animation: lantern-glow 2.6s ease-in-out infinite alternate;
 }
 
-/* Senja berjalan: badan bergoyang kiri-kanan dan memantul di setiap langkah. */
+/* Senja berjalan di tempat: rig SVG berlapis (SenjaRig, klip "walk"). Kaki
+ * bergantian melangkah, lengan berayun berlawanan, badan memantul dua kali per
+ * detik, kepala/lentera/ekor menyusul sedikit terlambat. Di sini cukup ukurannya;
+ * lebarnya mengikuti rasio rig (senja-rig.css). */
 .login-hero__mascot {
   position: relative;
-  display: block;
-  width: auto;
   height: clamp(190px, 34vh, 300px);
-  transform-origin: 50% 100%;
-  animation: senja-walk 0.9s ease-in-out infinite;
 }
 
-@keyframes senja-walk {
-  0%,
-  50%,
-  100% {
-    transform: translateY(0) rotate(0deg);
-  }
-
-  25% {
-    transform: translateY(-9px) rotate(-3.5deg);
-  }
-
-  75% {
-    transform: translateY(-9px) rotate(3.5deg);
-  }
-}
-
+/* translateX(-50%) wajib ditulis ulang di setiap keyframe: transform di
+ * keyframe MENGGANTI seluruh transform elemen, jadi kalau tidak ditulis,
+ * bayangan akan meloncat keluar dari tengah. */
 @keyframes senja-shadow {
   0%,
   50%,
@@ -268,6 +296,14 @@
   line-height: 1.45;
   text-align: left;
   transform-origin: 40% 100%;
+  /* Animasi SEKALI (tanpa infinite) saat halaman dibuka:
+   *   420ms durasi, mulai setelah delay 200ms (biar latar tampil dulu).
+   *   cubic-bezier(0.34, 1.56, 0.64, 1): nilai 1.56 > 1 artinya "overshoot",
+   *     balon membesar sedikit melewati ukuran asli lalu kembali = efek "pop".
+   *   both: selama delay, balon sudah memakai keadaan 'from' (tak terlihat),
+   *     dan setelah selesai tetap di keadaan 'to'. Tanpa ini balon akan
+   *     berkedip muncul dulu sebelum animasi mulai.
+   *   transform-origin 40% 100%: membesar dari arah ekor balon (dekat Senja). */
   animation: bubble-pop 420ms cubic-bezier(0.34, 1.56, 0.64, 1) 200ms both;
 }
 
@@ -448,6 +484,9 @@
     min-height: 0;
   }
 
+  /* Mobile: latar hutan disembunyikan (display:none juga menghentikan
+   * animasinya, jadi tidak membebani HP). Yang tersisa hanya rumput tipis
+   * dan Senja kecil yang tetap berjalan di header. */
   .forest__sun,
   .forest__hills,
   .forest__trees,

@@ -2,6 +2,15 @@ import { Icon } from '@/components/Icon'
 import type { TableDetail } from '@/modules/viewer/types'
 import { constraintTypeLabels } from '@/modules/viewer/types'
 
+/*
+ * FILE INI UNTUK APA (TableStructure.tsx)
+ * GUIDEBOOK: §2.8
+ * Tab "Struktur": tiga tabel berisi kolom, constraint (PK/FK/UNIQUE/CHECK),
+ * dan index. Kolom yang termasuk primary key / foreign key diberi penanda.
+ * Data berasal dari satu request useTableDetail (lihat viewer/api.ts).
+ */
+// Input: detail (TableDetail dari backend). Output: tampilan 3 tabel.
+// primaryColumns & foreignColumns = Set nama kolom, untuk memberi ikon PK/FK di tabel kolom.
 export function TableStructure({ detail }: { detail: TableDetail }) {
   const primaryColumns = new Set(
     detail.constraints.filter((item) => item.type === 'primary_key').flatMap((item) => item.columns),
@@ -49,7 +58,7 @@ export function TableStructure({ detail }: { detail: TableDetail }) {
                 <td>{column.nullable ? 'Ya' : 'Tidak'}</td>
                 <td>
                   {column.default === null ? (
-                    <span className="cell-empty">—</span>
+                    <span className="cell-empty">-</span>
                   ) : (
                     <code>{column.default}</code>
                   )}
@@ -85,7 +94,7 @@ export function TableStructure({ detail }: { detail: TableDetail }) {
                       {constraintTypeLabels[constraint.type]}
                     </span>
                   </td>
-                  <td>{constraint.columns.join(', ') || '—'}</td>
+                  <td>{constraint.columns.join(', ') || '-'}</td>
                   <td>
                     <code className="definition">{constraint.definition}</code>
                   </td>

@@ -66,7 +66,7 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
     },
   })
 
-  if (!create && detail.isPending) return <StatusMessage tone="loading">Memuat migration…</StatusMessage>
+  if (!create && detail.isPending) return <StatusMessage tone="loading">Memuat migration...</StatusMessage>
   if (!create && detail.isError) return <ErrorMessage error={detail.error} />
 
   const entry = detail.data
@@ -111,7 +111,7 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
           <div className="page-header__actions">
             <button className="button button--primary" disabled={busy} onClick={confirmExecution} type="button">
               <Icon className={execute.isPending ? 'spinner' : undefined} name={execute.isPending ? 'loader' : 'play'} size={16} />
-              {execute.isPending ? 'Menjalankan…' : `Jalankan v${entry.version}`}
+              {execute.isPending ? 'Menjalankan...' : `Jalankan v${entry.version}`}
             </button>
           </div>
         ) : null}
@@ -153,7 +153,7 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
               }}
               type="button"
             >
-              {reconcile.isPending ? 'Mencatat…' : 'Catat rekonsiliasi'}
+              {reconcile.isPending ? 'Mencatat...' : 'Catat rekonsiliasi'}
             </button>
           </div>
         </div>
@@ -167,6 +167,7 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
             onSqlChange={setLiveSql}
             onSubmit={(input) => save.mutate(input)}
             pending={busy}
+            primary={create}
             submitLabel={create ? 'Simpan draft' : 'Simpan perubahan'}
             transactionalDdl={transactionalDdl}
           />
@@ -262,7 +263,7 @@ function MigrationResult({ entry, transactionalDdl }: { entry: MigrationEntry; t
       <div className="migration-result migration-result--danger" role="alert">
         <img alt="" src={senja.rewind} />
         <div>
-          <strong>Migration gagal — semua perubahan di-rollback</strong>
+          <strong>Migration gagal, semua perubahan di-rollback</strong>
           {entry.errorMessage ? <pre>{entry.errorMessage}</pre> : null}
         </div>
       </div>

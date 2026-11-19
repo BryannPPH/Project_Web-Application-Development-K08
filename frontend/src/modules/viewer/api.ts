@@ -1,3 +1,14 @@
+/*
+ * FILE INI UNTUK APA (viewer/api.ts)
+ * GUIDEBOOK: §2.8 + §2.6
+ * Hook React Query untuk 4 endpoint viewer:
+ *   useSchemas     -> GET /databases/{id}/schemas
+ *   useTables      -> GET /databases/{id}/schemas/{schema}/tables
+ *   useTableDetail -> GET .../tables/{table}          (tab Struktur)
+ *   useTableRows   -> GET .../tables/{table}/rows     (tab Data, pakai limit & offset)
+ * Nama schema/tabel selalu di-encodeURIComponent karena bisa berisi karakter aneh
+ * (spasi, /, ?, #) yang akan merusak URL kalau tidak di-encode.
+ */
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 
 import { ApiError, apiRequest } from '@/lib/api-client'
@@ -16,10 +27,12 @@ function basePath(databaseId: string) {
   return `/databases/${encodeURIComponent(databaseId)}`
 }
 
+// tablePath: URL dasar untuk satu tabel.
 function tablePath(databaseId: string, schema: string, table: string) {
   return `${basePath(databaseId)}/schemas/${encodeURIComponent(schema)}/tables/${encodeURIComponent(table)}`
 }
 
+// Key cache: limit & offset ikut di key, jadi setiap halaman data punya cache sendiri.
 export const viewerQueryKeys = {
   schemas: (databaseId: string) => ['viewer', databaseId, 'schemas'] as const,
   tables: (databaseId: string, schema: string) =>
@@ -30,6 +43,7 @@ export const viewerQueryKeys = {
     ['viewer', databaseId, 'schemas', schema, 'tables', table, 'rows', limit, offset] as const,
 }
 
+// Sama dengan databases/api.ts: 4xx tidak di-retry, 5xx di-retry 1x.
 function retryServerErrors(failureCount: number, error: unknown) {
   if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
     return false
@@ -37,6 +51,7 @@ function retryServerErrors(failureCount: number, error: unknown) {
   return failureCount < 1
 }
 
+// useSchemas: daftar schema untuk panel kiri.
 export function useSchemas(databaseId: string) {
   return useQuery({
     queryKey: viewerQueryKeys.schemas(databaseId),
@@ -47,6 +62,7 @@ export function useSchemas(databaseId: string) {
   })
 }
 
+// useTables: enabled=false selama schema belum dipilih -> tidak ada request sia-sia.
 export function useTables(databaseId: string, schema: string | undefined) {
   return useQuery({
     enabled: !!schema,
@@ -62,6 +78,7 @@ export function useTables(databaseId: string, schema: string | undefined) {
   })
 }
 
+// useTableDetail: kolom + constraint + index dalam satu request.
 export function useTableDetail(databaseId: string, schema: string, table: string) {
   return useQuery({
     queryKey: viewerQueryKeys.detail(databaseId, schema, table),
@@ -71,6 +88,9 @@ export function useTableDetail(databaseId: string, schema: string, table: string
   })
 }
 
+// useTableRows: satu halaman data.
+// keepPreviousData: saat pindah halaman, tabel lama tetap tampil sampai data baru datang
+// (tidak berkedip jadi "Memuat...").
 export function useTableRows(
   databaseId: string,
   schema: string,
@@ -93,6 +113,7 @@ export function useTableRows(
 export function parsePageParams(searchParams: URLSearchParams) {
   const rawLimit = Number(searchParams.get('limit') ?? DEFAULT_PAGE_SIZE)
   const rawOffset = Number(searchParams.get('offset') ?? 0)
+  // Nilai URL yang aneh (huruf, negatif, > 100) diganti default, sama dengan aturan backend.
   const limit =
     Number.isInteger(rawLimit) && rawLimit >= 1 && rawLimit <= MAX_PAGE_SIZE
       ? rawLimit
