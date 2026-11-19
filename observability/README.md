@@ -61,4 +61,18 @@ Setelah tersedia, `dbmp_jobs` menggantikan `dbmp_migrations` sebagai panel "juml
 
 ## Bukti
 
-Lampirkan screenshot dashboard (mis. `observability/grafana-dashboard.png`) dan hasil `curl http://localhost:8080/metrics`.
+Dashboard dengan data dari platform DB lokal (2 migration gagal, 3 berhasil):
+
+![Dashboard Grafana DB Manager Overview](grafana-dashboard.png)
+
+Contoh keluaran `curl http://localhost:8080/metrics`:
+
+```text
+dbmp_db_pool_connections{state="acquired"} 0
+dbmp_db_pool_connections{state="idle"} 3
+dbmp_metrics_database_up 1
+dbmp_migrations{status="failed"} 2
+dbmp_migrations{status="succeeded"} 3
+dbmp_migration_duration_seconds_count{status="failed"} 2
+dbmp_migration_duration_seconds_count{status="succeeded"} 3
+```
