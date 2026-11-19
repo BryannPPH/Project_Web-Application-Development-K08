@@ -17,10 +17,17 @@ type Repository interface {
 	UpdateDraft(context.Context, string, string, string, string, time.Time) (Entry, error)
 	List(context.Context, string, ListOptions) (Page, error)
 	Get(context.Context, string, string) (Entry, error)
-	MarkRunning(context.Context, string, string, string, time.Time) (Entry, error)
+	// MarkRunning gagal (ErrRevisionChanged) kalau revisi sudah berbeda dari expectedRevision.
+	MarkRunning(ctx context.Context, databaseID, migrationID, executorID string, expectedRevision int64, now time.Time) (Entry, error)
 	MarkTerminal(context.Context, string, string, Status, *string, time.Time) (Entry, error)
 	Reconcile(context.Context, string, string, string, string, time.Time) (Entry, error)
 	RecoverRunning(context.Context, time.Time, string) (int64, error)
+}
+
+// ApprovalGate memastikan semua leader group ber-akses sudah menyetujui revisi
+// yang akan dijalankan. Implementasi: approval.Service.RequireApproved.
+type ApprovalGate interface {
+	RequireApproved(ctx context.Context, databaseID, migrationID, action string, revision int64) error
 }
 
 type ExecutionLock interface {

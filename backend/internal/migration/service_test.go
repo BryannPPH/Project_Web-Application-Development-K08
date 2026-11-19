@@ -26,6 +26,7 @@ func (f *fakeAuthorizer) RequireDatabaseEdit(context.Context, auth.Principal, st
 }
 
 type fakeRepository struct {
+	runningRevision                       int64
 	entry                                 Entry
 	page                                  Page
 	getCalls, runningCalls, terminalCalls int
@@ -48,8 +49,9 @@ func (f *fakeRepository) Get(context.Context, string, string) (Entry, error) {
 	f.getCalls++
 	return f.entry, nil
 }
-func (f *fakeRepository) MarkRunning(_ context.Context, _, _, executorID string, now time.Time) (Entry, error) {
+func (f *fakeRepository) MarkRunning(_ context.Context, _, _, executorID string, revision int64, now time.Time) (Entry, error) {
 	f.runningCalls++
+	f.runningRevision = revision
 	entry := f.entry
 	entry.Status, entry.ExecutedBy, entry.StartedAt = StatusRunning, &executorID, &now
 	return entry, nil
@@ -112,7 +114,26 @@ func newTestService(t *testing.T, repository *fakeRepository, authorizer *fakeAu
 
 func newTestServiceWithConfig(t *testing.T, repository *fakeRepository, authorizer *fakeAuthorizer, locker *fakeLocker, executor *fakeExecutor, config ServiceConfig) *Service {
 	t.Helper()
-	service, err := NewService(repository, authorizer, locker, executor,
+	return newTestServiceWithGate(t, repository, authorizer, locker, executor, config, &fakeGate{})
+}
+
+// fakeGate: err nil = sudah disetujui.
+type fakeGate struct {
+	err      error
+	calls    int
+	revision int64
+	action   string
+}
+
+func (g *fakeGate) RequireApproved(_ context.Context, _, _, action string, revision int64) error {
+	g.calls++
+	g.action, g.revision = action, revision
+	return g.err
+}
+
+func newTestServiceWithGate(t *testing.T, repository *fakeRepository, authorizer *fakeAuthorizer, locker *fakeLocker, executor *fakeExecutor, config ServiceConfig, gate ApprovalGate) *Service {
+	t.Helper()
+	service, err := NewService(repository, authorizer, locker, executor, gate,
 		fixedClock{current: time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)},
 		slog.New(slog.NewTextHandler(io.Discard, nil)), config)
 	if err != nil {
@@ -277,5 +298,49 @@ func TestRecoverRunningUsesSafeReasonAndPropagatesFailure(t *testing.T) {
 	repository.recoverErr = errors.New("platform unavailable")
 	if err := recoverRunning(context.Background(), repository, logger, time.Now()); err == nil {
 		t.Fatal("recoverRunning() must fail when repository recovery fails")
+	}
+}
+
+func TestExecuteBlockedWhenApprovalIncomplete(t *testing.T) {
+	repository := &fakeRepository{entry: Entry{ID: "migration", DatabaseID: "database", Status: StatusDraft, SQL: "SELECT 1", Revision: 3}}
+	locker := &fakeLocker{lock: &fakeLock{}}
+	executor := &fakeExecutor{}
+	gate := &fakeGate{err: errors.New("approval pending")}
+	service := newTestServiceWithGate(t, repository, &fakeAuthorizer{}, locker, executor, ServiceConfig{}, gate)
+
+	_, err := service.Execute(context.Background(), auth.Principal{UserID: "user"}, "database", "migration")
+	if err == nil || err.Error() != "approval pending" {
+		t.Fatalf("Execute() error = %v, want gate error", err)
+	}
+	if gate.calls != 1 || gate.action != "apply" || gate.revision != 3 {
+		t.Fatalf("gate called %d times with action=%q revision=%d", gate.calls, gate.action, gate.revision)
+	}
+	if repository.runningCalls != 0 || executor.calls != 0 {
+		t.Fatalf("SQL must not run without approval: running=%d executed=%d", repository.runningCalls, executor.calls)
+	}
+	if !locker.lock.released {
+		t.Fatal("execution lock must be released after a rejected execution")
+	}
+}
+
+func TestExecutePassesApprovedRevisionToMarkRunning(t *testing.T) {
+	repository := &fakeRepository{entry: Entry{ID: "migration", DatabaseID: "database", Status: StatusDraft, SQL: "SELECT 1", Revision: 5}}
+	gate := &fakeGate{}
+	service := newTestServiceWithGate(t, repository, &fakeAuthorizer{}, &fakeLocker{lock: &fakeLock{}},
+		&fakeExecutor{result: ExecutionResult{Status: StatusSucceeded}}, ServiceConfig{}, gate)
+
+	if _, err := service.Execute(context.Background(), auth.Principal{UserID: "user"}, "database", "migration"); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if gate.revision != 5 || repository.runningRevision != 5 {
+		t.Fatalf("gate revision=%d, MarkRunning revision=%d, want both 5", gate.revision, repository.runningRevision)
+	}
+}
+
+func TestNewServiceRequiresApprovalGate(t *testing.T) {
+	_, err := NewService(&fakeRepository{}, &fakeAuthorizer{}, &fakeLocker{}, &fakeExecutor{}, nil,
+		fixedClock{}, slog.New(slog.NewTextHandler(io.Discard, nil)), ServiceConfig{})
+	if err == nil {
+		t.Fatal("NewService() must fail without an approval gate")
 	}
 }

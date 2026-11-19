@@ -29,6 +29,9 @@ type Repository interface {
 	ListGrantsByDatabase(ctx context.Context, databaseID string) ([]Grant, error)
 	UpsertGrant(ctx context.Context, groupID, databaseID string, level authz.AccessLevel, revoke RevokeUsers) (Grant, error)
 	DeleteGrant(ctx context.Context, groupID, databaseID string) error
+
+	SetLeader(ctx context.Context, groupID, userID string) (Group, error)
+	ClearLeader(ctx context.Context, groupID string) (Group, error)
 }
 
 type PGRepository struct {
@@ -42,11 +45,14 @@ func NewPGRepository(database *pgxpool.Pool) *PGRepository {
 const groupColumns = `
 	g.id::text, g.name, g.description,
 	(SELECT count(*) FROM group_members gm WHERE gm.group_id = g.id)::int,
+	(SELECT gl.user_id::text FROM group_leaders gl WHERE gl.group_id = g.id),
+	(SELECT u.username FROM group_leaders gl JOIN users u ON u.id = gl.user_id WHERE gl.group_id = g.id),
 	g.created_at, g.updated_at`
 
 func scanGroup(row pgx.Row) (Group, error) {
 	var record Group
-	err := row.Scan(&record.ID, &record.Name, &record.Description, &record.MemberCount, &record.CreatedAt, &record.UpdatedAt)
+	err := row.Scan(&record.ID, &record.Name, &record.Description, &record.MemberCount,
+		&record.LeaderUserID, &record.LeaderUsername, &record.CreatedAt, &record.UpdatedAt)
 	return record, err
 }
 
@@ -345,6 +351,66 @@ func (r *PGRepository) DeleteGrant(ctx context.Context, groupID, databaseID stri
 		return ErrGrantNotFound
 	}
 	return nil
+}
+
+// SetLeader menjadikan userID leader group. User harus anggota aktif; FK
+// group_leaders -> group_members menjadi penjaga kedua di level database.
+func (r *PGRepository) SetLeader(ctx context.Context, groupID, userID string) (Group, error) {
+	transaction, err := r.database.Begin(ctx)
+	if err != nil {
+		return Group{}, fmt.Errorf("begin set leader: %w", err)
+	}
+	defer func() { _ = transaction.Rollback(ctx) }()
+
+	if err := requireRow(ctx, transaction, `SELECT 1 FROM groups WHERE id = $1::uuid FOR SHARE`, groupID, ErrNotFound); err != nil {
+		return Group{}, err
+	}
+
+	var active bool
+	err = transaction.QueryRow(ctx, `
+		SELECT u.is_active
+		FROM group_members gm
+		JOIN users u ON u.id = gm.user_id
+		WHERE gm.group_id = $1::uuid AND gm.user_id = $2::uuid
+		FOR SHARE OF gm`, groupID, userID).Scan(&active)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Group{}, ErrLeaderNotMember
+	}
+	if err != nil {
+		return Group{}, fmt.Errorf("check leader membership: %w", err)
+	}
+	if !active {
+		return Group{}, ErrLeaderInactive
+	}
+
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO group_leaders (group_id, user_id)
+		VALUES ($1::uuid, $2::uuid)
+		ON CONFLICT (group_id)
+		DO UPDATE SET user_id = EXCLUDED.user_id, assigned_at = CURRENT_TIMESTAMP`,
+		groupID, userID); err != nil {
+		var pgError *pgconn.PgError
+		if errors.As(err, &pgError) && pgError.Code == "23503" {
+			return Group{}, ErrLeaderNotMember
+		}
+		return Group{}, fmt.Errorf("set group leader: %w", err)
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return Group{}, fmt.Errorf("commit set leader: %w", err)
+	}
+	return r.Get(ctx, groupID)
+}
+
+// ClearLeader mencopot leader (idempotent). Migration di database yang diakses
+// group ini terblokir sampai leader baru dipilih.
+func (r *PGRepository) ClearLeader(ctx context.Context, groupID string) (Group, error) {
+	if _, err := r.Get(ctx, groupID); err != nil {
+		return Group{}, err
+	}
+	if _, err := r.database.Exec(ctx, `DELETE FROM group_leaders WHERE group_id = $1::uuid`, groupID); err != nil {
+		return Group{}, fmt.Errorf("clear group leader: %w", err)
+	}
+	return r.Get(ctx, groupID)
 }
 
 func memberIDs(ctx context.Context, transaction pgx.Tx, groupID string) ([]string, error) {
