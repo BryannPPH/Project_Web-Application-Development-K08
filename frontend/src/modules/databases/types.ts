@@ -1,3 +1,9 @@
+/*
+ * FILE INI UNTUK APA (databases/types.ts)
+ * GUIDEBOOK: §2.8
+ * Tipe TypeScript untuk data dari GET /api/v1/databases (bentuknya sama dengan
+ * DTO AccessibleDatabase di backend) + helper label akses "View Only"/"View + Edit".
+ */
 export type AccessLevel = 'view_only' | 'view_edit'
 export type DatabaseEngine = 'postgresql' | 'mysql'
 
