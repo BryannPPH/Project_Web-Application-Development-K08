@@ -1,16 +1,3 @@
-// ============================================================================
-// FILE INI UNTUK APA (theme.ts)
-// ----------------------------------------------------------------------------
-// Mode terang / gelap. Warna kedua mode ada di styles/global.css: atribut
-// <html data-theme="dark"> mengganti seluruh token warna sekaligus.
-//
-//   - Pilihan user disimpan di localStorage ("dbm-theme").
-//   - Belum pernah memilih -> ikut pengaturan sistem (prefers-color-scheme),
-//     termasuk bila pengaturan sistem berubah saat aplikasi terbuka.
-//   - index.html memasang tema sebelum halaman pertama kali digambar, jadi
-//     tidak ada kilatan putih saat membuka aplikasi dalam mode gelap.
-// ============================================================================
-
 import { useCallback, useSyncExternalStore } from 'react'
 
 export type Theme = 'light' | 'dark'

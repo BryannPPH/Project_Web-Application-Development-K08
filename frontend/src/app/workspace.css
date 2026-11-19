@@ -280,9 +280,6 @@
   background: var(--canvas);
 }
 
-/* Kolom konten: lebar maksimum yang sama untuk topbar dan isi halaman, ditambatkan ke
- * kiri (menempel ke sidebar). Kalau dipusatkan, di layar lebar muncul celah kosong
- * antara sidebar dan konten, dan isi tampak "terdorong ke kanan". */
 .workspace-body {
   --content-max: 1280px;
   --content-pad: clamp(1rem, 3vw, 2.25rem);

@@ -1,23 +1,3 @@
-// ============================================================================
-// FILE INI UNTUK APA (SenjaRig.tsx)
-// ----------------------------------------------------------------------------
-// Senja versi rig (SVG berlapis) yang bergerak: kepala, telinga, mata, mulut,
-// lengan, kaki, ekor, syal, dan lentera bisa bergerak sendiri-sendiri.
-// Animasinya dibuat di HyperFrames (lihat assets/brand/senja-rig/) dan
-// diputar oleh SenjaPlayer.
-//
-// Pemakaian:
-//   <SenjaRig loop="idle" intro="stretch" gesture="wave" gestureTrigger={heroRef} />
-//   - loop            animasi yang terus berulang
-//   - intro           diputar sekali saat muncul, lalu lanjut ke loop
-//   - gesture         diputar sekali saat pointer masuk ke gestureTrigger
-//                     (atau ke Senja sendiri bila gestureTrigger kosong)
-//   - outfit          kostum sesuai waktu (default 'sore' = membawa lentera):
-//                     pagi = mug kopi, siang = topi jerami + es kopi,
-//                     sore = lentera, malam = topi tidur + piyama + bantal
-// Dekoratif: aria-hidden, sama seperti <img alt=""> yang digantikannya.
-// ============================================================================
-
 import { useEffect, useId, useMemo, useRef, type RefObject } from 'react'
 
 import { SENJA_SVG, type SenjaClipName } from '@/assets/brand/senja-rig/web/senja-data'

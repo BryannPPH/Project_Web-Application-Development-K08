@@ -1,37 +1,4 @@
 import { useMutation } from '@tanstack/react-query'
-/*
- * FILE INI UNTUK APA (SchemaDiffPage.tsx) - BONUS 2: halaman Schema Diff
- * GUIDEBOOK: §3.3 (bonus) + bonus_explanation.md "Bonus 2"
- * URL: /databases/:databaseId/schema-diff  (tombol "Schema diff" di viewer /
- *      "Bandingkan schema" di Riwayat migration). databaseId di URL = TARGET.
- *
- * ALUR DI LAYAR:
- *   1. Pilih SUMBER: database (hanya yang engine-nya sama dengan target) + schema,
- *      dan pilih schema TARGET. Contoh demo: sumber "staging", target "public".
- *   2. Klik "Bandingkan schema" -> POST /api/v1/schema-diff.
- *   3. Hasil:
- *      - "Schema sudah sama" kalau identical
- *      - ringkasan (jumlah perubahan, tabel, yang destruktif) + catatan backend
- *      - daftar perubahan dengan CHECKBOX (semua tercentang di awal), badge jenis,
- *        nilai lama -> baru, peringatan
- *      - kotak SQL yang BISA DIEDIT
- *      - tombol "Buat draft migration" dan "Salin SQL"
- *   4. "Buat draft migration" pindah ke editor migration dengan nama & SQL
- *      sudah terisi. User masih bisa meninjau/mengubah sebelum menyimpan dan
- *      menjalankan (spek: SQL harus bisa ditinjau & diubah sebelum dieksekusi).
- *
- * STATE PENTING:
- *   selected  : ID perubahan yang dicentang
- *   sql       : isi kotak SQL
- *   sqlEdited : true kalau user sudah mengetik manual di kotak SQL. Kalau true,
- *               mencentang/menghapus centang TIDAK menimpa SQL (supaya editan user
- *               tidak hilang); muncul tombol "Susun ulang dari pilihan" (rebuild).
- *
- * KEAMANAN: halaman ini cuma membaca struktur (backend butuh akses View ke kedua
- * database). Tombol draft hanya muncul kalau user punya View + Edit di target
- * (canDraft), dan saat draft dijalankan, endpoint migration mengecek ulang
- * View + Edit serta aturan SQL (MySQL hanya DML).
- */
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
@@ -132,9 +99,6 @@ export function SchemaDiffPage() {
     setSqlEdited(false)
   }
 
-  // createDraft: pindah ke halaman draft migration baru, membawa nama otomatis
-  // (schema_diff_<schema>_<YYYYMMDD>) dan SQL saat ini lewat router state (prefill).
-  // Draft BELUM disimpan; user yang menekan Simpan di editor.
   function createDraft() {
     const stamp = new Date().toISOString().slice(0, 10).replaceAll('-', '')
     void navigate(`/databases/${databaseId}/migrations/new`, {

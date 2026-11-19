@@ -1,13 +1,3 @@
-/*
- * FILE INI UNTUK APA (TableData.tsx)
- * GUIDEBOOK: §2.8 + §2.6 (pagination)
- * Tab "Data" di viewer: tabel isi baris + pagination.
- *   - limit (25/50/100) & offset dibaca dari URL (?limit=50&offset=100)
- *   - Tombol Sebelumnya/Berikutnya cukup mengubah offset di URL -> useTableRows fetch otomatis
- *   - "Berikutnya" aktif kalau backend bilang hasMore=true
- *   - NULL ditampilkan khusus (beda dengan string "NULL"), JSON ditampilkan sebagai <code>
- *   - Ada peringatan kalau ada sel yang dipotong (truncated) oleh backend
- */
 import { useSearchParams } from 'react-router-dom'
 
 import { describeError, poseForError } from '@/components/error-message'

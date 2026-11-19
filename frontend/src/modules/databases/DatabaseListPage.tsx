@@ -1,9 +1,3 @@
-/*
- * FILE INI UNTUK APA (DatabaseListPage.tsx)
- * GUIDEBOOK: §2.8 + §1.E + §6.2 (demo)
- * Halaman /databases: tabel database yang boleh dibuka user (nama, engine,
- * badge View Only / View + Edit) + pencarian & filter akses + tombol "Buka viewer".
- */
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
@@ -23,10 +17,6 @@ const accessFilters: { value: AccessFilter; label: string }[] = [
   { value: 'view_edit', label: 'Bisa ubah' },
 ]
 
-// DatabaseListPage: halaman menu "Database".
-// ALUR: ambil daftar DB yang boleh diakses -> filter di browser berdasarkan kata kunci
-//   & level akses -> tampilkan loading / error / kosong / tabel dengan tombol "Buka viewer".
-// Isi daftar sepenuhnya ditentukan backend (grant lewat group), frontend hanya menampilkan.
 export function DatabaseListPage() {
   const databases = useAccessibleDatabases()
   const currentUser = useCurrentUser()

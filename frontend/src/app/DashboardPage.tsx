@@ -1,15 +1,3 @@
-/*
- * FILE INI UNTUK APA (DashboardPage.tsx)
- * GUIDEBOOK: §2.8
- * Halaman awal setelah login:
- *   - Kepala halaman: tanggal, sapaan sesuai waktu (pagi/siang/sore/malam),
- *     ringkasan akses satu kalimat, dan Senja (rig animasi) berkostum sesuai waktu:
- *     pagi menggeliat dengan mug kopi, siang melambai bertopi jerami + es kopi,
- *     sore santai membawa lentera, malam terkantuk-kantuk memeluk bantal.
- *     Kepala halaman disorot -> Senja melambai (kecuali malam: Senja sedang tidur).
- *   - Kartu database yang bisa dibuka (tugas paling sering) tepat di bawahnya.
- *   - Untuk platform_admin: tiga ubin cepat ke User, Group & akses, Koneksi.
- */
 import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
@@ -73,9 +61,6 @@ export function DashboardPage() {
 
   return (
     <section className="dashboard">
-      {/* Kepala halaman memakai pola yang sama dengan halaman lain (tanpa kotak, di atas
-          latar halaman). Waktu hari cukup dibawa Senja lewat kostumnya; Senja berdiri di
-          garis pemisah kepala halaman. */}
       <header className={`hero hero--${part}`} ref={heroRef}>
         <div className="hero__text">
           <p className="hero__date">{todayFormat.format(now)}</p>

@@ -1,6 +1,3 @@
-/* Rig Senja: kotak berproporsi sama dengan viewBox rig (310 x 430).
- * Tinggi diatur oleh pemakai (mis. .hero__art); lebar mengikuti rasio.
- * overflow visible: lengan terangkat dan lompatan boleh keluar dari kotak. */
 .senja-rig {
   display: block;
   aspect-ratio: 310 / 430;

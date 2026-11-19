@@ -1,14 +1,3 @@
-/*
- * FILE INI UNTUK APA (viewer/api.ts)
- * GUIDEBOOK: §2.8 + §2.6
- * Hook React Query untuk 4 endpoint viewer:
- *   useSchemas     -> GET /databases/{id}/schemas
- *   useTables      -> GET /databases/{id}/schemas/{schema}/tables
- *   useTableDetail -> GET .../tables/{table}          (tab Struktur)
- *   useTableRows   -> GET .../tables/{table}/rows     (tab Data, pakai limit & offset)
- * Nama schema/tabel selalu di-encodeURIComponent karena bisa berisi karakter aneh
- * (spasi, /, ?, #) yang akan merusak URL kalau tidak di-encode.
- */
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 
 import { ApiError, apiRequest } from '@/lib/api-client'
@@ -88,9 +77,6 @@ export function useTableDetail(databaseId: string, schema: string, table: string
   })
 }
 
-// useTableRows: satu halaman data.
-// keepPreviousData: saat pindah halaman, tabel lama tetap tampil sampai data baru datang
-// (tidak berkedip jadi "Memuat...").
 export function useTableRows(
   databaseId: string,
   schema: string,

@@ -1,33 +1,3 @@
-/*
- * FILE INI UNTUK APA (ExplainPanel.tsx) - BONUS 3: tampilan Query Execution Plan
- * GUIDEBOOK: §3.3 (bonus) + bonus_explanation.md "Bonus 3"
- *
- * Panel "Analisis execution plan" yang muncul di BAWAH editor migration
- * (draft baru atau draft yang masih bisa diedit).
- *
- * CARA PAKAI DI UI:
- *   1. User menulis SQL di editor migration (tidak perlu disimpan dulu).
- *   2. Klik "EXPLAIN"          -> rencana + perkiraan (statement TIDAK dijalankan).
- *      Klik "EXPLAIN ANALYZE"  -> statement dijalankan sementara, dapat angka asli.
- *   3. Per statement tampil: badge status, kotak metrik (cost, row, waktu),
- *      chip jenis scan/index/join, peringatan, POHON plan, dan output mentah.
- *
- * ALUR DATA:
- *   klik tombol -> useMutation -> explainMigrationSQL (migrations/api.ts)
- *   -> POST /api/v1/databases/{id}/migrations/explain {sql, analyze}
- *   -> backend migration/explain.go (transaksi yang SELALU di-rollback)
- *   -> hasil ExplainResult -> ExplainResults -> StatementResult per statement.
- *
- * DETAIL PENTING:
- *   - useMutation (bukan useQuery) karena analisis dijalankan saat tombol diklik,
- *     bukan otomatis saat halaman dibuka, dan memakai POST.
- *   - analyzedSql menyimpan SQL yang terakhir dianalisis. Kalau user mengubah SQL
- *     setelahnya (stale), muncul peringatan "jalankan ulang" supaya user tidak
- *     salah membaca hasil lama untuk SQL baru.
- *   - Tombol nonaktif kalau SQL kosong atau sedang menganalisis.
- *   - Kalimat "transaksi yang selalu di-rollback" di UI adalah janji yang
- *     ditepati backend (lihat explain.go).
- */
 import { useMutation } from '@tanstack/react-query'
 import { useState } from 'react'
 
@@ -232,9 +202,6 @@ function TagGroup({ label, items, empty, icon }: { label: string; items: string[
   )
 }
 
-// PlanTreeNode: menggambar SATU node plan lalu memanggil dirinya sendiri untuk tiap
-// anak (rekursif), sehingga pohon bertingkat tampil berjenjang. Menampilkan jenis node,
-// tabel, index, kondisi, cost, perkiraan row, dan (kalau ANALYZE) waktu x loops & row asli.
 function PlanTreeNode({ node }: { node: PlanNode }) {
   const actual = node.actualTotalMs !== undefined
   return (

@@ -1,8 +1,3 @@
-/* ---------- Kepala dashboard ----------
- * Sama seperti .page-header di halaman lain: langsung di atas latar halaman, tanpa
- * kotak/ilustrasi. Urutan baca: sapaan -> ringkasan akses -> tanggal (konteks).
- * Waktu hari dibawa oleh kostum Senja, yang berdiri di garis bawah kepala halaman. */
-
 .hero {
   --sky: var(--brand-coral);
 
@@ -16,9 +11,6 @@
   isolation: isolate;
 }
 
-/* Cahaya langit sesuai waktu: bukan gambar dalam kotak, tapi pendar lembut di belakang
- * kepala halaman, paling terang di sekitar Senja lalu memudar ke latar halaman (tanpa
- * tepi). Teks tetap memakai token biasa, jadi kontrasnya sama seperti halaman lain. */
 .hero::before {
   content: '';
   position: absolute;

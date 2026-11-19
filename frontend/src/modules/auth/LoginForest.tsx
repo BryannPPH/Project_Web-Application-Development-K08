@@ -1,31 +1,6 @@
-// ============================================================================
-// FILE INI UNTUK APA (LoginForest.tsx)
-// ----------------------------------------------------------------------------
 // Latar hutan senja untuk panel kiri login: bukit, pohon pinus, padang rumput,
 // dan kunang-kunang. Seluruhnya dekoratif (aria-hidden di induknya). Pohon dan
 // rumput bergeser ke kiri (parallax) sehingga Senja terlihat berjalan.
-//
-// BAGAIMANA BISA "GERAK"?
-//   File ini TIDAK berisi logika animasi sama sekali: tidak ada useState,
-//   useEffect, setInterval, requestAnimationFrame, atau library animasi.
-//   Komponen ini hanya menggambar elemen DIAM (SVG + <span>) sekali saja.
-//   Semua gerakan dikerjakan oleh CSS @keyframes di auth.css, yang dijalankan
-//   browser sendiri (compositor/GPU) -> React tidak re-render tiap frame,
-//   jadi ringan dan tidak mengganggu form login.
-//
-// LAPISAN (urutan DOM = urutan tumpukan, belakang -> depan):
-//   1. forest__sun      matahari           -> DIAM
-//   2. forest__hills    2 bukit (SVG)      -> DIAM (latar paling jauh)
-//   3. forest__trees    ubin pohon pinus   -> GESER pelan (22 detik / ubin)
-//   4. forest__ground   padang rumput      -> DIAM
-//   5. forest__grass    rumpun rumput      -> GESER cepat (1.4 detik / ubin)
-//   6. forest__firefly  kunang-kunang      -> BERKEDIP + melayang
-//   (Maskot Senja, cahaya lentera, dan balon chat ada di LoginPage.tsx.)
-//
-// TRIK PARALLAX: benda dekat (rumput) bergeser jauh lebih cepat daripada benda
-// jauh (pohon), dan bukit tidak bergeser sama sekali. Mata menangkapnya sebagai
-// kedalaman, sehingga Senja terlihat berjalan padahal posisinya tetap di tengah.
-// ============================================================================
 
 interface Pine {
   x: number
@@ -77,12 +52,6 @@ function treeGroup(pines: Pine[], color: string, opacity = 1) {
   return `<g fill="${color}" stroke="${color}" stroke-linejoin="round" stroke-width="10" opacity="${opacity}">${paths}</g>`
 }
 
-// SVG pohon diubah jadi "data URL" supaya bisa dipakai sebagai background-image
-// CSS. Kenapa background, bukan <svg> biasa? Karena background bisa
-// di-repeat-x (diulang tak hingga ke samping) dan digeser lewat
-// background-position. Itulah yang dianimasikan, bukan elemennya.
-// Pohon belakang lebih pucat + transparan (0.85), pohon depan lebih gelap,
-// jadi ada kesan kedalaman walau keduanya dalam satu ubin.
 const treesTile = `url("data:image/svg+xml,${encodeURIComponent(
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" width="1200" height="400">${treeGroup(
     backPines,
@@ -91,9 +60,6 @@ const treesTile = `url("data:image/svg+xml,${encodeURIComponent(
   )}${treeGroup(frontPines, '#6f9a5c')}</svg>`,
 )}")`
 
-// Posisi tetap tiap kunang-kunang + delay berbeda-beda. Semuanya memakai
-// animasi CSS yang SAMA (firefly, 4 detik); delay-lah yang membuat mereka
-// tidak berkedip serempak sehingga terlihat acak/alami.
 const fireflies = [
   { left: '14%', top: '58%', delay: '0s' },
   { left: '24%', top: '44%', delay: '1.1s' },

@@ -1,11 +1,3 @@
-/*
- * FILE INI UNTUK APA (RequirePlatformAdmin.tsx)
- * GUIDEBOOK: §2.8 + §4.1 (guard UI vs authz backend)
- * "Penjaga" route /admin di frontend: kalau user bukan platform_admin, tampilkan
- * "Akses ditolak" dan JANGAN render halaman admin (<Outlet />).
- * PENTING: ini hanya UX. Keamanan sebenarnya ada di backend (authz -> 403),
- * karena siapa pun bisa memanggil API langsung tanpa lewat UI.
- */
 import { Link, Outlet } from 'react-router-dom'
 
 import { senja } from '@/components/brand'

@@ -1,10 +1,3 @@
-/*
- * FILE INI UNTUK APA (DatabaseRows.tsx)
- * Kartu database — dipakai di Dashboard dan halaman /databases agar "membuka
- * database" (tugas paling sering) tampil sama di mana pun.
- * Setiap kartu menjelaskan level akses dengan kalimat, bukan hanya badge,
- * dan aksinya jelas: Buka viewer (utama) + Riwayat/Kelola migration.
- */
 import { Link } from 'react-router-dom'
 
 import { AccessBadge, EngineBadge } from '@/components/Badges'

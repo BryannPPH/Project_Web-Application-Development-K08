@@ -1,13 +1,3 @@
-/*
- * FILE INI UNTUK APA (AdminUsersPage.tsx)
- * GUIDEBOOK: §2.8 + §2.4 + §6.2 (demo)
- * Halaman Admin > User:
- *   - Form tambah user (username, password, role)
- *   - Tabel user: dropdown role, tombol Nonaktifkan/Aktifkan, Reset password
- *   - Sebelum ganti role / nonaktifkan, muncul konfirmasi yang menjelaskan
- *     bahwa SEMUA session user akan dicabut (sesuai perilaku backend).
- * Error dari backend (mis. USERNAME_TAKEN, LAST_ACTIVE_ADMIN) diterjemahkan describeError.
- */
 import { Fragment, useState, type FormEvent } from 'react'
 
 import { ActiveBadge } from '@/components/Badges'
@@ -39,9 +29,6 @@ export function AdminUsersPage() {
   // Konfirmasi singkat setelah aksi berhasil, agar admin tahu perubahannya tersimpan.
   const [notice, setNotice] = useState<string | null>(null)
 
-  // handleCreate: submit form tambah user.
-  // ALUR: cegah reload halaman -> baca isi form -> validasi di browser ->
-  //   kirim POST lewat mutation -> sukses: kosongkan form; gagal: tampilkan pesan.
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = event.currentTarget

@@ -1,12 +1,3 @@
-/*
- * FILE INI UNTUK APA (AdminDatabasesPage.tsx)
- * GUIDEBOOK: §2.8 + §2.2 + §6.2 (demo)
- * Halaman Admin > Koneksi database:
- *   DatabaseForm       -> form tambah/ubah koneksi + tombol "Test koneksi" (testDraft, TIDAK menyimpan)
- *   AdminDatabasesPage -> tabel koneksi dengan tombol Test (testStored) / Ubah / Hapus
- * Keamanan: password TIDAK PERNAH diisi otomatis saat edit, karena backend memang
- * tidak pernah mengirim password. Kosongkan password saat edit = password lama dipakai.
- */
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { ActiveBadge, EngineBadge } from '@/components/Badges'

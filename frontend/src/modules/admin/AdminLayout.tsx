@@ -1,9 +1,3 @@
-/*
- * FILE INI UNTUK APA (AdminLayout.tsx)
- * GUIDEBOOK: §2.8
- * Kerangka halaman admin: menampilkan judul sesuai URL, lalu halaman anak
- * (User / Group & akses / Koneksi database) dirender di <Outlet />.
- */
 import { Outlet, useLocation } from 'react-router-dom'
 
 // Navigasi antar halaman admin ada di sidebar; layout ini hanya memberi judul.

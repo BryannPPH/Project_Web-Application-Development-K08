@@ -96,17 +96,6 @@ export function LoginPage() {
 
   return (
     <main className="login-page">
-      {/*
-        Panel kiri (dekoratif, aria-hidden -> dilewati screen reader).
-        Latar bergerak lewat CSS @keyframes (auth.css); Senja sendiri adalah rig
-        animasi (SenjaRig) yang berjalan: kaki melangkah, lengan berayun, lentera
-        bergoyang.
-          - LoginForest              : pohon & rumput bergeser (parallax), kunang-kunang
-          - login-hero__bubble       : balon chat "pop" SEKALI saat halaman dibuka
-          - login-hero__senja::after : bayangan Senja mengecil/membesar mengikuti langkah
-          - login-hero__glow         : cahaya lentera berdenyut
-          - login-hero__mascot       : Senja berjalan (SenjaRig, klip "walk")
-      */}
       <section aria-hidden="true" className="login-hero">
         <LoginForest />
         <div className="login-hero__brand">

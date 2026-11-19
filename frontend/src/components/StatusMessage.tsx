@@ -1,10 +1,3 @@
-/*
- * FILE INI UNTUK APA (StatusMessage.tsx)
- * GUIDEBOOK: §2.8
- * Satu komponen kotak pesan yang dipakai di semua halaman untuk 3 keadaan:
- * loading, error (role="alert", bisa ada tombol "Coba lagi"), dan kosong.
- * Dengan satu komponen, tampilan & aksesibilitas semua state jadi konsisten.
- */
 import type { ReactNode } from 'react'
 
 import { senja, type SenjaPose } from '@/components/brand'

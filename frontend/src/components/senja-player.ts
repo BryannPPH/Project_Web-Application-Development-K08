@@ -1,24 +1,3 @@
-// ============================================================================
-// FILE INI UNTUK APA (senja-player.ts)
-// ----------------------------------------------------------------------------
-// Pemutar animasi rig Senja di website, tanpa library animasi.
-//
-// Gerakannya TIDAK ditulis di sini. Animasi dibuat di HyperFrames
-// (assets/brand/senja-rig/scripts/senja-motion.js), lalu build-rig.mjs
-// merekamnya menjadi data keyframe (senja-data.ts): untuk tiap layer rig,
-// "mulai detik ke-s, selama d detik, ubah properti ke nilai v dengan easing e".
-// File ini hanya membaca data itu tiap frame dan menulis atribut `transform`
-// / `opacity` ke grup SVG yang sesuai. Jadi gerakan di web = gerakan di
-// pratinjau HyperFrames.
-//
-// Perilaku:
-//   - intro (sekali) lalu loop (berulang); gesture (mis. melambai saat banner
-//     disorot) diputar sekali lalu kembali ke loop.
-//   - Pergantian klip dibaurkan 250ms agar pose tidak meloncat.
-//   - prefers-reduced-motion: pose diam (frame pertama loop), tanpa rAF.
-//   - Di luar layar (IntersectionObserver): tidak menggambar apa pun.
-// ============================================================================
-
 import {
   SENJA_CLIPS,
   SENJA_ORIGINS,

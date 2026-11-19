@@ -1,11 +1,3 @@
-/*
- * FILE INI UNTUK APA (admin/forms.ts)
- * GUIDEBOOK: §2.8 (validasi frontend = UX saja)
- * Validasi form di sisi browser (nama, host, port, dll.) supaya user langsung
- * dapat pesan error tanpa menunggu server. Ini HANYA untuk kenyamanan (UX);
- * backend tetap memvalidasi ulang semuanya karena request bisa dikirim lewat Postman.
- * Saat EDIT koneksi, password kosong artinya "jangan ganti password".
- */
 import type { ManagedDatabaseInput, SSLMode } from '@/modules/admin/types'
 import type { DatabaseEngine } from '@/modules/databases/types'
 

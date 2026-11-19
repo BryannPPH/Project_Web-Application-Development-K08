@@ -1,16 +1,3 @@
-/*
- * FILE INI UNTUK APA (ViewerPage.tsx)
- * GUIDEBOOK: §2.8 + §1.E + §6.2 (demo)
- * Halaman viewer database (/databases/:databaseId/schemas/:schema/tables/:table).
- * Struktur komponen:
- *   ViewerPage        -> cek akses database dulu (useAccessibleDatabase); 403/404 -> pesan error
- *     ViewerWorkspace -> layout 2 kolom
- *       SchemaNavigation -> kiri: daftar schema & tabel (klik = pindah URL)
- *       TablePanel       -> kanan: tab "Struktur" (TableStructure) / "Data" (TableData)
- *     DatabaseSwitcher -> dropdown "Ganti database"
- * Semua posisi (database, schema, tabel, tab, halaman) disimpan di URL, jadi
- * refresh / tombol back / share link tetap membuka tempat yang sama.
- */
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import { AccessBadge, EngineBadge } from '@/components/Badges'
