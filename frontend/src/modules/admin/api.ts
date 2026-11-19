@@ -1,19 +1,3 @@
-/*
- * FILE INI UNTUK APA (admin/api.ts)
- * GUIDEBOOK: §2.8 + §4.7 (CSRF lewat apiRequest)
- * Semua pemanggilan API halaman admin, dibungkus hook React Query:
- *   useQuery    -> AMBIL data (useAdminUsers, useAdminGroups, useGroupMembers,
- *                  useGroupGrants, useManagedDatabases)
- *   useMutation -> UBAH data (useUserMutations, useGroupMutations,
- *                  useManagedDatabaseMutations)
- * Pola setiap mutation:
- *   1. mutationFn  -> panggil apiRequest (POST/PATCH/PUT/DELETE). apiRequest milik
- *                     Person 1 otomatis menambah header X-CSRF-Token untuk mutasi.
- *   2. onSuccess   -> invalidate cache 'admin' -> React Query fetch ulang data
- *                     yang terkait, sehingga tabel di layar langsung ter-update.
- * Perumpamaan: papan pengumuman. Setiap ada perubahan, papan lama dicopot
- * (invalidate) lalu dicetak ulang dari data terbaru di server.
- */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { apiRequest } from '@/lib/api-client'
@@ -172,6 +156,20 @@ export function useGroupMutations() {
           method: 'PUT',
           json: { accessLevel },
         }),
+      onSuccess: invalidate,
+    }),
+    // Milestone 2 - Person A: leader group (PUT memilih/mengganti, DELETE mencopot).
+    setLeader: useMutation({
+      mutationFn: ({ groupId, userId }: { groupId: string; userId: string }) =>
+        apiRequest<{ group: AdminGroup }>(`/admin/groups/${id(groupId)}/leader`, {
+          method: 'PUT',
+          json: { userId },
+        }),
+      onSuccess: invalidate,
+    }),
+    clearLeader: useMutation({
+      mutationFn: (groupId: string) =>
+        apiRequest<{ group: AdminGroup }>(`/admin/groups/${id(groupId)}/leader`, { method: 'DELETE' }),
       onSuccess: invalidate,
     }),
     revokeGrant: useMutation({

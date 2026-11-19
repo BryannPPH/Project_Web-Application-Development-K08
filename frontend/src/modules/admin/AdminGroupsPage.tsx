@@ -1,12 +1,3 @@
-/*
- * FILE INI UNTUK APA (AdminGroupsPage.tsx)
- * GUIDEBOOK: §2.8 + §2.5 + §6.2 (demo)
- * Halaman Admin > Group & akses:
- *   AdminGroupsPage -> form tambah group + tabel group; klik "Kelola" membuka panel detail
- *   GroupDetail     -> ubah nama/deskripsi, hapus group (dengan konfirmasi),
- *                      tambah/hapus anggota, atur akses database (view_only / view_edit), cabut akses
- * Ingat konsep: akses database diberikan ke GROUP, user dapat akses karena jadi anggota.
- */
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { AccessBadge, ActiveBadge } from '@/components/Badges'
@@ -131,6 +122,7 @@ export function AdminGroupsPage() {
                     <th>Nama</th>
                     <th>Deskripsi</th>
                     <th>Anggota</th>
+                    <th>Leader</th>
                     <th aria-label="Aksi" />
                   </tr>
                 </thead>
@@ -142,6 +134,14 @@ export function AdminGroupsPage() {
                       </td>
                       <td data-label="Deskripsi">{group.description || <span className="cell-empty">-</span>}</td>
                       <td data-label="Anggota">{group.memberCount}</td>
+                      <td data-label="Leader">
+                        {group.leaderUsername ?? (
+                          <span className="cell-warning">
+                            <Icon name="alert" size={14} />
+                            Belum ada
+                          </span>
+                        )}
+                      </td>
                       <td className="cell-actions">
                         <button
                           className="button button--secondary button--small"
@@ -280,6 +280,16 @@ function GroupDetail({ group, onDeleted }: { group: AdminGroup; onDeleted: () =>
       </form>
 
       <h3 className="section-title">Anggota</h3>
+      <p className="muted group-detail__hint">
+        Leader mewakili group saat menyetujui perubahan di database yang diakses group ini. Satu group satu leader,
+        dan leader harus anggota group.
+      </p>
+      {!group.leaderUsername && grants.data && grants.data.length > 0 ? (
+        <p className="group-detail__warning" role="note">
+          <Icon name="alert" size={14} />
+          Group ini belum punya leader. Migration di database yang diakses group ini tidak bisa dijalankan sampai ada leader.
+        </p>
+      ) : null}
       {members.isPending ? <StatusMessage tone="loading">Memuat anggota...</StatusMessage> : null}
       {members.isError ? <StatusMessage tone="error">{describeError(members.error)}</StatusMessage> : null}
       {members.data?.length === 0 ? <StatusMessage tone="empty">Group belum memiliki anggota.</StatusMessage> : null}
@@ -291,21 +301,52 @@ function GroupDetail({ group, onDeleted }: { group: AdminGroup; onDeleted: () =>
                 <tr key={member.userId}>
                   <td>
                     <Icon name="user" size={14} /> {member.username}
+                    {member.userId === group.leaderUserId ? <span className="badge badge--brand">Leader</span> : null}
                   </td>
                   <td>{member.isActive ? null : <ActiveBadge active={false} />}</td>
                   <td className="cell-actions">
-                    <button
-                      className="button button--secondary button--small"
-                      onClick={() =>
-                        void run(
-                          () => mutations.removeMember.mutateAsync({ groupId: group.id, userId: member.userId }),
-                          'Anggota dikeluarkan.',
-                        )
-                      }
-                      type="button"
-                    >
-                      Keluarkan
-                    </button>
+                    <div className="inline-actions">
+                      {member.userId === group.leaderUserId ? (
+                        <button
+                          className="button button--secondary button--small"
+                          onClick={() => void run(() => mutations.clearLeader.mutateAsync(group.id), 'Leader dicopot.')}
+                          type="button"
+                        >
+                          Copot leader
+                        </button>
+                      ) : member.isActive ? (
+                        <button
+                          className="button button--secondary button--small"
+                          onClick={() =>
+                            void run(
+                              () => mutations.setLeader.mutateAsync({ groupId: group.id, userId: member.userId }),
+                              `${member.username} sekarang leader ${group.name}.`,
+                            )
+                          }
+                          type="button"
+                        >
+                          Jadikan leader
+                        </button>
+                      ) : null}
+                      <button
+                        className="button button--secondary button--small"
+                        onClick={() => {
+                          if (
+                            member.userId === group.leaderUserId &&
+                            !window.confirm(`${member.username} adalah leader ${group.name}. Mengeluarkannya juga mencopot leader. Lanjutkan?`)
+                          ) {
+                            return
+                          }
+                          void run(
+                            () => mutations.removeMember.mutateAsync({ groupId: group.id, userId: member.userId }),
+                            'Anggota dikeluarkan.',
+                          )
+                        }}
+                        type="button"
+                      >
+                        Keluarkan
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

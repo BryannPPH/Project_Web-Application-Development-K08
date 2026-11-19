@@ -1,9 +1,3 @@
-/*
- * FILE INI UNTUK APA (error-message.ts)
- * GUIDEBOOK: §2.8
- * describeError(): mengubah kode error backend (mis. DATABASE_INACTIVE,
- * TARGET_TIMEOUT) menjadi pesan Bahasa Indonesia yang ramah untuk ditampilkan.
- */
 import type { SenjaPose } from '@/components/brand'
 import { ApiError } from '@/lib/api-client'
 
@@ -34,6 +28,14 @@ const messages: Record<string, string> = {
   MIGRATION_CONFLICT: 'Migration ini sudah tidak berstatus draft.',
   MIGRATION_ORDER_BLOCKED: 'Migration sebelumnya harus dijalankan atau diselesaikan terlebih dahulu.',
   ENGINE_MISMATCH: 'Schema sumber dan target harus memakai engine database yang sama.',
+  // Milestone 2 - Person A: leader & approval
+  LEADER_NOT_MEMBER: 'Leader harus anggota group ini. Tambahkan user sebagai anggota dulu.',
+  LEADER_INACTIVE: 'User nonaktif tidak bisa menjadi leader karena tidak dapat login untuk menyetujui.',
+  APPROVAL_REQUIRED: 'Migration belum disetujui semua leader group yang punya akses ke database ini.',
+  APPROVAL_NOT_LEADER: 'Hanya leader group yang punya akses ke database ini yang dapat memberi keputusan.',
+  APPROVAL_STALE_REVISION: 'Migration sudah diedit sejak halaman ini dibuka. Muat ulang dan tinjau revisi terbaru.',
+  APPROVAL_NOT_REVIEWABLE: 'Migration ini tidak lagi bisa ditinjau untuk aksi tersebut.',
+  MIGRATION_REVISION_CHANGED: 'Migration diedit saat akan dijalankan. Tinjau dan setujui revisi terbaru.',
 }
 
 export function describeError(error: unknown) {

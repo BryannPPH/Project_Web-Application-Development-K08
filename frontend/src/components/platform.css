@@ -240,10 +240,6 @@
   background: var(--surface-subtle);
 }
 
-/* Form di bawah baris (mis. reset password), rata kanan tepat di bawah tombol
- * aksi yang membukanya. Grid: label di atas, input + tombol sejajar, lalu
- * petunjuk dan error di bawah input. Tombol selalu sejajar input berapa pun
- * panjang labelnya (label satu baris, dipotong "..." bila terlalu panjang). */
 .row-form {
   display: grid;
   grid-template-areas:
@@ -835,7 +831,6 @@
   text-underline-offset: 0.2em;
 }
 
-
 /* ---------- Two-column admin layout ---------- */
 
 .split {
@@ -855,9 +850,6 @@
   }
 }
 
-/* Tabel admin berubah jadi kartu bertumpuk saat KOLOM KONTEN sempit (container query
- * pada .workspace-main), bukan saat jendela sempit: di 760-1100px sidebar masih tampil,
- * jadi tabel terjepit walau jendelanya lebar. 56rem = tabel terlebar (Koneksi) muat. */
 @container main (max-width: 56rem) {
   .data-table--stack thead {
     display: none;
@@ -1121,3 +1113,45 @@
 [data-area='admin'] { --area-color: var(--area-admin); --area-soft: var(--area-admin-soft); }
 [data-area='home'] { --area-color: var(--area-home); --area-soft: var(--area-home-soft); }
 
+/* ---------- Leader group (Milestone 2 - Person A) ---------- */
+
+.cell-warning {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--warning);
+  font-weight: 600;
+}
+
+.group-detail__warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0 0 0.75rem;
+  border: 1px solid var(--warning-line);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.75rem;
+  color: var(--warning);
+  background: var(--warning-soft);
+  font-size: 0.8125rem;
+}
+
+.group-detail__warning svg {
+  flex: none;
+  margin-top: 0.125rem;
+}
+
+.group-detail .data-table td .badge {
+  margin-left: 0.5rem;
+}
+
+/* Baris anggota punya 2 tombol (leader + keluarkan): di layar sempit tombol turun
+ * ke baris berikutnya, bukan melebarkan tabel. */
+.group-detail .data-table td.cell-actions {
+  white-space: normal;
+}
+
+.group-detail .cell-actions .inline-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}

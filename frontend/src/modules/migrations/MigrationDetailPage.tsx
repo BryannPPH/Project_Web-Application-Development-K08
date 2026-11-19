@@ -9,6 +9,8 @@ import { StatusMessage } from '@/components/StatusMessage'
 import { ApiError } from '@/lib/api-client'
 import { useAccessibleDatabase } from '@/modules/databases/api'
 import { createMigration, executeMigration, getMigration, reconcileMigration, updateMigration } from '@/modules/migrations/api'
+import { executionBlockedReason, useApprovalReview } from '@/modules/migrations/approval'
+import { ApprovalPanel } from '@/modules/migrations/ApprovalPanel'
 import { ExplainPanel } from '@/modules/migrations/ExplainPanel'
 import { MigrationEditor } from '@/modules/migrations/MigrationEditor'
 import { displayTime, migrationQueryKeys } from '@/modules/migrations/query-helpers'
@@ -39,6 +41,8 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
     queryFn: ({ signal }) => getMigration(databaseId, migrationId, signal),
     enabled: !create && databaseId !== '' && migrationId !== '',
   })
+  // Milestone 2 - Person A: status approval hanya relevan untuk draft (aksi "apply").
+  const approval = useApprovalReview(databaseId, migrationId, !create && detail.data?.status === 'draft')
   const save = useMutation({
     mutationFn: (input: DraftInput) => create
       ? createMigration(databaseId, input)
@@ -54,6 +58,8 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
       queryClient.setQueryData(migrationQueryKeys.detail(databaseId, migrationId), entry)
       void queryClient.invalidateQueries({ queryKey: migrationQueryKeys.all(databaseId) })
     },
+    // Ditolak gerbang approval (approval berubah sejak halaman dibuka): muat ulang status.
+    onError: () => void queryClient.invalidateQueries({ queryKey: migrationQueryKeys.all(databaseId) }),
   })
   const reconcile = useMutation({
     mutationFn: () => reconcileMigration(databaseId, migrationId, {
@@ -75,6 +81,9 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
   const currentSql = liveSql ?? entry?.sql ?? prefill?.sql ?? ''
   const databaseName = database.data?.name ?? 'database ini'
   const transactionalDdl = database.data?.capabilities?.transactionalDdl !== false
+  const isDraft = entry?.status === 'draft'
+  // null = boleh dijalankan; selain itu = alasan tombol Jalankan dikunci.
+  const blockedReason = isDraft ? executionBlockedReason(approval.data) : null
 
   function confirmExecution() {
     if (!entry) return
@@ -103,16 +112,26 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
           {entry ? (
             <div className="page-header__meta">
               <MigrationStatusBadge status={entry.status} />
+              <span className="muted">revisi {entry.revision}</span>
               <span className="muted">dibuat oleh {entry.createdByUsername || 'Pengguna tidak tersedia'}</span>
             </div>
           ) : null}
         </div>
         {entry?.canEdit && entry.status === 'draft' ? (
-          <div className="page-header__actions">
-            <button className="button button--primary" disabled={busy} onClick={confirmExecution} type="button">
-              <Icon className={execute.isPending ? 'spinner' : undefined} name={execute.isPending ? 'loader' : 'play'} size={16} />
+          <div className="page-header__actions migration-run">
+            <button
+              aria-describedby={blockedReason ? 'migration-run-reason' : undefined}
+              className="button button--primary"
+              disabled={busy || blockedReason !== null}
+              onClick={confirmExecution}
+              type="button"
+            >
+              <Icon className={execute.isPending ? 'spinner' : undefined} name={execute.isPending ? 'loader' : blockedReason ? 'lock' : 'play'} size={16} />
               {execute.isPending ? 'Menjalankan...' : `Jalankan v${entry.version}`}
             </button>
+            {blockedReason ? (
+              <p className="migration-run__reason" id="migration-run-reason">{blockedReason}</p>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -171,6 +190,18 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
             submitLabel={create ? 'Simpan draft' : 'Simpan perubahan'}
             transactionalDdl={transactionalDdl}
           />
+          {/* Milestone 2: review setelah SQL, supaya leader membaca SQL dulu baru memutuskan. */}
+          {entry && isDraft ? (
+            <ApprovalPanel
+              databaseId={databaseId}
+              databaseName={databaseName}
+              error={approval.isError ? approval.error : null}
+              loading={approval.isPending}
+              migrationId={migrationId}
+              review={approval.data}
+              sql={entry.sql}
+            />
+          ) : null}
           {editable ? <ExplainPanel databaseId={databaseId} sql={currentSql} /> : null}
         </div>
         <aside className="migration-aside">

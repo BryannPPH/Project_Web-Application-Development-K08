@@ -3,6 +3,8 @@ import type { MigrationStatus } from '@/modules/migrations/types'
 export const migrationQueryKeys = {
   all: (databaseId: string) => ['migrations', databaseId] as const,
   detail: (databaseId: string, migrationId: string) => ['migrations', databaseId, migrationId] as const,
+  approval: (databaseId: string, migrationId: string, action: string) =>
+    ['migrations', databaseId, migrationId, 'approval', action] as const,
 }
 
 const statusLabels: Record<MigrationStatus, string> = {

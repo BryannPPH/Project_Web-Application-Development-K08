@@ -83,6 +83,7 @@ export function migrationEntry(overrides: Partial<MigrationEntry> = {}): Migrati
     id: 'm1',
     databaseId: 'db-1',
     version: 1,
+    revision: 1,
     name: 'add_points',
     sql: 'ALTER TABLE customers ADD COLUMN points int;',
     status: 'draft',

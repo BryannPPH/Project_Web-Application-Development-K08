@@ -3,9 +3,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { AccessibleDatabase } from '@/modules/databases/types'
 import { clearCsrfToken, setCsrfToken } from '@/lib/csrf-token'
-import type { MigrationEntry } from '@/modules/migrations/types'
+import type { ApprovalReview, MigrationEntry } from '@/modules/migrations/types'
 import { MigrationDetailPage } from '@/modules/migrations/MigrationDetailPage'
-import { jsonResponse, migrationEntry, mockFetch, regularUser, renderRoute, senjaImage } from '@/test/platform-test-utils'
+import { errorResponse, jsonResponse, migrationEntry, mockFetch, regularUser, renderRoute, senjaImage } from '@/test/platform-test-utils'
 
 const database: AccessibleDatabase = {
   id: 'db-1',
@@ -23,10 +23,35 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-function renderDetail(entry: MigrationEntry, target: AccessibleDatabase = database) {
+// Milestone 2: review approval untuk draft. Default "approved" supaya test lama
+// (yang menguji hal lain) tetap bisa menekan tombol Jalankan.
+function approvalReview(overrides: Partial<ApprovalReview> = {}): ApprovalReview {
+  return {
+    migrationId: 'm1',
+    databaseId: 'db-1',
+    action: 'apply',
+    revision: 1,
+    status: 'approved',
+    groups: [
+      {
+        groupId: 'g1', groupName: 'Tim Backend', accessLevel: 'view_edit',
+        leader: { userId: 'user-1', username: 'operator' },
+        decision: 'approved', note: null, decidedAt: '2026-11-20T09:00:00Z',
+      },
+    ],
+    approvedCount: 1,
+    requiredCount: 1,
+    canDecide: false,
+    myDecision: null,
+    ...overrides,
+  }
+}
+
+function renderDetail(entry: MigrationEntry, target: AccessibleDatabase = database, review: ApprovalReview = approvalReview()) {
   const fetchMock = mockFetch((url) => {
     if (url.pathname === '/api/v1/databases/db-1') return jsonResponse({ database: target })
     if (url.pathname === '/api/v1/databases/db-1/migrations/m1') return jsonResponse(entry)
+    if (url.pathname === '/api/v1/databases/db-1/migrations/m1/approvals') return jsonResponse({ review })
     return undefined
   })
   renderRoute(<MigrationDetailPage />, {
@@ -132,7 +157,8 @@ describe('MigrationDetailPage', () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
     const fetchMock = renderDetail(migrationEntry({ status: 'draft', version: 7 }))
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Jalankan v7' }))
+    await screen.findByText('Disetujui semua leader')
+    fireEvent.click(screen.getByRole('button', { name: 'Jalankan v7' }))
 
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Jalankan v7'))
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining('satu transaksi'))
@@ -155,7 +181,121 @@ describe('MigrationDetailPage', () => {
     )
 
     expect(await screen.findByText(/DML \(SELECT, INSERT, UPDATE, DELETE\) dijalankan dalam satu transaksi/)).toBeInTheDocument()
+    await screen.findByText('Disetujui semua leader')
     expect(screen.queryByText('DDL tidak didukung pada target ini')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Jalankan v1' })).toBeEnabled()
+  })
+  // ---------- Milestone 2 - Person A: review & approval ----------
+
+  it('mengunci tombol Jalankan dan menjelaskan alasannya saat approval belum lengkap', async () => {
+    renderDetail(migrationEntry({ status: 'draft', version: 3, revision: 2 }), database, approvalReview({
+      revision: 2,
+      status: 'pending',
+      approvedCount: 1,
+      requiredCount: 2,
+      groups: [
+        {
+          groupId: 'g1', groupName: 'Tim Backend', accessLevel: 'view_edit',
+          leader: { userId: 'u-budi', username: 'budi' }, decision: 'approved', note: null, decidedAt: '2026-11-20T09:00:00Z',
+        },
+        {
+          groupId: 'g2', groupName: 'Analis Data', accessLevel: 'view_only',
+          leader: { userId: 'u-sari', username: 'sari' }, decision: null, note: null, decidedAt: null,
+        },
+      ],
+    }))
+
+    expect(await screen.findByText('Menunggu 1 dari 2 leader')).toBeInTheDocument()
+    const run = screen.getByRole('button', { name: 'Jalankan v3' })
+    expect(run).toBeDisabled()
+    expect(screen.getAllByText(/Menunggu persetujuan 1 dari 2 leader untuk revisi 2/).length).toBeGreaterThan(0)
+    expect(screen.getByText('Menunggu 1 dari 2 leader')).toBeInTheDocument()
+    expect(screen.getByText('Analis Data')).toBeInTheDocument()
+    expect(screen.getByText('sari').closest('li')).toHaveTextContent('belum memutuskan')
+    // Bukan leader -> tidak ada tombol keputusan.
+    expect(screen.queryByRole('button', { name: /Setujui/ })).not.toBeInTheDocument()
+  })
+
+  it('menandai group tanpa leader sebagai terblokir', async () => {
+    renderDetail(migrationEntry({ status: 'draft' }), database, approvalReview({
+      status: 'blocked',
+      approvedCount: 0,
+      groups: [{ groupId: 'g1', groupName: 'Tim Backend', accessLevel: 'view_edit', leader: null, decision: null, note: null, decidedAt: null }],
+    }))
+
+    expect(await screen.findByText('Terblokir: ada group tanpa leader')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Jalankan v1' })).toBeDisabled()
+    expect(screen.getByText(/Admin perlu memilih leader/)).toBeInTheDocument()
+  })
+
+  it('leader menyetujui revisi yang sedang dilihat', async () => {
+    setCsrfToken('csrf-test')
+    const pending = approvalReview({ status: 'pending', approvedCount: 0, canDecide: true, revision: 4,
+      groups: [{ groupId: 'g1', groupName: 'Tim Backend', accessLevel: 'view_edit', leader: { userId: 'user-1', username: 'operator' }, decision: null, note: null, decidedAt: null }] })
+    const approved = { ...pending, status: 'approved' as const, approvedCount: 1, myDecision: 'approved' as const,
+      groups: [{ ...pending.groups[0], decision: 'approved' as const, decidedAt: '2026-11-20T09:00:00Z' }] }
+    let decided = false
+    const fetchMock = mockFetch((url, init) => {
+      if (url.pathname === '/api/v1/databases/db-1') return jsonResponse({ database })
+      if (url.pathname === '/api/v1/databases/db-1/migrations/m1') return jsonResponse(migrationEntry({ status: 'draft', revision: 4 }))
+      if (url.pathname === '/api/v1/databases/db-1/migrations/m1/approvals') {
+        if (init?.method === 'POST') {
+          decided = true
+          return jsonResponse({ review: approved }, 201)
+        }
+        return jsonResponse({ review: decided ? approved : pending })
+      }
+      return undefined
+    })
+    renderRoute(<MigrationDetailPage />, {
+      route: '/databases/db-1/migrations/m1',
+      path: '/databases/:databaseId/migrations/:migrationId',
+      user: regularUser,
+    })
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Setujui revisi 4' }))
+
+    expect(await screen.findByText('Disetujui semua leader')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Jalankan v1' })).toBeEnabled()
+    const request = fetchMock.mock.calls.find(([input, init]) => String(input).endsWith('/m1/approvals') && init?.method === 'POST')
+    expect(JSON.parse(String(request?.[1]?.body))).toEqual({ action: 'apply', revision: 4, decision: 'approved' })
+  })
+
+  it('menolak tanpa catatan tidak mengirim request', async () => {
+    const fetchMock = renderDetail(migrationEntry({ status: 'draft' }), database, approvalReview({ status: 'pending', canDecide: true, approvedCount: 0 }))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Tolak' }))
+
+    expect(await screen.findByText(/Tulis alasan penolakan/)).toBeInTheDocument()
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false)
+  })
+
+  it('menampilkan pesan ramah saat revisi sudah basi', async () => {
+    setCsrfToken('csrf-test')
+    mockFetch((url, init) => {
+      if (url.pathname === '/api/v1/databases/db-1') return jsonResponse({ database })
+      if (url.pathname === '/api/v1/databases/db-1/migrations/m1') return jsonResponse(migrationEntry({ status: 'draft' }))
+      if (url.pathname === '/api/v1/databases/db-1/migrations/m1/approvals') {
+        return init?.method === 'POST'
+          ? errorResponse(409, 'APPROVAL_STALE_REVISION')
+          : jsonResponse({ review: approvalReview({ status: 'pending', canDecide: true, approvedCount: 0 }) })
+      }
+      return undefined
+    })
+    renderRoute(<MigrationDetailPage />, {
+      route: '/databases/db-1/migrations/m1',
+      path: '/databases/:databaseId/migrations/:migrationId',
+      user: regularUser,
+    })
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Setujui revisi 1' }))
+
+    expect(await screen.findByText(/Migration sudah diedit sejak halaman ini dibuka/)).toBeInTheDocument()
+  })
+
+  it('memperingatkan perubahan yang tidak kompatibel', async () => {
+    renderDetail(migrationEntry({ status: 'draft', sql: 'ALTER TABLE customers DROP COLUMN email;' }))
+
+    expect(await screen.findByText('Menghapus kolom')).toBeInTheDocument()
   })
 })
