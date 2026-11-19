@@ -52,6 +52,11 @@ func TestMigrationThroughProductionHTTPStack(t *testing.T) {
 		map[string]any{"accessLevel": "view_only"}, admin, http.StatusOK)
 	harness.call(http.MethodPut, "/api/v1/admin/groups/"+writersID+"/databases/"+databaseID,
 		map[string]any{"accessLevel": "view_edit"}, admin, http.StatusOK)
+	// Kedua group punya akses, jadi setiap eksekusi butuh approval leader keduanya.
+	harness.call(http.MethodPut, "/api/v1/admin/groups/"+readersID+"/leader",
+		map[string]any{"userId": viewerID}, admin, http.StatusOK)
+	harness.call(http.MethodPut, "/api/v1/admin/groups/"+writersID+"/leader",
+		map[string]any{"userId": editorID}, admin, http.StatusOK)
 
 	viewer := harness.login("migration_viewer")
 	editor := harness.login("migration_editor")
@@ -108,6 +113,7 @@ func TestMigrationThroughProductionHTTPStack(t *testing.T) {
 	if updated["sql"] != successSQL {
 		t.Fatalf("updated migration SQL = %v", updated["sql"])
 	}
+	harness.approveApply(base, migrationID, viewer, editor)
 	executed := harness.call(http.MethodPost, base+"/"+migrationID+"/execute", nil, editor, http.StatusOK)
 	if executed["status"] != "succeeded" || executed["executedBy"] != editorID ||
 		executed["createdByUsername"] != editorUsername || executed["executedByUsername"] != editorUsername ||
@@ -119,6 +125,7 @@ func TestMigrationThroughProductionHTTPStack(t *testing.T) {
 	failedDraft := harness.call(http.MethodPost, base,
 		map[string]string{"name": "rollback integration table", "sql": failureSQL}, editor, http.StatusCreated)
 	failedID, _ := failedDraft["id"].(string)
+	harness.approveApply(base, failedID, viewer, editor)
 	failed := harness.call(http.MethodPost, base+"/"+failedID+"/execute", nil, editor, http.StatusOK)
 	if failed["status"] != "failed" || failed["errorMessage"] == nil {
 		t.Fatalf("failed execution = %v", failed)
@@ -190,6 +197,7 @@ func TestMigrationThroughProductionHTTPStack(t *testing.T) {
 	nextDraft := harness.call(http.MethodPost, base,
 		map[string]string{"name": "after reconciliation", "sql": "SELECT 1"}, editor, http.StatusCreated)
 	nextID, _ := nextDraft["id"].(string)
+	harness.approveApply(base, nextID, viewer, editor)
 	nextResult := harness.call(http.MethodPost, base+"/"+nextID+"/execute", nil, editor, http.StatusOK)
 	if nextResult["status"] != "succeeded" {
 		t.Fatalf("migration after reconciliation = %v", nextResult)

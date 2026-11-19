@@ -18,12 +18,12 @@ func NewPGRepository(pool *pgxpool.Pool) *PGRepository { return &PGRepository{po
 
 const entryColumns = `id::text, database_id::text, version, name, sql_text, status,
 created_by::text, executed_by::text, created_at, started_at, finished_at, error_message,
-reconciled_from_status, reconciled_by::text, reconciled_at, reconciliation_note`
+reconciled_from_status, reconciled_by::text, reconciled_at, reconciliation_note, revision`
 
 const readableEntryColumns = `m.id::text, m.database_id::text, m.version, m.name, m.sql_text, m.status,
 m.created_by::text, m.executed_by::text, m.created_at, m.started_at, m.finished_at, m.error_message,
  m.reconciled_from_status, m.reconciled_by::text, m.reconciled_at, m.reconciliation_note,
-creator.username, executor.username, reconciler.username`
+creator.username, executor.username, reconciler.username, m.revision`
 
 func (r *PGRepository) CreateDraft(ctx context.Context, databaseID, name, sqlText, creatorID string, now time.Time) (Entry, error) {
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
@@ -109,7 +109,7 @@ func (r *PGRepository) Get(ctx context.Context, databaseID, migrationID string) 
 	return entry, mapRepositoryError(err)
 }
 
-func (r *PGRepository) MarkRunning(ctx context.Context, databaseID, migrationID, executorID string, now time.Time) (Entry, error) {
+func (r *PGRepository) MarkRunning(ctx context.Context, databaseID, migrationID, executorID string, expectedRevision int64, now time.Time) (Entry, error) {
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return Entry{}, fmt.Errorf("begin running transition: %w", err)
@@ -134,9 +134,16 @@ func (r *PGRepository) MarkRunning(ctx context.Context, databaseID, migrationID,
 	entry, err := scanEntry(tx.QueryRow(ctx, `
 		UPDATE migration_entries SET status='running', executed_by=$3::uuid,
 		started_at=$4, finished_at=NULL, error_message=NULL, updated_at=$4
-		WHERE database_id=$1::uuid AND id=$2::uuid AND status='draft'
-		RETURNING `+entryColumns, databaseID, migrationID, executorID, now))
+		WHERE database_id=$1::uuid AND id=$2::uuid AND status='draft' AND revision=$5
+		RETURNING `+entryColumns, databaseID, migrationID, executorID, now, expectedRevision))
 	if errors.Is(err, pgx.ErrNoRows) {
+		var current int64
+		var status string
+		if lookupErr := tx.QueryRow(ctx, `SELECT status, revision FROM migration_entries
+			WHERE database_id=$1::uuid AND id=$2::uuid`, databaseID, migrationID).Scan(&status, &current); lookupErr == nil &&
+			status == string(StatusDraft) && current != expectedRevision {
+			return Entry{}, ErrRevisionChanged
+		}
 		return Entry{}, r.classifyMissingOrConflict(ctx, databaseID, migrationID)
 	}
 	if err != nil {
@@ -206,7 +213,7 @@ func scanEntry(row rowScanner) (Entry, error) {
 	err := row.Scan(&entry.ID, &entry.DatabaseID, &entry.Version, &entry.Name, &entry.SQL,
 		&entry.Status, &entry.CreatedBy, &executedBy, &entry.CreatedAt, &entry.StartedAt,
 		&entry.FinishedAt, &entry.ErrorMessage, &entry.ReconciledFrom, &entry.ReconciledBy,
-		&entry.ReconciledAt, &entry.ReconciliationNote)
+		&entry.ReconciledAt, &entry.ReconciliationNote, &entry.Revision)
 	entry.ExecutedBy = executedBy
 	return entry, err
 }
@@ -218,7 +225,7 @@ func scanReadableEntry(row rowScanner) (Entry, error) {
 		&entry.Status, &entry.CreatedBy, &entry.ExecutedBy, &entry.CreatedAt, &entry.StartedAt,
 		&entry.FinishedAt, &entry.ErrorMessage, &entry.ReconciledFrom, &entry.ReconciledBy,
 		&entry.ReconciledAt, &entry.ReconciliationNote, &entry.CreatedByUsername, &entry.ExecutedByUsername,
-		&reconciledByUsername)
+		&reconciledByUsername, &entry.Revision)
 	entry.ReconciledByUsername = reconciledByUsername
 	return entry, err
 }
@@ -231,13 +238,13 @@ func scanReadableEntryWithTotal(row rowScanner) (Entry, int64, error) {
 		&entry.Status, &entry.CreatedBy, &entry.ExecutedBy, &entry.CreatedAt, &entry.StartedAt,
 		&entry.FinishedAt, &entry.ErrorMessage, &entry.ReconciledFrom, &entry.ReconciledBy,
 		&entry.ReconciledAt, &entry.ReconciliationNote, &entry.CreatedByUsername, &entry.ExecutedByUsername,
-		&reconciledByUsername, &total)
+		&reconciledByUsername, &entry.Revision, &total)
 	entry.ReconciledByUsername = reconciledByUsername
 	return entry, total, err
 }
 
 func mapRepositoryError(err error) error {
-	if err == nil || errors.Is(err, ErrNotFound) || errors.Is(err, ErrConflict) || errors.Is(err, ErrWrongOrder) {
+	if err == nil || errors.Is(err, ErrNotFound) || errors.Is(err, ErrConflict) || errors.Is(err, ErrWrongOrder) || errors.Is(err, ErrRevisionChanged) {
 		return err
 	}
 	return fmt.Errorf("migration repository: %w", err)

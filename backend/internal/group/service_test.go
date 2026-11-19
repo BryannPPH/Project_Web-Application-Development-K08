@@ -26,6 +26,8 @@ type stubRepository struct {
 	lastDesc     *string
 	lastClear    bool
 	revokeResult error
+	lastLeader   string
+	leaderErr    error
 }
 
 func (r *stubRepository) List(context.Context) ([]Group, error) { r.calls++; return nil, nil }
@@ -68,6 +70,18 @@ func (r *stubRepository) ListGrantsByGroup(context.Context, string) ([]Grant, er
 func (r *stubRepository) ListGrantsByDatabase(context.Context, string) ([]Grant, error) {
 	r.calls++
 	return nil, nil
+}
+func (r *stubRepository) SetLeader(_ context.Context, group, user string) (Group, error) {
+	r.calls++
+	r.lastLeader = user
+	if r.leaderErr != nil {
+		return Group{}, r.leaderErr
+	}
+	return Group{ID: group, LeaderUserID: &user}, nil
+}
+func (r *stubRepository) ClearLeader(_ context.Context, group string) (Group, error) {
+	r.calls++
+	return Group{ID: group}, nil
 }
 func (r *stubRepository) UpsertGrant(_ context.Context, group, database string, level authz.AccessLevel, revoke RevokeUsers) (Grant, error) {
 	r.calls++
@@ -236,5 +250,52 @@ func TestInvalidIdentifiers(t *testing.T) {
 	}
 	if repository.calls != 0 {
 		t.Fatal("invalid identifiers reached repository")
+	}
+}
+
+func TestLeaderRequiresPlatformAdmin(t *testing.T) {
+	t.Parallel()
+	service, repository, _, _, user := newService(t)
+	ctx := context.Background()
+	if _, err := service.SetLeader(ctx, user, groupID, SetLeaderInput{UserID: userID}); !errors.Is(err, authz.ErrPlatformAdminRequired) {
+		t.Fatalf("SetLeader(non-admin) = %v, want ErrPlatformAdminRequired", err)
+	}
+	if _, err := service.ClearLeader(ctx, user, groupID); !errors.Is(err, authz.ErrPlatformAdminRequired) {
+		t.Fatalf("ClearLeader(non-admin) = %v, want ErrPlatformAdminRequired", err)
+	}
+	if repository.calls != 0 {
+		t.Fatalf("repository must not be called for non-admins, got %d calls", repository.calls)
+	}
+}
+
+func TestSetLeaderRejectsInvalidUserID(t *testing.T) {
+	t.Parallel()
+	service, repository, _, admin, _ := newService(t)
+	if _, err := service.SetLeader(context.Background(), admin, groupID, SetLeaderInput{UserID: "bukan-uuid"}); !errors.Is(err, ErrLeaderNotMember) {
+		t.Fatalf("SetLeader(invalid id) = %v, want ErrLeaderNotMember", err)
+	}
+	if repository.calls != 0 {
+		t.Fatal("invalid user id must be rejected before the repository")
+	}
+}
+
+func TestSetLeaderPropagatesNotMember(t *testing.T) {
+	t.Parallel()
+	service, repository, _, admin, _ := newService(t)
+	repository.leaderErr = ErrLeaderNotMember
+	if _, err := service.SetLeader(context.Background(), admin, groupID, SetLeaderInput{UserID: userID}); !errors.Is(err, ErrLeaderNotMember) {
+		t.Fatalf("SetLeader() = %v, want ErrLeaderNotMember", err)
+	}
+}
+
+func TestSetLeaderSuccess(t *testing.T) {
+	t.Parallel()
+	service, repository, _, admin, _ := newService(t)
+	group, err := service.SetLeader(context.Background(), admin, groupID, SetLeaderInput{UserID: " " + userID + " "})
+	if err != nil {
+		t.Fatalf("SetLeader() = %v", err)
+	}
+	if repository.lastLeader != userID || group.LeaderUserID == nil || *group.LeaderUserID != userID {
+		t.Fatalf("leader = %q / %v, want trimmed %s", repository.lastLeader, group.LeaderUserID, userID)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/approval"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/auth"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/authz"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/httpapi"
@@ -243,7 +244,13 @@ func (h *Handler) writeServiceError(w http.ResponseWriter, r *http.Request, err 
 		apihttp.WriteError(w, public.Status, public.Code, public.Message)
 		return
 	}
+	if public, ok := approval.Describe(err); ok {
+		apihttp.WriteError(w, public.Status, public.Code, public.Message)
+		return
+	}
 	switch {
+	case errors.Is(err, ErrRevisionChanged):
+		writeMigrationError(w, http.StatusConflict, "MIGRATION_REVISION_CHANGED", "migration was edited during the request; review and approve the new revision")
 	case errors.Is(err, ErrNotFound):
 		writeMigrationError(w, http.StatusNotFound, "NOT_FOUND", "migration not found")
 	case errors.Is(err, ErrConflict):

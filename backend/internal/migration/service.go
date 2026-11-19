@@ -22,6 +22,7 @@ type Service struct {
 	authorizer  Authorizer
 	locker      Locker
 	executor    Executor
+	approvals   ApprovalGate
 	clock       Clock
 	logger      *slog.Logger
 	maxSQLBytes int
@@ -33,8 +34,9 @@ type ServiceConfig struct {
 	ExecutionTimeout time.Duration
 }
 
-func NewService(repository Repository, authorizer Authorizer, locker Locker, executor Executor, clock Clock, logger *slog.Logger, config ServiceConfig) (*Service, error) {
-	if repository == nil || authorizer == nil || locker == nil || executor == nil {
+func NewService(repository Repository, authorizer Authorizer, locker Locker, executor Executor, approvals ApprovalGate, clock Clock, logger *slog.Logger, config ServiceConfig) (*Service, error) {
+	// Gerbang approval wajib: tanpa itu migration bisa jalan tanpa persetujuan leader.
+	if repository == nil || authorizer == nil || locker == nil || executor == nil || approvals == nil {
 		return nil, errors.New("migration service dependencies are required")
 	}
 	if clock == nil {
@@ -52,7 +54,7 @@ func NewService(repository Repository, authorizer Authorizer, locker Locker, exe
 	if config.MaxSQLBytes < 1 || config.ExecutionTimeout < time.Second {
 		return nil, errors.New("invalid migration service configuration")
 	}
-	return &Service{repository: repository, authorizer: authorizer, locker: locker, executor: executor,
+	return &Service{repository: repository, authorizer: authorizer, locker: locker, executor: executor, approvals: approvals,
 		clock: clock, logger: logger, maxSQLBytes: config.MaxSQLBytes, timeout: config.ExecutionTimeout}, nil
 }
 
@@ -201,6 +203,10 @@ func (s *Service) Execute(ctx context.Context, principal auth.Principal, databas
 	if entry.Status != StatusDraft {
 		return Entry{}, ErrConflict
 	}
+	// Dicek setelah lock, untuk revisi yang SQL-nya akan dijalankan.
+	if err := s.approvals.RequireApproved(ctx, databaseID, migrationID, "apply", entry.Revision); err != nil {
+		return Entry{}, err
+	}
 	if err := validateSQLPolicy(entry.SQL); err != nil {
 		return Entry{}, err
 	}
@@ -209,7 +215,7 @@ func (s *Service) Execute(ctx context.Context, principal auth.Principal, databas
 	}
 
 	creatorUsername := entry.CreatedByUsername
-	entry, err = s.repository.MarkRunning(ctx, databaseID, migrationID, principal.UserID, s.clock.Now())
+	entry, err = s.repository.MarkRunning(ctx, databaseID, migrationID, principal.UserID, entry.Revision, s.clock.Now())
 	if err != nil {
 		return Entry{}, err
 	}

@@ -379,6 +379,53 @@ Saat backend start, entry `running` yang tertinggal dari proses sebelumnya
 diubah menjadi `interrupted`. Implementasi Milestone 1 mengasumsikan satu
 instance backend aktif.
 
+## Approval Migration (Milestone 2)
+
+Setiap group memiliki satu **leader** yang wajib merupakan anggota group
+tersebut. Platform admin memilih leader di **Admin → Group & akses**
+(`PUT /api/v1/admin/groups/{id}/leader`). Leader yang dikeluarkan dari group
+otomatis berhenti menjadi leader.
+
+Migration hanya dapat dijalankan setelah leader dari **setiap** group yang
+memiliki akses `view_only` atau `view_edit` ke database tersebut menyetujui
+revisi yang sama:
+
+- setiap perubahan nama/SQL draft menaikkan `revision`; approval lama tidak
+  berlaku dan approval ulang diperlukan;
+- keputusan leader disimpan append-only (`approved` atau `rejected`, menolak
+  wajib disertai catatan); keputusan terbaru per leader yang dihitung;
+- group ber-akses tanpa leader membuat status review `blocked`;
+- approval untuk `apply`, `rollback`, dan `forward` terpisah;
+- gerbang diperiksa ulang tepat sebelum eksekusi, dan eksekusi dibatalkan bila
+  SQL diedit setelah pemeriksaan.
+
+| Endpoint | Kegunaan |
+|---|---|
+| `GET /api/v1/databases/{databaseId}/migrations/{migrationId}/approvals?action=apply` | Status review, group wajib, dan keputusan leader |
+| `POST /api/v1/databases/{databaseId}/migrations/{migrationId}/approvals` | Leader memberi keputusan `{action, revision, decision, note}` |
+
+| Kode error | Arti |
+|---|---|
+| `409 APPROVAL_REQUIRED` | Belum semua leader wajib menyetujui revisi ini |
+| `409 APPROVAL_STALE_REVISION` | Migration diedit sejak halaman review dibuka |
+| `409 APPROVAL_NOT_REVIEWABLE` | Status migration tidak sesuai dengan aksi |
+| `403 APPROVAL_NOT_LEADER` | User bukan leader group yang punya akses ke database |
+| `409 MIGRATION_REVISION_CHANGED` | SQL diedit saat eksekusi sedang diproses |
+| `400 LEADER_NOT_MEMBER` / `LEADER_INACTIVE` | Leader harus anggota group yang aktif |
+
+Halaman detail migration menampilkan panel review berisi status, keputusan
+setiap leader, dan peringatan kompatibilitas dari SQL (misalnya penghapusan
+kolom atau kolom `NOT NULL` tanpa `DEFAULT`). Tombol jalankan terkunci sampai
+semua leader menyetujui.
+
+## Bonus
+
+- [SAST dengan CodeQL](.github/CODEQL.md): workflow
+  `.github/workflows/codeql.yml` untuk Go dan TypeScript.
+- [Observability: metrik Prometheus dan dashboard Grafana](observability/README.md):
+  `docker compose --profile observability up -d`, lalu buka Grafana di
+  http://localhost:3000.
+
 ## Command Makefile
 
 | Command | Kegunaan |
