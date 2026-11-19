@@ -17,7 +17,7 @@ window.SenjaMotion = (() => {
     return { sel, node, pivoted };
   }
 
-  // Keyed poses: frames = [[time, vars, ease?], …] relative to t0. Each frame's state is
+  // Keyed poses: frames = [[time, vars, ease?], ...] relative to t0. Each frame's state is
   // reached at its time, tweening from the previous frame's time (0 for the first).
   function keys(tl, r, id, t0, frames) {
     let prev = 0;

@@ -45,7 +45,7 @@ export function describeError(error: unknown) {
   return 'Terjadi kesalahan. Silakan coba lagi.'
 }
 
-// Pose Senja yang cocok untuk suatu error (ui-design-brief §4).
+// Pose Senja yang cocok untuk suatu error.
 export function poseForError(error: unknown): SenjaPose {
   const code = error instanceof ApiError ? error.code : ''
   switch (code) {

@@ -1,4 +1,4 @@
-/* Design tokens — Sunset palette (lihat ui-design-brief §2). */
+/* Design tokens: palet Senja. */
 :root {
   --brand-peach: #ffb38a;
   --brand-sunset: #ff7a45;
@@ -62,7 +62,7 @@
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
   /* Warna area: setiap bagian aplikasi punya satu warna yang konsisten di ikon,
-     header, dan kartu — pengguna belajar "di mana saya" dari warnanya. */
+     header, dan kartu; pengguna belajar "di mana saya" dari warnanya. */
   --area-database: #ff7a45;
   --area-database-soft: #fff0e8;
   --area-migration: #f0457a;
@@ -212,7 +212,7 @@ h3 {
   line-height: 1.25;
 }
 
-/* Skala tipe brief: 12 · 14 · 16 · 20 · 24 · 32. Judul halaman 24px — aplikasi
+/* Skala tipe: 12, 14, 16, 20, 24, 32. Judul halaman 24px; aplikasi
    operasional, bukan halaman pemasaran. */
 h1 {
   font-size: clamp(1.5rem, 1.25rem + 0.9vw, 1.875rem);
@@ -297,7 +297,7 @@ img {
   transform: scale(0.97);
 }
 
-/* Tombol utama sedikit "terangkat" saat disorot — mengundang untuk diklik. */
+/* Tombol utama sedikit "terangkat" saat disorot. */
 .button--primary {
   box-shadow: 0 1px 2px rgb(194 65 12 / 25%), 0 6px 14px -6px rgb(194 65 12 / 45%);
 }

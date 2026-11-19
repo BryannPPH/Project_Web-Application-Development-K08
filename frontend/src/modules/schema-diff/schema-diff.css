@@ -29,7 +29,7 @@
   color: var(--action);
 }
 
-/* Panah arah sumber → target: penanda tenang, bukan tombol bergradien. */
+/* Panah arah sumber ke target: penanda tenang, bukan tombol bergradien. */
 .diff-arrow {
   display: grid;
   place-items: center;
