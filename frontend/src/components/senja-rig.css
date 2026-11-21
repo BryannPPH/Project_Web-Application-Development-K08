@@ -1,0 +1,23 @@
+.senja-rig {
+  display: block;
+  aspect-ratio: 310 / 430;
+}
+
+.senja-rig svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* Kostum: semua lapisan kostum disembunyikan, lalu hanya kostum terpilih yang tampil. */
+.senja-rig [data-outfit] {
+  display: none;
+}
+
+.senja-rig[data-outfit='pagi'] [data-outfit='pagi'],
+.senja-rig[data-outfit='siang'] [data-outfit='siang'],
+.senja-rig[data-outfit='sore'] [data-outfit='sore'],
+.senja-rig[data-outfit='malam'] [data-outfit='malam'] {
+  display: inline;
+}

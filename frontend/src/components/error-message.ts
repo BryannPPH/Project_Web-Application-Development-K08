@@ -1,3 +1,9 @@
+/*
+ * FILE INI UNTUK APA (error-message.ts)
+ * GUIDEBOOK: §2.8
+ * describeError(): mengubah kode error backend (mis. DATABASE_INACTIVE,
+ * TARGET_TIMEOUT) menjadi pesan Bahasa Indonesia yang ramah untuk ditampilkan.
+ */
 import type { SenjaPose } from '@/components/brand'
 import { ApiError } from '@/lib/api-client'
 

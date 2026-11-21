@@ -86,7 +86,7 @@ describe('ViewerPage', () => {
     mockFetch(standardHandler((offset) => rowsPage(offset, false)))
     renderViewer('/databases/db-1/schemas/public/tables/customers')
 
-    expect(screen.getByText('Memeriksa akses database…')).toBeInTheDocument()
+    expect(screen.getByText('Memeriksa akses database...')).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'Warehouse' })).toBeInTheDocument()
     expect(await screen.findByText('customers_email_key')).toBeInTheDocument()
     expect(screen.getByText('UNIQUE')).toBeInTheDocument()
@@ -206,7 +206,7 @@ describe('ViewerPage', () => {
     mockFetch(standardHandler((offset) => rowsPage(offset, false)))
     renderRoute(<ViewerPage />, { route: '/databases/db-1', path: '/databases/:databaseId', user: regularUser })
 
-    expect(await screen.findByText('Pilih schema di panel kiri.')).toBeInTheDocument()
+    expect(await screen.findByText('Pilih schema dari daftar Schema untuk melihat table-nya.')).toBeInTheDocument()
     expect(senjaImage('lantern')).toBeInTheDocument()
   })
 
@@ -215,7 +215,7 @@ describe('ViewerPage', () => {
       standardHandler(() =>
         jsonResponse({
           columns: [{ name: 'note', dataType: 'text' }],
-          rows: [['catatan panjang…']],
+          rows: [['catatan panjang...']],
           limit: 50,
           offset: 0,
           hasMore: false,

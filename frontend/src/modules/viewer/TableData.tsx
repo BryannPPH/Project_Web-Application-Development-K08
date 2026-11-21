@@ -5,6 +5,8 @@ import { Icon } from '@/components/Icon'
 import { StatusMessage } from '@/components/StatusMessage'
 import { parsePageParams, useTableRows } from '@/modules/viewer/api'
 
+// renderCell: tampilkan satu sel. null -> badge NULL; object (jsonb) -> JSON string; lainnya -> teks.
+// React otomatis meng-escape teks, jadi isi sel seperti <script> tidak akan dieksekusi (aman XSS).
 function renderCell(value: unknown) {
   if (value === null || value === undefined) {
     return <span className="cell-null">NULL</span>
@@ -13,6 +15,13 @@ function renderCell(value: unknown) {
     return <code>{JSON.stringify(value)}</code>
   }
   return String(value)
+}
+
+// cellTitle: nilai lengkap sebagai tooltip untuk sel panjang (teks maupun JSON) yang terpotong.
+function cellTitle(value: unknown) {
+  if (value === null || value === undefined) return undefined
+  const text = typeof value === 'object' ? JSON.stringify(value) : String(value)
+  return text.length > 40 ? text : undefined
 }
 
 interface TableDataProps {
@@ -28,6 +37,7 @@ export function TableData({ databaseId, schema, table }: TableDataProps) {
   const { limit, offset } = parsePageParams(searchParams)
   const rows = useTableRows(databaseId, schema, table, limit, offset)
 
+  // goTo: pindah halaman dengan mengubah query string. Offset tidak boleh negatif.
   function goTo(nextOffset: number, nextLimit = limit) {
     const next = new URLSearchParams(searchParams)
     next.set('tab', 'data')
@@ -37,7 +47,7 @@ export function TableData({ databaseId, schema, table }: TableDataProps) {
   }
 
   if (rows.isPending) {
-    return <StatusMessage tone="loading">Memuat data…</StatusMessage>
+    return <StatusMessage tone="loading">Memuat data...</StatusMessage>
   }
   if (rows.isError) {
     return (
@@ -79,7 +89,7 @@ export function TableData({ databaseId, schema, table }: TableDataProps) {
                   {row.map((value, columnIndex) => (
                     <td
                       key={page.columns[columnIndex]?.name ?? columnIndex}
-                      title={typeof value === 'string' && value.length > 40 ? value : undefined}
+                      title={cellTitle(value)}
                     >
                       {renderCell(value)}
                     </td>
@@ -101,7 +111,7 @@ export function TableData({ databaseId, schema, table }: TableDataProps) {
       <div className="pagination">
         <span className="muted">
           {page.rows.length > 0
-            ? `Baris ${offset + 1}–${offset + page.rows.length}`
+            ? `Baris ${offset + 1} sampai ${offset + page.rows.length}`
             : `Offset ${offset}`}
           {page.orderedBy.length > 0 ? ` · diurutkan menurut ${page.orderedBy.join(', ')}` : ''}
         </span>
@@ -120,24 +130,27 @@ export function TableData({ databaseId, schema, table }: TableDataProps) {
               ))}
             </select>
           </label>
-          <button
-            className="button button--secondary button--small"
-            disabled={offset === 0 || rows.isFetching}
-            onClick={() => goTo(offset - limit)}
-            type="button"
-          >
-            <Icon name="chevronLeft" size={14} />
-            Sebelumnya
-          </button>
-          <button
-            className="button button--secondary button--small"
-            disabled={!page.hasMore || rows.isFetching}
-            onClick={() => goTo(offset + limit)}
-            type="button"
-          >
-            Berikutnya
-            <Icon name="chevronRight" size={14} />
-          </button>
+          {/* Sebelumnya/Berikutnya selalu berpasangan, tidak terpisah baris. */}
+          <div className="pagination__steps">
+            <button
+              className="button button--secondary button--small"
+              disabled={offset === 0 || rows.isFetching}
+              onClick={() => goTo(offset - limit)}
+              type="button"
+            >
+              <Icon name="chevronLeft" size={14} />
+              Sebelumnya
+            </button>
+            <button
+              className="button button--secondary button--small"
+              disabled={!page.hasMore || rows.isFetching}
+              onClick={() => goTo(offset + limit)}
+              type="button"
+            >
+              Berikutnya
+              <Icon name="chevronRight" size={14} />
+            </button>
+          </div>
         </div>
       </div>
     </div>

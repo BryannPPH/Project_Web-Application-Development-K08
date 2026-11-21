@@ -1,3 +1,10 @@
+/*
+ * FILE INI UNTUK APA (admin/types.ts)
+ * GUIDEBOOK: §2.8
+ * Tipe data halaman admin: user, group, member, grant, managed database, hasil
+ * test koneksi, pilihan SSL mode. Perhatikan: tipe managed database TIDAK punya
+ * field password (cuma hasCredential), sama seperti backend.
+ */
 import type { PlatformRole } from '@/modules/auth/types'
 import type { AccessLevel, DatabaseEngine } from '@/modules/databases/types'
 

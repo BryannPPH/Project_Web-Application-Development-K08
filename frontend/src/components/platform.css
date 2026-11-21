@@ -1,6 +1,8 @@
 /* ---------- Status & empty state ---------- */
 
+/* Pesan muncul dengan sedikit "pop" agar umpan balik terasa. */
 .status-message {
+  animation: pop-in 260ms var(--ease-spring) both;
   display: flex;
   gap: 0.625rem;
   align-items: flex-start;
@@ -51,39 +53,46 @@
 }
 
 .status-message--empty {
-  border-style: dashed;
+  border-color: var(--line-soft);
   color: var(--muted);
   background: var(--surface-subtle);
 }
 
+/* Empty state: satu bidang tenang, bukan kotak putus-putus. Senja maksimal ~140px. */
 .empty-state {
   display: grid;
   justify-items: center;
-  gap: 0.5rem;
+  gap: 0.375rem;
   margin: 0 0 1rem;
-  border: 1px dashed var(--line-soft);
   border-radius: var(--radius-lg);
-  padding: 2rem 1.5rem;
+  padding: clamp(1.75rem, 5vw, 3rem) 1.5rem;
   color: var(--muted);
-  background: var(--surface);
+  background: var(--surface-subtle);
   text-align: center;
 }
 
 .empty-state__art {
   width: auto;
-  height: clamp(110px, 18vw, 160px);
-  margin-bottom: 0.5rem;
+  height: clamp(104px, 15vw, 148px);
+  margin-bottom: 0.75rem;
   object-fit: contain;
+  animation: float 4s var(--ease-in-out) infinite;
+}
+
+.empty-state {
+  animation: pop-in 320ms var(--ease-out) both;
 }
 
 .empty-state__title {
   color: var(--ink);
   font-size: 1rem;
+  text-wrap: balance;
 }
 
 .empty-state__text {
-  max-width: 28rem;
+  max-width: 30rem;
   font-size: 0.875rem;
+  text-wrap: pretty;
 }
 
 .empty-state--error .empty-state__title {
@@ -99,24 +108,28 @@
 .page-header {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
   gap: 0.75rem 1.5rem;
-  margin-bottom: 1.75rem;
+  margin-bottom: 1.5rem;
 }
 
 .page-header h1 {
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .page-header__text {
   display: grid;
-  gap: 0.25rem;
+  gap: 0.375rem;
   min-width: 0;
 }
 
 .page-header__text p {
+  max-width: 68ch;
   margin: 0;
+  color: var(--muted);
+  font-size: 0.875rem;
 }
 
 .page-header__meta {
@@ -134,11 +147,37 @@
 }
 
 .panel {
+  --panel-pad: 1.375rem;
+
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-lg);
-  padding: 1.375rem;
+  padding: var(--panel-pad);
   background: var(--surface);
-  box-shadow: 0 2px 10px rgb(43 27 46 / 4%);
+  box-shadow: var(--shadow-card);
+}
+
+/* Tabel di dalam panel menempel ke tepi panel: satu bingkai, bukan kartu di dalam kartu. */
+.panel > .data-table-wrapper:last-child {
+  margin: 0 calc(-1 * var(--panel-pad)) calc(-1 * var(--panel-pad));
+  border: 0;
+  border-top: 1px solid var(--line-soft);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
+/* Daftar kecil di dalam panel detail: garis atas-bawah saja, tanpa kotak kedua. */
+.group-detail .data-table-wrapper {
+  border: 0;
+  border-top: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+  border-radius: 0;
+}
+
+.group-detail .data-table td:first-child {
+  padding-left: 0.25rem;
+}
+
+.group-detail .data-table td:last-child {
+  padding-right: 0.25rem;
 }
 
 .panel + .panel {
@@ -162,6 +201,97 @@
 .panel__header h2,
 .panel__header h3 {
   margin: 0;
+}
+
+/* Judul panel + jumlah item sebagai satu kelompok. */
+.panel__title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Sel identitas: nama panjang terpotong rapi, nilai lengkap ada di title. */
+.cell-identity {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.cell-truncate {
+  display: inline-block;
+  max-width: min(28rem, 40vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+/* Target koneksi (user@host:port/db) bisa panjang: boleh patah di mana saja. */
+.cell-target {
+  display: inline-block;
+  max-width: 22rem;
+  overflow-wrap: anywhere;
+}
+
+/* Baris yang membuka form di bawahnya. */
+.data-table tbody tr.row-expand,
+.data-table tbody tr.row-expand:hover {
+  background: var(--surface-subtle);
+}
+
+/* Form di bawah baris (mis. reset password), rata kanan tepat di bawah tombol
+ * aksi yang membukanya. Grid: label di atas, input + tombol sejajar, lalu
+ * petunjuk dan error di bawah input. Tombol selalu sejajar input berapa pun
+ * panjang labelnya (label satu baris, dipotong "..." bila terlalu panjang). */
+.row-form {
+  display: grid;
+  grid-template-areas:
+    'label .'
+    'input actions'
+    'hint .'
+    'error .';
+  grid-template-columns: minmax(0, 22rem) auto;
+  align-items: center;
+  justify-content: end;
+  gap: 0.375rem 1rem;
+  padding: 0.5rem 0;
+}
+
+.row-form__label {
+  grid-area: label;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-form__input {
+  grid-area: input;
+  min-width: 0;
+}
+
+.row-form__input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.row-form__hint {
+  grid-area: hint;
+  margin: 0;
+}
+
+.row-form__error {
+  grid-area: error;
+  margin: 0.25rem 0 0;
+}
+
+.row-form__actions {
+  display: flex;
+  grid-area: actions;
+  gap: 0.5rem;
 }
 
 .panel__header p {
@@ -191,22 +321,34 @@
 .data-table-wrapper {
   overflow-x: auto;
   border: 1px solid var(--line-soft);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
+  overscroll-behavior-x: contain;
 }
 
 .data-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .data-table th,
 .data-table td {
   border-bottom: 1px solid var(--line-soft);
-  padding: 0.5rem 0.75rem;
+  padding: 0.625rem 0.75rem;
   text-align: left;
   vertical-align: middle;
+}
+
+.data-table th:first-child,
+.data-table td:first-child {
+  padding-left: 1.25rem;
+}
+
+.data-table th:last-child,
+.data-table td:last-child {
+  padding-right: 1.25rem;
 }
 
 .data-table th {
@@ -218,6 +360,10 @@
   font-size: 0.75rem;
   font-weight: 600;
   white-space: nowrap;
+}
+
+.data-table tbody tr {
+  transition: background-color var(--dur-instant) var(--ease-out);
 }
 
 .data-table tbody tr:hover {
@@ -305,14 +451,14 @@
   background: var(--info-bg);
 }
 
+/* View Only = biru langit (tenang, "melihat"); View + Edit = ember (aksi). */
 .badge--view {
-  border-color: var(--muted);
-  color: var(--muted);
-  background: transparent;
+  color: var(--badge-view-ink);
+  background: var(--badge-view-bg);
 }
 
 .badge--edit {
-  color: #fff;
+  color: var(--on-action);
   background: var(--action);
 }
 
@@ -362,15 +508,21 @@
   width: 100%;
   height: var(--control-h);
   border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 0 0.875rem;
+  border-radius: var(--radius);
+  padding: 0 0.75rem;
   color: var(--ink);
-  background: var(--surface-subtle);
+  background: var(--surface);
   font-size: 0.875rem;
   font-weight: 400;
   transition:
-    border-color 120ms ease,
-    box-shadow 120ms ease;
+    border-color var(--dur-instant) var(--ease-out),
+    box-shadow var(--dur-instant) var(--ease-out);
+}
+
+.form-field input:not([type='checkbox']):hover:not(:disabled):not(:focus),
+.form-field select:hover:not(:disabled):not(:focus),
+.input:hover:not(:disabled):not(:focus) {
+  border-color: var(--brand-peach);
 }
 
 .form-field textarea {
@@ -396,6 +548,26 @@
 .form-field select:disabled {
   color: var(--muted);
   background: var(--surface-subtle);
+}
+
+/* Error milik satu field: di bawah field-nya, dengan aksi pemulihan bila ada. */
+.field-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+  color: var(--danger-strong);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.field-error > svg {
+  flex: none;
+}
+
+.field-error .button {
+  margin-left: auto;
+  color: var(--ink);
 }
 
 .form-field__hint {
@@ -514,14 +686,14 @@
   gap: 0.125rem;
   height: var(--control-h);
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--radius);
   padding: 0.1875rem;
   background: var(--surface);
 }
 
 .segmented button {
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   padding: 0 0.75rem;
   color: var(--muted);
   background: transparent;
@@ -624,63 +796,45 @@
   margin-top: 0.875rem;
 }
 
-/* ---------- Stat cards ---------- */
-
-.card-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-  gap: 1rem;
+.pagination__steps {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 0.375rem;
 }
 
-.stat-card {
-  display: grid;
-  gap: 0.25rem;
-  border: 0;
-  border-radius: 20px;
-  padding: 1.125rem 1.25rem;
-  background: var(--tint-peach);
-}
+/* ---------- Section heading ---------- */
 
-.stat-card:nth-child(3n + 2) {
-  background: var(--tint-pink);
-}
-
-.stat-card:nth-child(3n + 3) {
-  background: var(--tint-lavender);
-}
-
-.stat-card__label {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  color: var(--muted);
-  font-size: 0.8125rem;
-  font-weight: 600;
-}
-
-.stat-card__icon {
-  display: inline-grid;
-  place-items: center;
-  width: 2rem;
-  height: 2rem;
-  border-radius: 999px;
-  color: var(--action);
-  background: var(--surface);
-}
-
-.stat-card__value {
-  color: var(--ink);
-  font-size: 2rem;
-  font-weight: 700;
-  line-height: 1.2;
-}
-
-.stat-card__foot {
+.section-head {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.375rem;
-  margin-top: 0.375rem;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  margin: 2rem 0 0.75rem;
 }
+
+.page-header + .section-head {
+  margin-top: 0;
+}
+
+.section-head h2 {
+  margin: 0;
+}
+
+.section-head__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.section-head__link:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
 
 /* ---------- Two-column admin layout ---------- */
 
@@ -701,8 +855,10 @@
   }
 }
 
-/* Tabel admin berubah jadi kartu bertumpuk di layar sempit. */
-@media (max-width: 760px) {
+/* Tabel admin berubah jadi kartu bertumpuk saat KOLOM KONTEN sempit (container query
+ * pada .workspace-main), bukan saat jendela sempit: di 760-1100px sidebar masih tampil,
+ * jadi tabel terjepit walau jendelanya lebar. 56rem = tabel terlebar (Koneksi) muat. */
+@container main (max-width: 56rem) {
   .data-table--stack thead {
     display: none;
   }
@@ -715,19 +871,45 @@
     width: 100%;
   }
 
+  /* Tiap baris jadi blok ringkas: sel pertama = judul, sel pendek berdampingan,
+     aksi selebar baris. */
   .data-table--stack tr {
-    border-bottom: 1px solid var(--line);
-    padding: 0.5rem 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+    gap: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--line-soft);
+    padding: 0.875rem 1rem;
   }
 
-  .data-table--stack td {
+  .data-table--stack tr:last-child {
+    border-bottom: 0;
+  }
+
+  .data-table--stack td,
+  .data-table--stack td:first-child,
+  .data-table--stack td:last-child {
     border: 0;
-    padding: 0.25rem 0.875rem;
+    padding: 0;
+  }
+
+  .data-table--stack td:first-child,
+  .data-table--stack td.cell-actions,
+  .data-table--stack tr.row-expand td {
+    grid-column: 1 / -1;
+  }
+
+  .data-table--stack td:first-child {
+    font-size: 0.875rem;
+  }
+
+  .data-table--stack td:first-child[data-label]::before {
+    display: none;
   }
 
   .data-table--stack td[data-label]::before {
     content: attr(data-label);
     display: block;
+    margin-bottom: 0.125rem;
     color: var(--muted);
     font-size: 0.7rem;
     font-weight: 600;
@@ -735,7 +917,36 @@
 
   .data-table--stack td.cell-actions {
     width: 100%;
-    padding-top: 0.5rem;
+  }
+
+  .data-table--stack .cell-actions .inline-actions {
+    flex-wrap: wrap;
+  }
+
+  .data-table--stack .cell-actions .button {
+    height: 2.5rem;
+  }
+
+  .data-table--stack .cell-truncate {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 760px) {
+  /* Ponsel: form ditumpuk penuh lebar; tombol di bawah, setelah petunjuk/error. */
+  .row-form {
+    grid-template-areas:
+      'label'
+      'input'
+      'hint'
+      'error'
+      'actions';
+    grid-template-columns: minmax(0, 1fr);
+    justify-content: stretch;
+  }
+
+  .row-form__actions {
+    margin-top: 0.375rem;
   }
 }
 
@@ -770,10 +981,10 @@
   display: grid;
   justify-items: center;
   gap: 0.5rem;
-  border-style: dashed;
+  border-color: transparent;
   padding: 2.5rem 1.5rem;
   color: var(--muted);
-  box-shadow: none;
+  background: var(--surface-subtle);
   text-align: center;
 }
 
@@ -855,8 +1066,9 @@
 
 .error-page__art {
   width: auto;
-  height: clamp(140px, 24vh, 200px);
+  height: clamp(150px, 26vh, 220px);
   margin-bottom: 1.25rem;
+  animation: float 4s var(--ease-in-out) infinite;
 }
 
 .error-page h1 {
@@ -882,3 +1094,30 @@
 * + .split {
   margin-top: 1rem;
 }
+
+/* ---------- Judul bagian berwarna area ---------- */
+
+.section-head__title {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  font-size: 1.0625rem;
+  font-weight: 800;
+}
+
+.area-tile {
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 10px;
+  color: var(--area-color);
+  background: var(--area-soft);
+}
+
+[data-area='database'] { --area-color: var(--area-database); --area-soft: var(--area-database-soft); }
+[data-area='migration'] { --area-color: var(--area-migration); --area-soft: var(--area-migration-soft); }
+[data-area='diff'] { --area-color: var(--area-diff); --area-soft: var(--area-diff-soft); }
+[data-area='admin'] { --area-color: var(--area-admin); --area-soft: var(--area-admin-soft); }
+[data-area='home'] { --area-color: var(--area-home); --area-soft: var(--area-home-soft); }
+

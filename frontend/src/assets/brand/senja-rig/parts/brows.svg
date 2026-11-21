@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="20 40 310 430" width="310" height="430">
+  <!-- Senja rig layer "brows". Generated from senja-rig.svg by scripts/build-rig.mjs; edit the master. -->
+  <g id="brows">
+        <path id="brow-l" fill="none" stroke="#351C31" stroke-width="3" stroke-linecap="round" d="M157,190 C162,186 170,185 177,188"/>
+        <path id="brow-r" fill="none" stroke="#351C31" stroke-width="3" stroke-linecap="round" d="M236,173 C241,168 249,167 256,169"/>
+      </g>
+</svg>

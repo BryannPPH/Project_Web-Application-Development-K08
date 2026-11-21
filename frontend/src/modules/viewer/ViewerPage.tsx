@@ -11,6 +11,7 @@ import { TableStructure } from '@/modules/viewer/TableStructure'
 import { tableTypeLabels, type TableType } from '@/modules/viewer/types'
 import '@/modules/viewer/viewer.css'
 
+// schemaUrl / tableUrl: rakit URL halaman; nama di-encode supaya karakter aneh aman.
 function schemaUrl(databaseId: string, schema: string) {
   return `/databases/${databaseId}/schemas/${encodeURIComponent(schema)}`
 }
@@ -31,12 +32,16 @@ const tableTypeIcons: Record<TableType, IconName> = {
 const rowFormat = new Intl.NumberFormat('id-ID')
 
 // ViewerPage: navigasi schema -> table -> detail/data untuk satu database.
+// ViewerPage: komponen utama halaman viewer.
+// ALUR: ambil parameter dari URL -> minta detail DB (sekaligus cek akses) ->
+//   loading? tampilkan "Memeriksa akses" -> error? tampilkan pesan + link kembali ->
+//   sukses: header (nama DB, engine, badge akses, tombol) + ViewerWorkspace.
 export function ViewerPage() {
   const { databaseId = '', schema, table } = useParams()
   const database = useAccessibleDatabase(databaseId)
 
   if (database.isPending) {
-    return <StatusMessage tone="loading">Memeriksa akses database…</StatusMessage>
+    return <StatusMessage tone="loading">Memeriksa akses database...</StatusMessage>
   }
   if (database.isError) {
     return (
@@ -115,7 +120,9 @@ function ViewerWorkspace({ databaseId, schema, table }: ViewerWorkspaceProps) {
             title={schema ? 'Pilih table' : 'Pilih schema'}
             tone="empty"
           >
-            {schema ? 'Pilih table untuk melihat struktur dan data.' : 'Pilih schema di panel kiri.'}
+            {schema
+              ? 'Pilih table dari daftar Schema untuk melihat struktur dan datanya.'
+              : 'Pilih schema dari daftar Schema untuk melihat table-nya.'}
           </StatusMessage>
         )}
       </div>
@@ -123,6 +130,7 @@ function ViewerWorkspace({ databaseId, schema, table }: ViewerWorkspaceProps) {
   )
 }
 
+// DatabaseSwitcher: dropdown berisi database yang boleh diakses; pilih = navigate ke URL DB itu.
 function DatabaseSwitcher({ currentId }: { currentId: string }) {
   const databases = useAccessibleDatabases()
   const navigate = useNavigate()
@@ -153,12 +161,13 @@ interface SchemaNavigationProps {
   selectedTable?: string
 }
 
+// SchemaNavigation: panel kiri. useTables baru jalan setelah schema dipilih.
 function SchemaNavigation({ databaseId, selectedSchema, selectedTable }: SchemaNavigationProps) {
   const schemas = useSchemas(databaseId)
   const tables = useTables(databaseId, selectedSchema)
 
   if (schemas.isPending) {
-    return <StatusMessage tone="loading">Memuat schema…</StatusMessage>
+    return <StatusMessage tone="loading">Memuat schema...</StatusMessage>
   }
   if (schemas.isError) {
     return (
@@ -199,7 +208,7 @@ function SchemaNavigation({ databaseId, selectedSchema, selectedTable }: SchemaN
               </Link>
               {open ? (
                 <div className="viewer-tables">
-                  {tables.isPending ? <p className="muted viewer-tree__note">Memuat table…</p> : null}
+                  {tables.isPending ? <p className="muted viewer-tree__note">Memuat table...</p> : null}
                   {tables.isError ? (
                     <p className="muted viewer-tree__note" role="alert">
                       {describeError(tables.error)}
@@ -236,6 +245,8 @@ function SchemaNavigation({ databaseId, selectedSchema, selectedTable }: SchemaN
   )
 }
 
+// TablePanel: panel kanan untuk satu tabel. Tab aktif dibaca dari ?tab=data
+// (default "structure"). Ganti tab = ubah query string, bukan state lokal.
 function TablePanel({ databaseId, schema, table }: { databaseId: string; schema: string; table: string }) {
   const [searchParams, setSearchParams] = useSearchParams()
   const tab = searchParams.get('tab') === 'data' ? 'data' : 'structure'
@@ -278,7 +289,7 @@ function TablePanel({ databaseId, schema, table }: { databaseId: string; schema:
 
       {tab === 'structure' ? (
         <>
-          {detail.isPending ? <StatusMessage tone="loading">Memuat struktur table…</StatusMessage> : null}
+          {detail.isPending ? <StatusMessage tone="loading">Memuat struktur table...</StatusMessage> : null}
           {detail.isError ? (
             <StatusMessage illustration={poseForError(detail.error)} title="Struktur gagal dimuat" tone="error">
               {describeError(detail.error)}

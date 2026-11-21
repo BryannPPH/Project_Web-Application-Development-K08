@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, screen } from '@testing-library/react'
+import { cleanup, fireEvent, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { DatabaseListPage } from '@/modules/databases/DatabaseListPage'
@@ -36,13 +36,15 @@ describe('DatabaseListPage', () => {
     renderPage()
 
     expect(await screen.findByText('Warehouse')).toBeInTheDocument()
-    expect(screen.getByText('View Only')).toBeInTheDocument()
-    expect(screen.getByText('View + Edit')).toBeInTheDocument()
+    // Badge level akses ada di dalam daftar (teks yang sama juga muncul di deskripsi halaman).
+    const list = screen.getByRole('list')
+    expect(within(list).getByText('View Only')).toBeInTheDocument()
+    expect(within(list).getByText('View + Edit')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Warehouse' })).toHaveAttribute('href', '/databases/db-1')
     expect(screen.getAllByRole('link', { name: 'Buka viewer' })[0]).toHaveAttribute('href', '/databases/db-1')
-    expect(screen.getAllByRole('link', { name: 'Riwayat migration' })[0]).toHaveAttribute(
-      'href',
-      '/databases/db-1/migrations',
-    )
+    // View Only hanya melihat riwayat; View + Edit mengelola migration.
+    expect(screen.getByRole('link', { name: 'Riwayat migration' })).toHaveAttribute('href', '/databases/db-1/migrations')
+    expect(screen.getByRole('link', { name: 'Kelola migration' })).toHaveAttribute('href', '/databases/db-2/migrations')
   })
 
   it('menampilkan empty state bila tidak ada grant', async () => {

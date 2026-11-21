@@ -16,10 +16,12 @@ function basePath(databaseId: string) {
   return `/databases/${encodeURIComponent(databaseId)}`
 }
 
+// tablePath: URL dasar untuk satu tabel.
 function tablePath(databaseId: string, schema: string, table: string) {
   return `${basePath(databaseId)}/schemas/${encodeURIComponent(schema)}/tables/${encodeURIComponent(table)}`
 }
 
+// Key cache: limit & offset ikut di key, jadi setiap halaman data punya cache sendiri.
 export const viewerQueryKeys = {
   schemas: (databaseId: string) => ['viewer', databaseId, 'schemas'] as const,
   tables: (databaseId: string, schema: string) =>
@@ -30,6 +32,7 @@ export const viewerQueryKeys = {
     ['viewer', databaseId, 'schemas', schema, 'tables', table, 'rows', limit, offset] as const,
 }
 
+// Sama dengan databases/api.ts: 4xx tidak di-retry, 5xx di-retry 1x.
 function retryServerErrors(failureCount: number, error: unknown) {
   if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
     return false
@@ -37,6 +40,7 @@ function retryServerErrors(failureCount: number, error: unknown) {
   return failureCount < 1
 }
 
+// useSchemas: daftar schema untuk panel kiri.
 export function useSchemas(databaseId: string) {
   return useQuery({
     queryKey: viewerQueryKeys.schemas(databaseId),
@@ -47,6 +51,7 @@ export function useSchemas(databaseId: string) {
   })
 }
 
+// useTables: enabled=false selama schema belum dipilih -> tidak ada request sia-sia.
 export function useTables(databaseId: string, schema: string | undefined) {
   return useQuery({
     enabled: !!schema,
@@ -62,6 +67,7 @@ export function useTables(databaseId: string, schema: string | undefined) {
   })
 }
 
+// useTableDetail: kolom + constraint + index dalam satu request.
 export function useTableDetail(databaseId: string, schema: string, table: string) {
   return useQuery({
     queryKey: viewerQueryKeys.detail(databaseId, schema, table),
@@ -93,6 +99,7 @@ export function useTableRows(
 export function parsePageParams(searchParams: URLSearchParams) {
   const rawLimit = Number(searchParams.get('limit') ?? DEFAULT_PAGE_SIZE)
   const rawOffset = Number(searchParams.get('offset') ?? 0)
+  // Nilai URL yang aneh (huruf, negatif, > 100) diganti default, sama dengan aturan backend.
   const limit =
     Number.isInteger(rawLimit) && rawLimit >= 1 && rawLimit <= MAX_PAGE_SIZE
       ? rawLimit

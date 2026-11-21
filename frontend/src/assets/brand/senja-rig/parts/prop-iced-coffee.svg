@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="20 40 310 430" width="310" height="430">
+  <!-- Senja rig layer "prop-iced-coffee". Generated from senja-rig.svg by scripts/build-rig.mjs; edit the master. -->
+  <g id="prop-iced-coffee" data-outfit="siang">
+          <path fill="none" stroke="#7A4C7D" stroke-width="3.6" stroke-linecap="round" d="M244,330 L254,298"/>
+          <path fill="#DCE6EC" d="M223,336 L255,336 L251,393 Q250,397 246,397 L232,397 Q228,397 227,393 Z"/>
+          <path fill="#A66C40" d="M225.5,352 L252.5,352 L249.5,391 Q249,394 246,394 L232,394 Q229,394 228.5,391 Z"/>
+          <rect fill="#C99A74" x="231" y="356" width="8" height="8" rx="1.5"/>
+          <rect fill="#C99A74" x="242" y="363" width="7" height="7" rx="1.5"/>
+          <path fill="#C3D1DC" d="M223,336 Q239,320 255,336 Z"/>
+          <rect fill="#C3D1DC" x="220" y="333.5" width="38" height="4.5" rx="2.2"/>
+        </g>
+</svg>

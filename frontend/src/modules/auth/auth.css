@@ -53,7 +53,27 @@
   height: 1.75rem;
 }
 
-/* ---------- Hutan senja ---------- */
+/* ---------- Hutan senja ----------
+ * CARA KERJA ANIMASI DI LAYAR LOGIN (semua murni CSS, tanpa JavaScript):
+ *   @keyframes = "naskah" gerakan: keadaan di 0% (from) .. 100% (to).
+ *   animation: <nama> <durasi> <easing> <delay?> infinite [alternate];
+ *     - infinite  : diulang terus
+ *     - alternate : bolak-balik (0->100 lalu 100->0), jadi tidak "loncat"
+ *     - linear    : kecepatan konstan (cocok untuk geser latar)
+ *     - ease-in-out : pelan-cepat-pelan (cocok untuk gerak makhluk hidup)
+ *   Yang dianimasikan hanya background-position, transform, dan opacity.
+ *   transform & opacity diproses GPU (compositor) -> halus dan tidak memicu
+ *   layout ulang. React tidak terlibat sama sekali setelah render pertama.
+ *
+ * Daftar animasi:
+ *   forest-scroll  22s   pohon bergeser 1 ubin ke kiri (lambat, latar jauh)
+ *   grass-scroll   1.4s  rumput bergeser 1 ubin ke kiri (cepat, latar dekat)
+ *   firefly        4s    kunang-kunang berkedip + melayang (bolak-balik)
+ *   (Senja berjalan bukan CSS: rig animasi SenjaRig, klip "walk" 1s = 2 langkah)
+ *   senja-shadow   1s    bayangan mengecil saat maskot terangkat (sinkron dengan walk)
+ *   lantern-glow   2.6s  cahaya lentera berdenyut (bolak-balik)
+ *   bubble-pop     420ms balon chat muncul SEKALI (tidak infinite)
+ */
 
 .forest {
   position: absolute;
@@ -87,7 +107,10 @@
   height: clamp(180px, 30vh, 280px);
 }
 
-/* Ubin pohon 3:1 diulang ke samping dan digeser satu ubin per putaran. */
+/* Ubin pohon 3:1 diulang ke samping dan digeser satu ubin per putaran.
+ * background-size: auto 100% -> tinggi ubin = tinggi elemen (--trees-h),
+ * lebar ubin otomatis = 3 x --trees-h (karena SVG-nya 1200x400).
+ * repeat-x -> ubin diulang ke kanan-kiri tanpa batas. */
 .forest__trees {
   --trees-h: clamp(230px, 40vh, 380px);
 
@@ -122,7 +145,12 @@
   animation: grass-scroll 1.4s linear infinite;
 }
 
-/* Rumput di depan bergeser lebih cepat daripada pohon (parallax). */
+/* Rumput di depan bergeser lebih cepat daripada pohon (parallax).
+ * Gambar rumput (SVG inline di atas) lebarnya 140px, jadi digeser tepat
+ * -140px = 1 ubin -> seamless loop, sama prinsipnya dengan forest-scroll.
+ * Kecepatan: 140px / 1.4s = 100 px/detik, jauh lebih cepat dari pohon
+ * (contoh --trees-h 380px: 1140px / 22s ~ 52 px/detik). Beda kecepatan inilah
+ * yang memberi kesan kedalaman. */
 @keyframes grass-scroll {
   to {
     background-position: -140px 100%;
@@ -136,6 +164,8 @@
   border-radius: 999px;
   background: #fff3c4;
   box-shadow: 0 0 10px 4px rgb(255 214 140 / 75%);
+  /* animation-delay tiap kunang-kunang diisi dari LoginForest.tsx (inline style),
+   * sehingga 8 kunang-kunang tidak berkedip bersamaan. */
   animation: firefly 4s ease-in-out infinite alternate;
 }
 
@@ -173,7 +203,6 @@
   display: block;
 }
 
-/* Bayangan lembut di rumput, mengecil saat Senja melompat kecil. */
 .login-hero__senja::after {
   content: '';
   position: absolute;
@@ -186,10 +215,9 @@
   background: rgb(54 84 34 / 35%);
   filter: blur(3px);
   transform: translateX(-50%);
-  animation: senja-shadow 0.9s ease-in-out infinite;
+  animation: senja-shadow 1s ease-in-out infinite;
 }
 
-/* Cahaya hangat dari lentera Senja. */
 .login-hero__glow {
   position: absolute;
   top: 58%;
@@ -201,30 +229,9 @@
   animation: lantern-glow 2.6s ease-in-out infinite alternate;
 }
 
-/* Senja berjalan: badan bergoyang kiri-kanan dan memantul di setiap langkah. */
 .login-hero__mascot {
   position: relative;
-  display: block;
-  width: auto;
   height: clamp(190px, 34vh, 300px);
-  transform-origin: 50% 100%;
-  animation: senja-walk 0.9s ease-in-out infinite;
-}
-
-@keyframes senja-walk {
-  0%,
-  50%,
-  100% {
-    transform: translateY(0) rotate(0deg);
-  }
-
-  25% {
-    transform: translateY(-9px) rotate(-3.5deg);
-  }
-
-  75% {
-    transform: translateY(-9px) rotate(3.5deg);
-  }
 }
 
 @keyframes senja-shadow {

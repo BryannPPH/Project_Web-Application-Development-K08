@@ -54,7 +54,7 @@ export function MigrationListPage() {
         </StatusMessage>
       ) : null}
 
-      {query.isPending ? <StatusMessage tone="loading">Memuat riwayat…</StatusMessage> : null}
+      {query.isPending ? <StatusMessage tone="loading">Memuat riwayat...</StatusMessage> : null}
       {query.isError ? (
         <StatusMessage tone="error">
           {query.error instanceof ApiError ? query.error.message : 'Riwayat migration gagal dimuat.'}

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="20 40 310 430" width="310" height="430">
+  <!-- Senja rig layer "eye-r". Generated from senja-rig.svg by scripts/build-rig.mjs; edit the master. -->
+  <g id="eye-r" data-pivot="247 202">
+        <g id="eye-r-open">
+          <ellipse fill="#351C31" cx="247" cy="202" rx="14.8" ry="19"/>
+          <circle id="eye-r-glint" fill="#FFFFFF" cx="240.5" cy="191.5" r="3.7"/>
+        </g>
+        <path id="eye-r-closed" opacity="0" fill="none" stroke="#351C31" stroke-width="4" stroke-linecap="round" d="M233,203 C239,210 255,210 261,203"/>
+        <path id="eye-r-happy" opacity="0" fill="none" stroke="#351C31" stroke-width="4.5" stroke-linecap="round" d="M233,207 C238,194 256,194 261,207"/>
+      </g>
+</svg>

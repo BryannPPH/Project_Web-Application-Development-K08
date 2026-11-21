@@ -41,7 +41,7 @@ describe('MigrationDetailPage', () => {
   it('menampilkan hasil gagal dengan Senja memutar jam dan pesan error', async () => {
     renderDetail(migrationEntry({ status: 'failed', errorMessage: 'column "legacy" does not exist' }))
 
-    expect(await screen.findByText('Migration gagal — semua perubahan di-rollback')).toBeInTheDocument()
+    expect(await screen.findByText('Migration gagal, semua perubahan di-rollback')).toBeInTheDocument()
     expect(screen.getByText('column "legacy" does not exist')).toBeInTheDocument()
     expect(senjaImage('rewind')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Jalankan/ })).not.toBeInTheDocument()

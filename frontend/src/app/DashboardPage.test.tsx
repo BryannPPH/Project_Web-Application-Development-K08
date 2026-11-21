@@ -1,4 +1,4 @@
-import { cleanup, screen } from '@testing-library/react'
+import { cleanup, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { DashboardPage } from '@/app/DashboardPage'
@@ -15,10 +15,33 @@ describe('DashboardPage', () => {
     mockFetch((url) => (url.pathname === '/api/v1/databases' ? jsonResponse({ databases: [] }) : undefined))
     renderRoute(<DashboardPage />, { route: '/', path: '/', user: regularUser })
 
-    expect(screen.getByRole('heading', { name: 'Halo, operator' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /^Selamat (pagi|siang|sore|malam), operator$/ })).toBeInTheDocument()
     expect(await screen.findByText(/Minta admin menambahkan Anda ke group/)).toBeInTheDocument()
     expect(senjaImage('empty-box')).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Administrasi platform' })).not.toBeInTheDocument()
+  })
+
+  it.each([
+    [7, 'pagi', 'idle'],
+    [12, 'siang', 'idle'],
+    [17, 'sore', 'idle'],
+    [22, 'malam', 'sleepy'],
+  ])('jam %i: banner %s memakai Senja berkostum sesuai waktunya', (hour, part, loop) => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 10, 17, hour, 0))
+    try {
+      mockFetch((url) => (url.pathname === '/api/v1/databases' ? jsonResponse({ databases: [] }) : undefined))
+      renderRoute(<DashboardPage />, { route: '/', path: '/', user: regularUser })
+
+      expect(screen.getByRole('heading', { name: `Selamat ${part}, operator` })).toBeInTheDocument()
+      const mascot = document.querySelector('.hero__art')
+      expect(mascot).toHaveAttribute('data-senja-loop', loop)
+      expect(mascot).toHaveAttribute('data-outfit', part)
+      expect(document.querySelector('.hero')).toHaveClass(`hero--${part}`)
+      expect(mascot?.querySelector('svg')).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('menampilkan ringkasan platform untuk admin', async () => {
@@ -43,9 +66,19 @@ describe('DashboardPage', () => {
     })
     renderRoute(<DashboardPage />, { route: '/', path: '/', user: adminUser })
 
-    expect(await screen.findByText('Database tersedia')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Tambah user' })).toHaveAttribute('href', '/admin/users')
-    expect(screen.getByRole('link', { name: 'Administrasi platform' })).toHaveAttribute('href', '/admin')
+    // Database yang bisa diakses tampil paling atas, lengkap dengan tautan viewer.
+    expect(await screen.findByRole('link', { name: 'A' })).toHaveAttribute('href', '/databases/db-1')
+    expect(document.querySelector('.hero__summary')).toHaveTextContent('Anda punya akses ke 2 database: 1 bisa diubah, 1 hanya lihat.')
+
+    // Ringkasan platform: tiap angka adalah tautan ke halaman admin-nya.
+    expect(screen.getByRole('heading', { name: 'Administrasi platform' })).toBeInTheDocument()
+    const tile = async (hint: string) => (await screen.findByText(hint)).closest('a')
+    await waitFor(async () => expect(await tile('Akun yang bisa masuk')).toHaveTextContent(/User\s*3/))
+    expect(await tile('Akun yang bisa masuk')).toHaveAttribute('href', '/admin/users')
+    await waitFor(async () => expect(await tile('Siapa boleh akses apa')).toHaveTextContent(/Group & akses\s*1/))
+    expect(await tile('Siapa boleh akses apa')).toHaveAttribute('href', '/admin/groups')
+    await waitFor(async () => expect(await tile('Database terdaftar')).toHaveTextContent(/Koneksi database\s*2/))
+    expect(await tile('Database terdaftar')).toHaveAttribute('href', '/admin/databases')
   })
 })
 

@@ -1,4 +1,13 @@
-import { useState, type FormEvent } from 'react'
+/*
+ * FILE INI UNTUK APA (AdminGroupsPage.tsx)
+ * GUIDEBOOK: §2.8 + §2.5 + §6.2 (demo)
+ * Halaman Admin > Group & akses:
+ *   AdminGroupsPage -> form tambah group + tabel group; klik "Kelola" membuka panel detail
+ *   GroupDetail     -> ubah nama/deskripsi, hapus group (dengan konfirmasi),
+ *                      tambah/hapus anggota, atur akses database (view_only / view_edit), cabut akses
+ * Ingat konsep: akses database diberikan ke GROUP, user dapat akses karena jadi anggota.
+ */
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { AccessBadge, ActiveBadge } from '@/components/Badges'
 import { describeError } from '@/components/error-message'
@@ -20,8 +29,10 @@ export function AdminGroupsPage() {
   const mutations = useGroupMutations()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
   const selected = groups.data?.find((group) => group.id === selectedId) ?? null
 
+  // handleCreate: submit form tambah group (validasi nama, lalu POST).
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = event.currentTarget
@@ -36,6 +47,8 @@ export function AdminGroupsPage() {
       const created = await mutations.create.mutateAsync({ name, description: description || undefined })
       form.reset()
       setError(null)
+      setCreating(false)
+      // Group baru langsung terbuka di panel Kelola: langkah berikutnya selalu anggota & akses.
       setSelectedId(created.group.id)
     } catch (createError) {
       setError(describeError(createError))
@@ -44,44 +57,70 @@ export function AdminGroupsPage() {
 
   return (
     <div>
-      <div className="panel">
-        <div className="panel__header">
-          <div>
-            <h2>Tambah group</h2>
-            <p className="muted">Akses user = level tertinggi dari semua group yang diikutinya.</p>
+      {creating ? (
+        <div className="panel panel--editing">
+          <div className="panel__header">
+            <div>
+              <h2>Tambah group</h2>
+              <p className="muted">Setelah dibuat, tambahkan anggota dan akses database di panel Kelola.</p>
+            </div>
           </div>
+          <form aria-label="Tambah group" noValidate onSubmit={(event) => void handleCreate(event)}>
+            <div className="form-grid">
+              <label className="form-field">
+                Nama group
+                <input autoComplete="off" autoFocus name="name" spellCheck={false} />
+              </label>
+              <label className="form-field">
+                Deskripsi <span className="form-field__hint">(opsional)</span>
+                <input autoComplete="off" name="description" />
+              </label>
+            </div>
+            {error ? (
+              <p className="form-error" role="alert">
+                <Icon name="error" size={16} />
+                {error}
+              </p>
+            ) : null}
+            <div className="form-actions">
+              <button className="button button--primary" disabled={mutations.create.isPending} type="submit">
+                <Icon
+                  className={mutations.create.isPending ? 'spinner' : undefined}
+                  name={mutations.create.isPending ? 'loader' : 'plus'}
+                  size={16}
+                />
+                {mutations.create.isPending ? 'Menyimpan...' : 'Tambah group'}
+              </button>
+              <button
+                className="button button--ghost"
+                onClick={() => {
+                  setCreating(false)
+                  setError(null)
+                }}
+                type="button"
+              >
+                Batal
+              </button>
+            </div>
+          </form>
         </div>
-        <form aria-label="Tambah group" noValidate onSubmit={(event) => void handleCreate(event)}>
-          <div className="form-grid">
-            <label className="form-field">
-              Nama group
-              <input name="name" />
-            </label>
-            <label className="form-field">
-              Deskripsi
-              <input name="description" />
-            </label>
-            <button className="button button--primary" disabled={mutations.create.isPending} type="submit">
-              <Icon name="plus" size={16} />
-              Tambah
-            </button>
-          </div>
-          {error ? (
-            <p className="form-error" role="alert">
-              <Icon name="error" size={16} />
-              {error}
-            </p>
-          ) : null}
-        </form>
-      </div>
+      ) : null}
 
       <div className="split">
         <div className="panel">
           <div className="panel__header">
-            <h2>Daftar group</h2>
-            {groups.data ? <span className="badge">{groups.data.length} group</span> : null}
+            <div className="panel__title">
+              <h2>Daftar group</h2>
+              {groups.data ? <span className="badge">{groups.data.length}</span> : null}
+            </div>
+            {!creating ? (
+              <button className="button button--primary" onClick={() => setCreating(true)} type="button">
+                <Icon name="plus" size={16} />
+                Tambah group
+              </button>
+            ) : null}
           </div>
-          {groups.isPending ? <StatusMessage tone="loading">Memuat group…</StatusMessage> : null}
+          {groups.isPending ? <StatusMessage tone="loading">Memuat group...</StatusMessage> : null}
           {groups.isError ? <StatusMessage tone="error">{describeError(groups.error)}</StatusMessage> : null}
           {groups.data?.length === 0 ? <StatusMessage illustration="searching" tone="empty">Belum ada group.</StatusMessage> : null}
           {groups.data && groups.data.length > 0 ? (
@@ -101,7 +140,7 @@ export function AdminGroupsPage() {
                       <td data-label="Nama">
                         <strong>{group.name}</strong>
                       </td>
-                      <td data-label="Deskripsi">{group.description || <span className="cell-empty">—</span>}</td>
+                      <td data-label="Deskripsi">{group.description || <span className="cell-empty">-</span>}</td>
                       <td data-label="Anggota">{group.memberCount}</td>
                       <td className="cell-actions">
                         <button
@@ -133,6 +172,7 @@ export function AdminGroupsPage() {
   )
 }
 
+// GroupDetail: panel "Kelola" untuk satu group.
 function GroupDetail({ group, onDeleted }: { group: AdminGroup; onDeleted: () => void }) {
   const mutations = useGroupMutations()
   const members = useGroupMembers(group.id)
@@ -140,7 +180,18 @@ function GroupDetail({ group, onDeleted }: { group: AdminGroup; onDeleted: () =>
   const users = useAdminUsers()
   const databases = useManagedDatabases()
   const [message, setMessage] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
 
+  // Di layar sempit panel ini berada di bawah daftar; gulir ke sana agar klik "Kelola" terasa.
+  useEffect(() => {
+    if (window.matchMedia?.('(max-width: 1100px)').matches) {
+      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      panelRef.current?.scrollIntoView?.({ behavior: reduce ? 'auto' : 'smooth', block: 'start' })
+    }
+  }, [])
+
+  // run: helper kecil -> jalankan aksi, tampilkan pesan sukses atau pesan error.
+  // Dipakai semua aksi di panel ini supaya penanganan error tidak diulang-ulang.
   async function run(action: () => Promise<unknown>, success: string) {
     try {
       await action()
@@ -150,6 +201,7 @@ function GroupDetail({ group, onDeleted }: { group: AdminGroup; onDeleted: () =>
     }
   }
 
+  // handleRename: PATCH nama & deskripsi group.
   function handleRename(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const data = new FormData(event.currentTarget)
@@ -165,6 +217,7 @@ function GroupDetail({ group, onDeleted }: { group: AdminGroup; onDeleted: () =>
     )
   }
 
+  // handleDelete: konfirmasi dulu, karena membership & grant ikut terhapus (CASCADE).
   function handleDelete() {
     if (!window.confirm(`Hapus group ${group.name}? Seluruh membership dan grant group ini ikut terhapus.`)) {
       return
@@ -175,6 +228,7 @@ function GroupDetail({ group, onDeleted }: { group: AdminGroup; onDeleted: () =>
     }, 'Group dihapus.')
   }
 
+  // handleAddMember: POST anggota baru. Kalau group punya grant, backend mencabut session user itu.
   function handleAddMember(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const userId = String(new FormData(event.currentTarget).get('userId') ?? '')
@@ -184,6 +238,7 @@ function GroupDetail({ group, onDeleted }: { group: AdminGroup; onDeleted: () =>
     void run(() => mutations.addMember.mutateAsync({ groupId: group.id, userId }), 'Anggota ditambahkan.')
   }
 
+  // handleGrant: PUT level akses group ke database (buat baru atau ubah level).
   function handleGrant(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const data = new FormData(event.currentTarget)
@@ -202,7 +257,7 @@ function GroupDetail({ group, onDeleted }: { group: AdminGroup; onDeleted: () =>
   const candidates = users.data?.filter((user) => !memberIds.has(user.id)) ?? []
 
   return (
-    <div className="panel group-detail">
+    <div className="panel group-detail" ref={panelRef}>
       <h2>Kelola · {group.name}</h2>
       {message ? <StatusMessage tone={message.tone}>{message.text}</StatusMessage> : null}
 
@@ -225,7 +280,7 @@ function GroupDetail({ group, onDeleted }: { group: AdminGroup; onDeleted: () =>
       </form>
 
       <h3 className="section-title">Anggota</h3>
-      {members.isPending ? <StatusMessage tone="loading">Memuat anggota…</StatusMessage> : null}
+      {members.isPending ? <StatusMessage tone="loading">Memuat anggota...</StatusMessage> : null}
       {members.isError ? <StatusMessage tone="error">{describeError(members.error)}</StatusMessage> : null}
       {members.data?.length === 0 ? <StatusMessage tone="empty">Group belum memiliki anggota.</StatusMessage> : null}
       {members.data && members.data.length > 0 ? (
@@ -282,7 +337,7 @@ function GroupDetail({ group, onDeleted }: { group: AdminGroup; onDeleted: () =>
       <p className="muted group-detail__hint">
         Effective access user = level tertinggi dari seluruh group yang diikutinya (View + Edit &gt; View Only).
       </p>
-      {grants.isPending ? <StatusMessage tone="loading">Memuat akses…</StatusMessage> : null}
+      {grants.isPending ? <StatusMessage tone="loading">Memuat akses...</StatusMessage> : null}
       {grants.isError ? <StatusMessage tone="error">{describeError(grants.error)}</StatusMessage> : null}
       {grants.data?.length === 0 ? <StatusMessage tone="empty">Group belum memiliki akses database.</StatusMessage> : null}
       {grants.data && grants.data.length > 0 ? (

@@ -1,8 +1,9 @@
 import { useState, type FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 
-import { logoMark, senja } from '@/components/brand'
+import { logoMark } from '@/components/brand'
 import { Icon } from '@/components/Icon'
+import { SenjaRig } from '@/components/SenjaRig'
 import { ApiError } from '@/lib/api-client'
 import { AuthStatusPage } from '@/modules/auth/AuthStatusPage'
 import { LoginForest } from '@/modules/auth/LoginForest'
@@ -103,13 +104,15 @@ export function LoginPage() {
           </span>
           DB Manager
         </div>
+        {/* Senja tidak pernah pindah posisi (selalu di tengah); kesan berjalan
+            datang dari latar yang bergeser + animasi langkah di tempat. */}
         <div className="login-hero__scene">
           <p className="login-hero__bubble">
             Kelola, lihat, dan migrasikan database PostgreSQL Anda dengan aman.
           </p>
           <span className="login-hero__senja">
             <span className="login-hero__glow" />
-            <img alt="" className="login-hero__mascot" src={senja.waving} />
+            <SenjaRig className="login-hero__mascot" loop="walk" />
           </span>
         </div>
       </section>
@@ -181,7 +184,7 @@ export function LoginPage() {
               disabled={loginMutation.isPending}
               type="submit"
             >
-              {loginMutation.isPending ? 'Sedang masuk…' : 'Masuk'}
+              {loginMutation.isPending ? 'Sedang masuk...' : 'Masuk'}
             </button>
           </form>
 

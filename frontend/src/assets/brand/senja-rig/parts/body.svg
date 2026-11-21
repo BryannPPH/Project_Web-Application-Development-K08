@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="20 40 310 430" width="310" height="430">
+  <!-- Senja rig layer "body". Generated from senja-rig.svg by scripts/build-rig.mjs; edit the master. -->
+  <defs>
+    <clipPath id="clip-body"><path d="M168,286 C160,308 154,332 151,352 C141,368 138,394 145,411 C153,428 182,428 200,418 L208,414 C220,424 250,426 262,412 C272,396 270,362 264,340 C259,320 254,302 251,286 Z"/></clipPath>
+  </defs>
+  <g id="body" data-pivot="206 430">
+      <path fill="#FB7339" d="M168,286 C160,308 154,332 151,352 C141,368 138,394 145,411 C153,428 182,428 200,418 L208,414 C220,424 250,426 262,412 C272,396 270,362 264,340 C259,320 254,302 251,286 Z"/>
+      <path clip-path="url(#clip-body)" fill="#FCB993" d="M180,292 C173,318 171,350 178,374 C186,398 200,411 215,411 C240,411 259,390 261,360 C263,334 257,310 251,292 Z"/>
+    </g>
+</svg>
