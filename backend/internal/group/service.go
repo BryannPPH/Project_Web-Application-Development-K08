@@ -158,6 +158,26 @@ func (s *Service) DeleteGrant(ctx context.Context, principal auth.Principal, gro
 	return s.repository.DeleteGrant(ctx, groupID, databaseID)
 }
 
+// SetLeader memilih leader group (hanya platform_admin).
+func (s *Service) SetLeader(ctx context.Context, principal auth.Principal, groupID string, input SetLeaderInput) (Group, error) {
+	if err := s.requireAdminAndID(ctx, principal, groupID, ErrNotFound); err != nil {
+		return Group{}, err
+	}
+	userID := strings.TrimSpace(input.UserID)
+	if !uuid.Valid(userID) {
+		return Group{}, ErrLeaderNotMember
+	}
+	return s.repository.SetLeader(ctx, groupID, userID)
+}
+
+// ClearLeader mencopot leader group (hanya platform_admin).
+func (s *Service) ClearLeader(ctx context.Context, principal auth.Principal, groupID string) (Group, error) {
+	if err := s.requireAdminAndID(ctx, principal, groupID, ErrNotFound); err != nil {
+		return Group{}, err
+	}
+	return s.repository.ClearLeader(ctx, groupID)
+}
+
 func (s *Service) revokeUsers(ctx context.Context) RevokeUsers {
 	return func(userIDs []string) error {
 		for _, userID := range userIDs {

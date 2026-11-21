@@ -1,0 +1,13 @@
+# Prometheus untuk bonus observability (docker compose --profile observability).
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: dbmp-backend
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["backend:8080"]
+    # Jika METRICS_TOKEN diisi di .env, aktifkan baris berikut dan isi file token-nya:
+    # authorization:
+    #   credentials_file: /etc/prometheus/metrics_token

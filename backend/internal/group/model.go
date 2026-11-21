@@ -17,6 +17,9 @@ var (
 	ErrUserNotFound     = errors.New("user not found")
 	ErrDatabaseNotFound = errors.New("managed database not found")
 	ErrGrantNotFound    = errors.New("grant not found")
+	// Leader wajib anggota group dan aktif (dijaga juga oleh FK di migration 00006).
+	ErrLeaderNotMember = errors.New("leader must be a member of the group")
+	ErrLeaderInactive  = errors.New("leader must be an active user")
 )
 
 // ValidationError menandai input yang tidak valid pada field tertentu.
@@ -30,12 +33,14 @@ func (e *ValidationError) Error() string {
 }
 
 type Group struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Description *string   `json:"description"`
-	MemberCount int       `json:"memberCount"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	ID             string    `json:"id"`
+	Name           string    `json:"name"`
+	Description    *string   `json:"description"`
+	MemberCount    int       `json:"memberCount"`
+	LeaderUserID   *string   `json:"leaderUserId"`
+	LeaderUsername *string   `json:"leaderUsername"`
+	CreatedAt      time.Time `json:"createdAt"`
+	UpdatedAt      time.Time `json:"updatedAt"`
 }
 
 type Member struct {
@@ -74,3 +79,8 @@ type GrantInput struct {
 // RevokeUsers dipanggil di dalam transaksi sebelum COMMIT dengan daftar user
 // yang privilege-nya naik. Error membatalkan perubahan.
 type RevokeUsers func(userIDs []string) error
+
+// SetLeaderInput: body PUT /admin/groups/{id}/leader. Leader lama otomatis tergantikan.
+type SetLeaderInput struct {
+	UserID string `json:"userId"`
+}

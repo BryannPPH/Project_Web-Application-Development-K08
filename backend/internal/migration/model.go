@@ -22,6 +22,7 @@ type Entry struct {
 	ID                   string     `json:"id"`
 	DatabaseID           string     `json:"databaseId"`
 	Version              int64      `json:"version"`
+	Revision             int64      `json:"revision"`
 	Name                 string     `json:"name"`
 	SQL                  string     `json:"sql"`
 	Status               Status     `json:"status"`

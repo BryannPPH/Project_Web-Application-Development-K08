@@ -27,6 +27,7 @@ x-backend-environment: &backend-environment
   LOGIN_RATE_LIMIT_WINDOW: ${LOGIN_RATE_LIMIT_WINDOW:-1m}
   MANAGED_DB_CREDENTIAL_KEY: ${MANAGED_DB_CREDENTIAL_KEY:?MANAGED_DB_CREDENTIAL_KEY wajib diisi pada .env}
   MANAGED_DB_CREDENTIAL_KEY_VERSION: ${MANAGED_DB_CREDENTIAL_KEY_VERSION:-1}
+  METRICS_TOKEN: ${METRICS_TOKEN:-}
 
 services:
   platform-db:
@@ -170,8 +171,44 @@ services:
         condition: service_healthy
     restart: "no"
 
+  # Bonus observability: docker compose --profile observability up -d
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    profiles: ["observability"]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:12.1.0
+    profiles: ["observability"]
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/dbmp-overview.json
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
 volumes:
   platform-db-data:
   target-db-data:
   mysql-target-data:
-
+  prometheus-data:
+  grafana-data:
