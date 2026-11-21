@@ -28,6 +28,10 @@ x-backend-environment: &backend-environment
   MANAGED_DB_CREDENTIAL_KEY: ${MANAGED_DB_CREDENTIAL_KEY:?MANAGED_DB_CREDENTIAL_KEY wajib diisi pada .env}
   MANAGED_DB_CREDENTIAL_KEY_VERSION: ${MANAGED_DB_CREDENTIAL_KEY_VERSION:-1}
   METRICS_TOKEN: ${METRICS_TOKEN:-}
+  OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+  OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+  OTEL_SERVICE_NAME: dbmp-backend
+  OTEL_RESOURCE_ATTRIBUTES: deployment.environment=${APP_ENV:-development}
 
 services:
   platform-db:
@@ -96,7 +100,11 @@ services:
   backend:
     <<: *backend-image
     command: ["/usr/local/bin/api"]
-    environment: *backend-environment
+    volumes:
+      - app-logs:/var/log/dbmp
+    environment:
+      <<: *backend-environment
+      APP_LOG_FILE: /var/log/dbmp/application.jsonl
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     depends_on:
@@ -204,6 +212,45 @@ services:
       - "${GRAFANA_PORT:-3000}:3000"
     depends_on:
       - prometheus
+      - loki
+      - tempo
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.5.0
+    profiles: ["observability"]
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    volumes:
+      - ./observability/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki-data:/loki
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    restart: unless-stopped
+
+  tempo:
+    image: grafana/tempo:2.8.2
+    profiles: ["observability"]
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./observability/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    ports:
+      - "${TEMPO_PORT:-3200}:3200"
+    restart: unless-stopped
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.120.0
+    profiles: ["observability"]
+    command: ["--config=/etc/otelcol-contrib/collector.yaml"]
+    volumes:
+      - ./observability/otel/collector.yaml:/etc/otelcol-contrib/collector.yaml:ro
+      - app-logs:/var/log/dbmp:ro
+    ports:
+      - "${OTEL_GRPC_PORT:-4317}:4317"
+      - "${OTEL_HTTP_PORT:-4318}:4318"
+    depends_on:
+      - loki
+      - tempo
     restart: unless-stopped
 
 volumes:
@@ -212,3 +259,6 @@ volumes:
   mysql-target-data:
   prometheus-data:
   grafana-data:
+  loki-data:
+  tempo-data:
+  app-logs:
