@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/auth"
+	shareduuid "github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/shared/uuid"
 )
 
 const (
@@ -59,14 +60,26 @@ func NewService(repository Repository, authorizer Authorizer, locker Locker, exe
 }
 
 func (s *Service) CreateDraft(ctx context.Context, principal auth.Principal, databaseID, name, sqlText string) (Entry, error) {
+	reason := "No down SQL was supplied by this legacy Milestone 1 client."
+	return s.CreateDraftWithDefinition(ctx, principal, databaseID, Definition{
+		Name: name, SQL: sqlText, IrreversibleReason: &reason, ExecutionMode: ExecutionModeSingle,
+	})
+}
+
+func (s *Service) CreateDraftWithDefinition(ctx context.Context, principal auth.Principal, databaseID string, definition Definition) (Entry, error) {
 	if err := s.authorizer.RequireDatabaseEdit(ctx, principal, databaseID); err != nil {
 		return Entry{}, err
 	}
-	name, sqlText, err := s.validateDraft(name, sqlText)
+	definition, err := s.validateDefinition(definition, true)
 	if err != nil {
 		return Entry{}, err
 	}
-	entry, err := s.repository.CreateDraft(ctx, databaseID, name, sqlText, principal.UserID, s.clock.Now())
+	var entry Entry
+	if definitions, ok := s.repository.(DefinitionRepository); ok {
+		entry, err = definitions.CreateDraftDefinition(ctx, databaseID, definition, principal.UserID, s.clock.Now())
+	} else {
+		entry, err = s.repository.CreateDraft(ctx, databaseID, definition.Name, definition.SQL, principal.UserID, s.clock.Now())
+	}
 	entry.CanEdit = err == nil
 	if err == nil {
 		entry.CreatedByUsername = principal.Username
@@ -83,6 +96,23 @@ func (s *Service) UpdateDraft(ctx context.Context, principal auth.Principal, dat
 		return Entry{}, err
 	}
 	entry, err := s.repository.UpdateDraft(ctx, databaseID, migrationID, name, sqlText, s.clock.Now())
+	entry.CanEdit = err == nil
+	return entry, err
+}
+
+func (s *Service) UpdateDraftWithDefinition(ctx context.Context, principal auth.Principal, databaseID, migrationID string, definition Definition) (Entry, error) {
+	if err := s.authorizer.RequireDatabaseEdit(ctx, principal, databaseID); err != nil {
+		return Entry{}, err
+	}
+	definition, err := s.validateDefinition(definition, false)
+	if err != nil {
+		return Entry{}, err
+	}
+	definitions, ok := s.repository.(DefinitionRepository)
+	if !ok {
+		return s.repository.UpdateDraft(ctx, databaseID, migrationID, definition.Name, definition.SQL, s.clock.Now())
+	}
+	entry, err := definitions.UpdateDraftDefinition(ctx, databaseID, migrationID, definition, s.clock.Now())
 	entry.CanEdit = err == nil
 	return entry, err
 }
@@ -178,6 +208,147 @@ func needsReconciliation(status Status) bool {
 }
 
 func (s *Service) Execute(ctx context.Context, principal auth.Principal, databaseID, migrationID string) (Entry, error) {
+	return s.ExecuteAction(ctx, principal, databaseID, migrationID, ActionApply)
+}
+
+func (s *Service) Retry(ctx context.Context, principal auth.Principal, databaseID, migrationID string) (Entry, error) {
+	return s.ExecuteAction(ctx, principal, databaseID, migrationID, ActionRetry)
+}
+
+func (s *Service) Rollback(ctx context.Context, principal auth.Principal, databaseID, migrationID string) (Entry, error) {
+	return s.ExecuteAction(ctx, principal, databaseID, migrationID, ActionRollback)
+}
+
+func (s *Service) Forward(ctx context.Context, principal auth.Principal, databaseID, migrationID string) (Entry, error) {
+	return s.ExecuteAction(ctx, principal, databaseID, migrationID, ActionForward)
+}
+
+func (s *Service) ExecuteAction(ctx context.Context, principal auth.Principal, databaseID, migrationID string, action ExecutionAction) (Entry, error) {
+	repository, ok := s.repository.(AttemptRepository)
+	if !ok {
+		if action == ActionApply {
+			return s.executeLegacy(ctx, principal, databaseID, migrationID)
+		}
+		return Entry{}, ErrInvalidInput
+	}
+	if err := s.authorizer.RequireDatabaseEdit(ctx, principal, databaseID); err != nil {
+		return Entry{}, err
+	}
+	lock, err := s.locker.Acquire(ctx, databaseID)
+	if err != nil {
+		return Entry{}, fmt.Errorf("acquire execution lock: %w", err)
+	}
+	defer func() {
+		releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if releaseErr := lock.Release(releaseCtx); releaseErr != nil {
+			s.logger.Error("release migration execution lock", "database_id", databaseID, "error", releaseErr)
+		}
+	}()
+	if err := s.authorizer.RequireDatabaseEdit(ctx, principal, databaseID); err != nil {
+		return Entry{}, err
+	}
+	plan, err := repository.PlanExecution(ctx, databaseID, migrationID, action, principal.UserID)
+	if err != nil {
+		return Entry{}, err
+	}
+	approvalAction := string(action)
+	if action == ActionRetry {
+		approvalAction = string(ActionApply)
+	}
+	if err := s.approvals.RequireApproved(ctx, databaseID, migrationID, approvalAction, plan.Entry.Revision); err != nil {
+		return Entry{}, err
+	}
+	if err := validateSQLPolicy(plan.SQLSnapshot); err != nil {
+		return Entry{}, err
+	}
+	var batchExecutor BatchExecutor
+	if plan.Entry.ExecutionMode == ExecutionModeBatch {
+		var ok bool
+		batchExecutor, ok = s.executor.(BatchExecutor)
+		if !ok {
+			return Entry{}, ErrInvalidInput
+		}
+		if err := batchExecutor.ValidateBatch(ctx, databaseID, plan.Entry); err != nil {
+			return Entry{}, err
+		}
+	}
+	if err := s.executor.Validate(ctx, databaseID, plan.SQLSnapshot); err != nil {
+		return Entry{}, err
+	}
+	executionID, err := shareduuid.New()
+	if err != nil {
+		return Entry{}, err
+	}
+	plan.ExecutionID = executionID
+	plan.ActorUsername = principal.Username
+	if plan.CheckpointRootID == "" {
+		plan.CheckpointRootID = executionID
+	}
+	attempt, err := repository.StartExecution(ctx, plan, principal.UserID, principal.Username, s.clock.Now())
+	if err != nil {
+		return Entry{}, err
+	}
+	s.logger.InfoContext(ctx, "migration SQL execution started",
+		"event", "migration_sql_started", "actor", principal.Username, "database_id", databaseID,
+		"migration_id", migrationID, "execution_id", attempt.ID, "revision", attempt.Revision,
+		"action", action, "query", redactSQLForLog(attempt.SQLSnapshot), "attempt", 1)
+
+	executionCtx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+	var result ExecutionResult
+	if plan.Entry.ExecutionMode == ExecutionModeBatch {
+		result = batchExecutor.ExecuteBatch(executionCtx, databaseID, attempt.ID, plan, func(batch BatchCommitEvent) error {
+			recordCtx, recordCancel := context.WithTimeout(context.WithoutCancel(executionCtx), 5*time.Second)
+			defer recordCancel()
+			return repository.RecordBatchEvent(recordCtx, attempt.ID, batch, s.clock.Now())
+		})
+	} else {
+		result = s.executor.Execute(executionCtx, databaseID, plan.SQLSnapshot)
+	}
+	if result.Status != StatusSucceeded && result.Status != StatusFailed && result.Status != StatusInterrupted &&
+		result.Status != StatusNeedsReconciliation && result.Status != StatusPartial && result.Status != StatusPartiallyReverted {
+		result.Status = StatusInterrupted
+		message := "migration outcome is uncertain; manual reconciliation is required"
+		result.PublicError = &message
+	}
+	if plan.Entry.ExecutionMode == ExecutionModeBatch && result.Status != StatusSucceeded {
+		recordCtx, recordCancel := context.WithTimeout(context.WithoutCancel(executionCtx), 5*time.Second)
+		if err := repository.AppendExecutionEvent(recordCtx, attempt.ID, string(result.Status), EventBatchFailed,
+			result.PublicError, nil, nil, nil, nil, s.clock.Now()); err != nil {
+			s.logger.ErrorContext(ctx, "record failed batch in platform history", "event", "migration_batch_failure_record_failed",
+				"execution_id", attempt.ID, "error", safeError(err))
+		}
+		recordCancel()
+	}
+	finalizeCtx, finalizeCancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer finalizeCancel()
+	entry, finishErr := repository.FinishExecution(finalizeCtx, attempt, result.Status, result.PublicError, s.clock.Now())
+	if finishErr != nil {
+		s.logger.Error("CRITICAL: target execution finished but history finalization failed",
+			"event", "migration_history_finalize_failed", "database_id", databaseID,
+			"migration_id", migrationID, "execution_id", attempt.ID, "target_status", result.Status,
+			"execution_error", safeError(result.InternalError), "history_error", safeError(finishErr))
+		return Entry{}, fmt.Errorf("finalize migration history: %w", finishErr)
+	}
+	if result.InternalError != nil {
+		s.logger.WarnContext(ctx, "migration execution did not succeed", "event", "migration_sql_finished",
+			"actor", principal.Username, "database_id", databaseID, "migration_id", migrationID,
+			"execution_id", attempt.ID, "status", result.Status, "query", redactSQLForLog(attempt.SQLSnapshot),
+			"error", safeError(result.InternalError))
+	} else {
+		s.logger.InfoContext(ctx, "migration SQL execution finished", "event", "migration_sql_finished",
+			"actor", principal.Username, "database_id", databaseID, "migration_id", migrationID,
+			"execution_id", attempt.ID, "status", result.Status, "query", redactSQLForLog(attempt.SQLSnapshot))
+	}
+	entry.CanEdit = true
+	entry.CanReconcile = needsReconciliation(entry.Status)
+	entry.CreatedByUsername = plan.Entry.CreatedByUsername
+	entry.ExecutedByUsername = &principal.Username
+	return entry, nil
+}
+
+func (s *Service) executeLegacy(ctx context.Context, principal auth.Principal, databaseID, migrationID string) (Entry, error) {
 	if err := s.authorizer.RequireDatabaseEdit(ctx, principal, databaseID); err != nil {
 		return Entry{}, err
 	}
@@ -249,14 +420,80 @@ func (s *Service) Execute(ctx context.Context, principal auth.Principal, databas
 }
 
 func (s *Service) validateDraft(name, sqlText string) (string, string, error) {
-	name = strings.TrimSpace(name)
-	if name == "" || len(name) > 160 || strings.TrimSpace(sqlText) == "" || len([]byte(sqlText)) > s.maxSQLBytes {
-		return "", "", ErrInvalidInput
+	reason := "No down SQL was supplied by this legacy Milestone 1 client."
+	definition, err := s.validateDefinition(Definition{Name: name, SQL: sqlText,
+		IrreversibleReason: &reason, ExecutionMode: ExecutionModeSingle}, true)
+	return definition.Name, definition.SQL, err
+}
+
+func (s *Service) validateDefinition(definition Definition, create bool) (Definition, error) {
+	definition.Name = strings.TrimSpace(definition.Name)
+	definition.ExecutionMode = normalizeExecutionMode(definition.ExecutionMode)
+	if definition.Name == "" || len(definition.Name) > 160 || strings.TrimSpace(definition.SQL) == "" ||
+		len([]byte(definition.SQL)) > s.maxSQLBytes {
+		return Definition{}, ErrInvalidInput
 	}
-	if err := validateSQLPolicy(sqlText); err != nil {
-		return "", "", err
+	if definition.DownSQL == nil && definition.IrreversibleReason == nil && create {
+		reason := "No down SQL was supplied by this legacy Milestone 1 client."
+		definition.IrreversibleReason = &reason
 	}
-	return name, sqlText, nil
+	if (definition.DownSQL == nil) == (definition.IrreversibleReason == nil) {
+		return Definition{}, ErrInvalidInput
+	}
+	if definition.DownSQL != nil && (strings.TrimSpace(*definition.DownSQL) == "" || len([]byte(*definition.DownSQL)) > s.maxSQLBytes) {
+		return Definition{}, ErrInvalidInput
+	}
+	if definition.IrreversibleReason != nil {
+		reason := strings.TrimSpace(*definition.IrreversibleReason)
+		if reason == "" || len([]rune(reason)) > 1000 {
+			return Definition{}, ErrInvalidInput
+		}
+		definition.IrreversibleReason = &reason
+	}
+	if err := validateSQLPolicy(definition.SQL); err != nil {
+		return Definition{}, err
+	}
+	if definition.DownSQL != nil {
+		if err := validateSQLPolicy(*definition.DownSQL); err != nil {
+			return Definition{}, err
+		}
+	}
+	switch definition.ExecutionMode {
+	case ExecutionModeSingle:
+		if definition.BatchSelectSQL != nil || definition.BatchSize != nil {
+			return Definition{}, ErrInvalidInput
+		}
+	case ExecutionModeBatch:
+		if definition.BatchSelectSQL == nil || definition.BatchSize == nil || *definition.BatchSize < 1 || *definition.BatchSize > 10000 ||
+			len([]byte(*definition.BatchSelectSQL)) > s.maxSQLBytes || strings.TrimSpace(*definition.BatchSelectSQL) == "" {
+			return Definition{}, ErrInvalidInput
+		}
+		words, err := topLevelStatementWords(*definition.BatchSelectSQL)
+		if err != nil || len(words) != 1 || len(words[0]) == 0 || words[0][0] != "SELECT" ||
+			!strings.Contains(*definition.BatchSelectSQL, "$1") || !strings.Contains(*definition.BatchSelectSQL, "$2") ||
+			!strings.Contains(strings.ToUpper(*definition.BatchSelectSQL), "LIMIT") {
+			return Definition{}, ErrSQLPolicy
+		}
+		upWords, upErr := topLevelStatementWords(definition.SQL)
+		if upErr != nil || len(upWords) != 1 || len(upWords[0]) == 0 || !batchStatement(upWords[0][0]) ||
+			!strings.Contains(definition.SQL, "$1") || !strings.Contains(definition.SQL, "$2") {
+			return Definition{}, ErrInvalidInput
+		}
+		if definition.DownSQL != nil {
+			downWords, downErr := topLevelStatementWords(*definition.DownSQL)
+			if downErr != nil || len(downWords) != 1 || len(downWords[0]) == 0 || !batchStatement(downWords[0][0]) ||
+				!strings.Contains(*definition.DownSQL, "$1") || !strings.Contains(*definition.DownSQL, "$2") {
+				return Definition{}, ErrInvalidInput
+			}
+		}
+	default:
+		return Definition{}, ErrInvalidInput
+	}
+	return definition, nil
+}
+
+func batchStatement(word string) bool {
+	return word == "UPDATE" || word == "DELETE" || word == "INSERT"
 }
 
 func sanitizeForViewer(message *string) *string {
@@ -272,4 +509,79 @@ func safeError(err error) string {
 		return ""
 	}
 	return sanitizeTargetError(err)
+}
+
+func redactSQLForLog(sqlText string) string {
+	message := postgresURLPattern.ReplaceAllString(sqlText, "$1[redacted]@")
+	message = credentialPattern.ReplaceAllString(message, "$1=[redacted]")
+	return message
+}
+
+func (s *Service) ListHistory(ctx context.Context, principal auth.Principal, databaseID string, options HistoryOptions) (HistoryPage, error) {
+	if err := s.authorizer.RequireDatabaseView(ctx, principal, databaseID); err != nil {
+		return HistoryPage{}, err
+	}
+	if options.Limit == 0 {
+		options.Limit = DefaultPageSize
+	}
+	if options.Limit < 1 || options.Limit > MaxPageSize || options.Offset < 0 {
+		return HistoryPage{}, ErrInvalidInput
+	}
+	repository, ok := s.repository.(AttemptRepository)
+	if !ok {
+		return HistoryPage{}, ErrConflict
+	}
+	page, err := repository.ListHistory(ctx, databaseID, options)
+	if err != nil {
+		return HistoryPage{}, err
+	}
+	if err := s.authorizer.RequireDatabaseEdit(ctx, principal, databaseID); err != nil {
+		for index := range page.Items {
+			page.Items[index].ErrorMessage = sanitizeForViewer(page.Items[index].ErrorMessage)
+			for eventIndex := range page.Items[index].Events {
+				page.Items[index].Events[eventIndex].ErrorMessage = sanitizeForViewer(page.Items[index].Events[eventIndex].ErrorMessage)
+			}
+		}
+	}
+	return page, nil
+}
+
+func (s *Service) GetExecution(ctx context.Context, principal auth.Principal, databaseID, executionID string) (ExecutionAttempt, error) {
+	if err := s.authorizer.RequireDatabaseView(ctx, principal, databaseID); err != nil {
+		return ExecutionAttempt{}, err
+	}
+	repository, ok := s.repository.(AttemptRepository)
+	if !ok {
+		return ExecutionAttempt{}, ErrConflict
+	}
+	attempt, err := repository.GetHistory(ctx, databaseID, executionID)
+	if err != nil {
+		return ExecutionAttempt{}, err
+	}
+	if err := s.authorizer.RequireDatabaseEdit(ctx, principal, databaseID); err != nil {
+		attempt.ErrorMessage = sanitizeForViewer(attempt.ErrorMessage)
+		for index := range attempt.Events {
+			attempt.Events[index].ErrorMessage = sanitizeForViewer(attempt.Events[index].ErrorMessage)
+		}
+	}
+	return attempt, nil
+}
+
+func (s *Service) GetBatchProgress(ctx context.Context, principal auth.Principal, databaseID, executionID string) (BatchProgress, error) {
+	if err := s.authorizer.RequireDatabaseView(ctx, principal, databaseID); err != nil {
+		return BatchProgress{}, err
+	}
+	repository, ok := s.repository.(AttemptRepository)
+	if !ok {
+		return BatchProgress{}, ErrConflict
+	}
+	attempt, err := repository.GetHistory(ctx, databaseID, executionID)
+	if err != nil {
+		return BatchProgress{}, err
+	}
+	executor, ok := s.executor.(BatchExecutor)
+	if !ok {
+		return BatchProgress{}, ErrConflict
+	}
+	return executor.BatchProgress(ctx, databaseID, attempt)
 }

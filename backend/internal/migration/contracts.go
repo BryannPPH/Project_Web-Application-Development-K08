@@ -24,6 +24,42 @@ type Repository interface {
 	RecoverRunning(context.Context, time.Time, string) (int64, error)
 }
 
+// DefinitionRepository persists the complete immutable migration definition.
+// The older Repository methods remain for Milestone 1 clients and tests.
+type DefinitionRepository interface {
+	CreateDraftDefinition(context.Context, string, Definition, string, time.Time) (Entry, error)
+	UpdateDraftDefinition(context.Context, string, string, Definition, time.Time) (Entry, error)
+}
+
+type ExecutionPlan struct {
+	Entry              Entry
+	Action             ExecutionAction
+	ExecutionID        string
+	ActorUsername      string
+	SQLSnapshot        string
+	RelatedExecutionID *string
+	CheckpointRootID   string
+}
+
+// AttemptRepository is the append-only execution ledger. State transitions are
+// added as events; attempt identity, actor, revision and SQL snapshot never change.
+type AttemptRepository interface {
+	PlanExecution(context.Context, string, string, ExecutionAction, string) (ExecutionPlan, error)
+	StartExecution(context.Context, ExecutionPlan, string, string, time.Time) (ExecutionAttempt, error)
+	AppendExecutionEvent(context.Context, string, string, ExecutionEventType, *string, *int64, *int64, *int64, *int64, time.Time) error
+	RecordBatchEvent(context.Context, string, BatchCommitEvent, time.Time) error
+	FinishExecution(context.Context, ExecutionAttempt, Status, *string, time.Time) (Entry, error)
+	LatestAttempt(context.Context, string) (ExecutionAttempt, error)
+	ListHistory(context.Context, string, HistoryOptions) (HistoryPage, error)
+	GetHistory(context.Context, string, string) (ExecutionAttempt, error)
+}
+
+type BatchExecutor interface {
+	ValidateBatch(context.Context, string, Entry) error
+	ExecuteBatch(context.Context, string, string, ExecutionPlan, func(BatchCommitEvent) error) ExecutionResult
+	BatchProgress(context.Context, string, ExecutionAttempt) (BatchProgress, error)
+}
+
 // ApprovalGate memastikan semua leader group ber-akses sudah menyetujui revisi
 // yang akan dijalankan. Implementasi: approval.Service.RequireApproved.
 type ApprovalGate interface {
