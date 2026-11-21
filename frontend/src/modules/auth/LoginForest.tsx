@@ -23,6 +23,9 @@ function pinePath({ x, h, w }: Pine, baseY: number) {
 
 // Satu ubin hutan 1200x400 yang diulang ke samping; pohon tidak melewati tepi
 // ubin agar sambungannya tidak terlihat saat bergeser.
+// Rasio 1200:400 = 3:1 itu PENTING: auth.css menggeser background sejauh
+// "3 x tinggi" = tepat satu lebar ubin, jadi akhir animasi identik dengan
+// awalnya dan loop terlihat tanpa putus (lihat @keyframes forest-scroll).
 const backPines: Pine[] = [
   { x: 80, h: 250, w: 120 },
   { x: 230, h: 300, w: 140 },
@@ -86,6 +89,7 @@ export function LoginForest() {
         />
       </svg>
 
+      {/* BERGERAK: ubin pohon sebagai background; auth.css menggesernya ke kiri (forest-scroll). */}
       <div className="forest__trees" style={{ backgroundImage: treesTile }} />
 
       <svg className="forest__ground" preserveAspectRatio="none" viewBox="0 0 1200 200">
@@ -102,8 +106,10 @@ export function LoginForest() {
         <path d="M380 46 C 500 14 700 14 820 46 C 700 40 500 40 380 46Z" fill="#b8da74" />
       </svg>
 
+      {/* BERGERAK: rumpun rumput + bunga (gambarnya di auth.css), digeser cepat (grass-scroll). */}
       <span className="forest__grass" />
 
+      {/* BERGERAK: setiap kunang-kunang berkedip + melayang (firefly); delay dari inline style. */}
       {fireflies.map((firefly) => (
         <span
           className="forest__firefly"

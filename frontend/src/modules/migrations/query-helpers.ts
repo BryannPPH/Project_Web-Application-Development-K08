@@ -3,11 +3,13 @@ import type { MigrationStatus } from '@/modules/migrations/types'
 export const migrationQueryKeys = {
   all: (databaseId: string) => ['migrations', databaseId] as const,
   detail: (databaseId: string, migrationId: string) => ['migrations', databaseId, migrationId] as const,
+  approval: (databaseId: string, migrationId: string, action: string) =>
+    ['migrations', databaseId, migrationId, 'approval', action] as const,
 }
 
 const statusLabels: Record<MigrationStatus, string> = {
   draft: 'Draft',
-  running: 'Berjalan…',
+  running: 'Berjalan...',
   succeeded: 'Berhasil',
   failed: 'Gagal · di-rollback',
   interrupted: 'Terputus',
@@ -22,5 +24,5 @@ export function migrationStatusLabel(status: MigrationStatus) {
 export function displayTime(value: string | null) {
   return value
     ? new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
-    : '—'
+    : '-'
 }

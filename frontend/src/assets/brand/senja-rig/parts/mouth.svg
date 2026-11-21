@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="20 40 310 430" width="310" height="430">
+  <!-- Senja rig layer "mouth". Generated from senja-rig.svg by scripts/build-rig.mjs; edit the master. -->
+  <g id="mouth" data-pivot="214 236">
+        <path id="mouth-smile" fill="none" stroke="#351C31" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M202,237 C205,240.5 210,239.5 213,234.5 C215.5,238 221.5,237.5 227,232"/>
+        <g id="mouth-open" opacity="0">
+          <path fill="#351C31" d="M203,234 C204,246 222,247 226,231 C218,234 210,235 203,234 Z"/>
+          <path fill="#FB4F67" d="M207,240.5 C210,245 219,245 222,239 C217,238 211,238.5 207,240.5 Z"/>
+        </g>
+        <path id="mouth-small" opacity="0" fill="none" stroke="#351C31" stroke-width="2.4" stroke-linecap="round" d="M208,239 C211,236.5 216,236.5 219,238.5"/>
+      </g>
+</svg>

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="20 40 310 430" width="310" height="430">
+  <!-- Senja rig layer "head". Generated from senja-rig.svg by scripts/build-rig.mjs; edit the master. -->
+  <defs>
+    <clipPath id="clip-head"><path id="head-shape-c" d="M100,176 C96,140 140,126 168,135 L190,128 C225,122 270,135 282,170 L305,199 C304,207 302,212 299,217 C290,248 255,270 210,271 C165,272 128,262 112,252 L101,247 C105,238 106,230 104,220 C99,205 100,190 100,176 Z"/></clipPath>
+  </defs>
+  <g id="head" data-pivot="208 268">
+      <path id="head-base" fill="#FB7339" d="M100,176 C96,140 140,126 168,135 L190,128 C225,122 270,135 282,170 L305,199 C304,207 302,212 299,217 C290,248 255,270 210,271 C165,272 128,262 112,252 L101,247 C105,238 106,230 104,220 C99,205 100,190 100,176 Z"/>
+      <path id="face-cream" clip-path="url(#clip-head)" fill="#FCB28A" d="M90,252 C120,238 160,229 200,222 C235,216 262,206 300,213 L320,213 L320,290 L90,290 Z"/>
+      <g id="cheeks">
+        <ellipse id="cheek-l" fill="#FB4F67" cx="151" cy="243.5" rx="10.5" ry="7" transform="rotate(-8 151 243.5)"/>
+        <ellipse id="cheek-r" fill="#FB4F67" cx="271" cy="216" rx="10.5" ry="7.5" transform="rotate(-10 271 216)"/>
+      </g>
+      <ellipse id="nose" fill="#351C31" cx="214" cy="225" rx="7.6" ry="4.6" transform="rotate(-6 214 225)"/>
+    </g>
+</svg>

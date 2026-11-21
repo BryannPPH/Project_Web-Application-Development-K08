@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="20 40 310 430" width="310" height="430">
+  <!-- Senja rig layer "arm-r". Generated from senja-rig.svg by scripts/build-rig.mjs; edit the master. -->
+  <g id="arm-r" data-pivot="242 292">
+      <circle fill="#FB7339" cx="242" cy="292" r="14"/>
+      <path fill="#FB7339" d="M256,292 C266,312 266,330 254,346 L224,348 C220,330 224,310 228,292 Z"/>
+    </g>
+</svg>

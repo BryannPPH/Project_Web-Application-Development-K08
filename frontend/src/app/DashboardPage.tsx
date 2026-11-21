@@ -1,15 +1,52 @@
+import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
-import { RoleBadge } from '@/components/Badges'
+import type { SenjaClipName } from '@/assets/brand/senja-rig/web/senja-data'
+import { describeError } from '@/components/error-message'
 import { Icon, type IconName } from '@/components/Icon'
+import { SenjaRig, type SenjaOutfit } from '@/components/SenjaRig'
 import { StatusMessage } from '@/components/StatusMessage'
 import { useAdminGroups, useAdminUsers, useManagedDatabases } from '@/modules/admin/api'
 import { useCurrentUser } from '@/modules/auth/use-current-user'
 import { useAccessibleDatabases } from '@/modules/databases/api'
+import { DatabaseRows, DatabaseRowsSkeleton } from '@/modules/databases/DatabaseRows'
+import '@/app/dashboard.css'
+
+const DASHBOARD_LIMIT = 6
+
+type DayPart = 'pagi' | 'siang' | 'sore' | 'malam'
+
+function dayPart(hour: number): DayPart {
+  if (hour >= 4 && hour < 11) return 'pagi'
+  if (hour >= 11 && hour < 15) return 'siang'
+  if (hour >= 15 && hour < 19) return 'sore'
+  return 'malam'
+}
+
+// Senja per waktu: kostum (dan latar banner di dashboard.css) mengikuti waktu;
+// intro diputar sekali saat dashboard dibuka, lalu loop; gesture saat banner disorot.
+interface MascotPlan {
+  intro?: SenjaClipName
+  loop: SenjaClipName
+  gesture?: SenjaClipName
+  outfit: SenjaOutfit
+}
+
+const senjaByPart: Record<DayPart, MascotPlan> = {
+  pagi: { intro: 'stretch', loop: 'idle', gesture: 'wave', outfit: 'pagi' },
+  siang: { intro: 'wave', loop: 'idle', gesture: 'wave', outfit: 'siang' },
+  sore: { loop: 'idle', gesture: 'wave', outfit: 'sore' },
+  malam: { loop: 'sleepy', outfit: 'malam' },
+}
+
+const todayFormat = new Intl.DateTimeFormat('id-ID', { weekday: 'long', day: 'numeric', month: 'long' })
 
 export function DashboardPage() {
   const currentUser = useCurrentUser()
   const databases = useAccessibleDatabases()
+  const heroRef = useRef<HTMLElement>(null)
+  // Waktu dibaca sekali saat dashboard dibuka (bukan di setiap render).
+  const [now] = useState(() => new Date())
   const user = currentUser.data
 
   if (!user) {
@@ -19,53 +56,104 @@ export function DashboardPage() {
   const isAdmin = user.platformRole === 'platform_admin'
   const list = databases.data ?? []
   const editable = list.filter((database) => database.accessLevel === 'view_edit').length
+  const part = dayPart(now.getHours())
+  const mascot = senjaByPart[part]
 
   return (
-    <section>
-      <div className="page-header">
-        <div className="page-header__text">
-          <h1>Halo, {user.username}</h1>
-          <div className="page-header__meta">
-            <RoleBadge role={user.platformRole} />
-            <span className="muted">
-              {isAdmin ? 'Administrator platform' : 'Pengguna'}
-            </span>
-          </div>
+    <section className="dashboard">
+      <header className={`hero hero--${part}`} ref={heroRef}>
+        <div className="hero__text">
+          <p className="hero__date">{todayFormat.format(now)}</p>
+          <h1 className="hero__greeting">
+            Selamat {part}, <span className="hero__name">{user.username}</span>
+          </h1>
+          <p className="hero__summary">
+            <AccessSummary editable={editable} loaded={databases.isSuccess} total={list.length} />
+          </p>
         </div>
-        <div className="page-header__actions">
-          <Link className="button button--primary" to="/databases">
+        <SenjaRig
+          className="hero__art"
+          gesture={mascot.gesture}
+          gestureTrigger={heroRef}
+          intro={mascot.intro}
+          loop={mascot.loop}
+          outfit={mascot.outfit}
+        />
+      </header>
+
+      <div className="section-head">
+        <h2 className="section-head__title" data-area="database">
+          <span aria-hidden="true" className="area-tile">
             <Icon name="database" size={16} />
-            Buka database
+          </span>
+          Database Anda
+        </h2>
+        {list.length > DASHBOARD_LIMIT ? (
+          <Link className="section-head__link" to="/databases">
+            Lihat semua {list.length}
+            <Icon name="arrowRight" size={14} />
           </Link>
-          {isAdmin ? (
-            <Link className="button button--secondary" to="/admin">
-              <Icon name="shield" size={16} />
-              Administrasi platform
-            </Link>
-          ) : null}
-        </div>
+        ) : null}
       </div>
 
-      <h2 className="section-title">Akses saya</h2>
-      {databases.isPending ? <StatusMessage tone="loading">Memuat ringkasan akses…</StatusMessage> : null}
-      {databases.isSuccess && list.length === 0 ? (
-        <StatusMessage illustration="emptyBox" title="Belum ada akses database" tone="empty">
-          Anda belum punya akses database. Minta admin menambahkan Anda ke group.
+      {databases.isPending ? <DatabaseRowsSkeleton rows={2} /> : null}
+      {databases.isPending ? <span className="visually-hidden" role="status">Memuat database...</span> : null}
+
+      {databases.isError ? (
+        <StatusMessage
+          actionLabel="Coba lagi"
+          onAction={() => void databases.refetch()}
+          title="Daftar database gagal dimuat"
+          tone="error"
+        >
+          {describeError(databases.error)}
         </StatusMessage>
       ) : null}
-      {databases.isSuccess && list.length > 0 ? (
-        <div className="card-grid">
-          <StatCard icon="database" label="Database tersedia" value={list.length} />
-          <StatCard icon="pencil" label="Bisa diubah (View + Edit)" value={editable} />
-          <StatCard icon="eye" label="Hanya lihat (View Only)" value={list.length - editable} />
-        </div>
+
+      {databases.isSuccess && list.length === 0 ? (
+        <StatusMessage illustration="emptyBox" title="Belum ada akses database" tone="empty">
+          Minta admin menambahkan Anda ke group yang punya akses database.
+          {isAdmin ? (
+            <p className="db-empty-hint">
+              Role admin tidak otomatis memberi akses data.{' '}
+              <Link to="/admin/groups">Beri akses lewat Group & akses</Link>
+            </p>
+          ) : null}
+        </StatusMessage>
       ) : null}
+
+      {list.length > 0 ? <DatabaseRows databases={list.slice(0, DASHBOARD_LIMIT)} /> : null}
 
       {isAdmin ? <AdminSummary /> : null}
     </section>
   )
 }
 
+// Ringkasan akses sebagai satu kalimat; angka ditebalkan (tabular) agar tetap mudah dipindai.
+function AccessSummary({ loaded, total, editable }: { loaded: boolean; total: number; editable: number }) {
+  if (!loaded) return <>Memuat akses Anda...</>
+  if (total === 0) return <>Anda belum punya akses ke database mana pun.</>
+  const viewOnly = total - editable
+  const parts = [
+    editable > 0 ? <span key="edit"><strong>{editable}</strong> bisa diubah</span> : null,
+    viewOnly > 0 ? <span key="view"><strong>{viewOnly}</strong> hanya lihat</span> : null,
+  ].filter(Boolean)
+  return (
+    <>
+      Anda punya akses ke <strong>{total}</strong> database
+      {parts.length > 0 ? ': ' : '.'}
+      {parts.map((part, index) => (
+        <span key={index}>
+          {index > 0 ? ', ' : null}
+          {part}
+        </span>
+      ))}
+      {parts.length > 0 ? '.' : null}
+    </>
+  )
+}
+
+// AdminSummary: hook admin hanya dipanggil kalau komponen ini dirender (user admin).
 function AdminSummary() {
   const users = useAdminUsers()
   const groups = useAdminGroups()
@@ -73,56 +161,65 @@ function AdminSummary() {
 
   return (
     <>
-      <h2 className="section-title">Platform</h2>
-      <div className="card-grid">
-        <StatCard
-          action={{ label: 'Tambah user', to: '/admin/users' }}
+      <div className="section-head">
+        <h2 className="section-head__title" data-area="admin">
+          <span aria-hidden="true" className="area-tile">
+            <Icon name="shield" size={16} />
+          </span>
+          Administrasi platform
+        </h2>
+      </div>
+      <ul className="admin-summary">
+        <SummaryLink
+          count={users.data?.length}
+          hint="Akun yang bisa masuk"
           icon="user"
           label="User"
-          value={users.data?.length}
+          to="/admin/users"
         />
-        <StatCard
-          action={{ label: 'Kelola group', to: '/admin/groups' }}
+        <SummaryLink
+          count={groups.data?.length}
+          hint="Siapa boleh akses apa"
           icon="users"
-          label="Group"
-          value={groups.data?.length}
+          label="Group & akses"
+          to="/admin/groups"
         />
-        <StatCard
-          action={{ label: 'Tambah koneksi', to: '/admin/databases' }}
+        <SummaryLink
+          count={connections.data?.length}
+          hint="Database terdaftar"
           icon="plug"
           label="Koneksi database"
-          value={connections.data?.length}
+          to="/admin/databases"
         />
-      </div>
+      </ul>
     </>
   )
 }
 
-interface StatCardProps {
+interface SummaryLinkProps {
+  count: number | undefined
+  hint: string
   icon: IconName
   label: string
-  value: number | undefined
-  action?: { label: string; to: string }
+  to: string
 }
 
-function StatCard({ icon, label, value, action }: StatCardProps) {
+// Seluruh ubin adalah satu target klik besar (bukan angka + tombol kecil terpisah).
+function SummaryLink({ count, hint, icon, label, to }: SummaryLinkProps) {
   return (
-    <div className="stat-card">
-      <span className="stat-card__label">
-        <span className="stat-card__icon">
-          <Icon name={icon} size={16} />
+    <li>
+      <Link className="admin-summary__item" to={to}>
+        <span aria-hidden="true" className="admin-summary__icon">
+          <Icon name={icon} size={20} />
         </span>
-        {label}
-      </span>
-      <span className="stat-card__value">{value ?? '–'}</span>
-      {action ? (
-        <div className="stat-card__foot">
-          <Link className="button button--secondary button--small" to={action.to}>
-            {action.label}
-            <Icon name="arrowRight" size={14} />
-          </Link>
-        </div>
-      ) : null}
-    </div>
+        <span className="admin-summary__label">{label}</span>
+        <span className="admin-summary__count">{count ?? '-'}</span>
+        <span className="admin-summary__hint">{hint}</span>
+        <span className="admin-summary__go">
+          Kelola
+          <Icon name="arrowRight" size={14} />
+        </span>
+      </Link>
+    </li>
   )
 }

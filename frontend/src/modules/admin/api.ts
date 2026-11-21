@@ -22,10 +22,12 @@ export const adminQueryKeys = {
   databases: ['admin', 'databases'] as const,
 }
 
+// Singkatan: setiap ID yang masuk URL di-encode supaya aman.
 const id = encodeURIComponent
 
 // ---- Users ----
 
+// useAdminUsers: GET /admin/users untuk tabel user.
 export function useAdminUsers() {
   return useQuery({
     queryKey: adminQueryKeys.users,
@@ -46,6 +48,7 @@ export interface UpdateUserInput {
   isActive?: boolean
 }
 
+// useUserMutations: create (POST), update role/status (PATCH), resetPassword (POST).
 export function useUserMutations() {
   const queryClient = useQueryClient()
   // Membership menampilkan status user, jadi invalidasi seluruh cache admin.
@@ -75,6 +78,7 @@ export function useUserMutations() {
 
 // ---- Groups, members, grants ----
 
+// useAdminGroups: GET /admin/groups.
 export function useAdminGroups() {
   return useQuery({
     queryKey: adminQueryKeys.groups,
@@ -83,6 +87,7 @@ export function useAdminGroups() {
   })
 }
 
+// useGroupMembers: anggota satu group (panel "Kelola").
 export function useGroupMembers(groupId: string) {
   return useQuery({
     queryKey: adminQueryKeys.members(groupId),
@@ -92,6 +97,7 @@ export function useGroupMembers(groupId: string) {
   })
 }
 
+// useGroupGrants: database yang bisa diakses satu group.
 export function useGroupGrants(groupId: string) {
   return useQuery({
     queryKey: adminQueryKeys.groupGrants(groupId),
@@ -101,6 +107,7 @@ export function useGroupGrants(groupId: string) {
   })
 }
 
+// useGroupMutations: CRUD group, tambah/hapus anggota, set/cabut akses database.
 export function useGroupMutations() {
   const queryClient = useQueryClient()
   const invalidate = () => queryClient.invalidateQueries({ queryKey: adminQueryKeys.all })
@@ -151,6 +158,20 @@ export function useGroupMutations() {
         }),
       onSuccess: invalidate,
     }),
+    // Milestone 2 - Person A: leader group (PUT memilih/mengganti, DELETE mencopot).
+    setLeader: useMutation({
+      mutationFn: ({ groupId, userId }: { groupId: string; userId: string }) =>
+        apiRequest<{ group: AdminGroup }>(`/admin/groups/${id(groupId)}/leader`, {
+          method: 'PUT',
+          json: { userId },
+        }),
+      onSuccess: invalidate,
+    }),
+    clearLeader: useMutation({
+      mutationFn: (groupId: string) =>
+        apiRequest<{ group: AdminGroup }>(`/admin/groups/${id(groupId)}/leader`, { method: 'DELETE' }),
+      onSuccess: invalidate,
+    }),
     revokeGrant: useMutation({
       mutationFn: ({ groupId, databaseId }: { groupId: string; databaseId: string }) =>
         apiRequest<void>(`/admin/groups/${id(groupId)}/databases/${id(databaseId)}`, {
@@ -163,6 +184,7 @@ export function useGroupMutations() {
 
 // ---- Managed databases ----
 
+// useManagedDatabases: GET /admin/databases (tanpa password).
 export function useManagedDatabases() {
   return useQuery({
     queryKey: adminQueryKeys.databases,
@@ -171,6 +193,8 @@ export function useManagedDatabases() {
   })
 }
 
+// useManagedDatabaseMutations: create/update/remove koneksi + testStored/testDraft.
+// Selain cache admin, cache 'databases' (menu Database user) juga di-invalidate.
 export function useManagedDatabaseMutations() {
   const queryClient = useQueryClient()
   const invalidate = () => {

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { Fragment, useState, type FormEvent } from 'react'
 
 import { ActiveBadge } from '@/components/Badges'
 import { describeError } from '@/components/error-message'
@@ -22,6 +22,12 @@ export function AdminUsersPage() {
   const [formError, setFormError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [resetTarget, setResetTarget] = useState<AdminUser | null>(null)
+  // Error form reset tampil tepat di bawah kolom password, bukan di atas panel.
+  const [resetError, setResetError] = useState<string | null>(null)
+  // Form tambah user dibuka saat dibutuhkan; daftar user adalah isi utama halaman.
+  const [creating, setCreating] = useState(false)
+  // Konfirmasi singkat setelah aksi berhasil, agar admin tahu perubahannya tersimpan.
+  const [notice, setNotice] = useState<string | null>(null)
 
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -39,11 +45,15 @@ export function AdminUsersPage() {
     try {
       await mutations.create.mutateAsync({ username: username.trim(), password, platformRole })
       form.reset()
+      setCreating(false)
+      setNotice(`User ${username.trim()} ditambahkan dan langsung aktif.`)
     } catch (error) {
       setFormError(describeError(error))
     }
   }
 
+  // updateUser: ganti role atau status aktif. Minta konfirmasi dulu (kecuali mengaktifkan),
+  // karena backend akan mencabut session user tersebut.
   async function updateUser(user: AdminUser, input: { platformRole?: PlatformRole; isActive?: boolean }) {
     const consequence =
       input.isActive === false
@@ -60,6 +70,13 @@ export function AdminUsersPage() {
     }
   }
 
+  // openReset: buka/tutup form reset untuk satu user; error form sebelumnya dibuang.
+  function openReset(user: AdminUser | null) {
+    setResetTarget(user)
+    setResetError(null)
+  }
+
+  // handleReset: kirim password baru untuk user yang dipilih (minimal 8 karakter).
   async function handleReset(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!resetTarget) {
@@ -68,65 +85,101 @@ export function AdminUsersPage() {
     const form = event.currentTarget
     const password = String(new FormData(form).get('password') ?? '')
     if (password.length < 8) {
-      setActionError('Password baru minimal 8 karakter.')
+      setResetError('Password baru minimal 8 karakter.')
+      form.querySelector<HTMLInputElement>('input[name="password"]')?.focus()
       return
     }
+    setResetError(null)
     try {
       await mutations.resetPassword.mutateAsync({ userId: resetTarget.id, password })
+      setNotice(`Password ${resetTarget.username} diperbarui. Semua sesinya sudah dicabut.`)
       setResetTarget(null)
-      setActionError(null)
     } catch (error) {
-      setActionError(describeError(error))
+      setResetError(describeError(error))
     }
   }
 
   return (
     <div>
-      <div className="panel">
-        <div className="panel__header">
-          <div>
-            <h2>Tambah user</h2>
-            <p className="muted">Password minimal 8 karakter. User baru langsung aktif.</p>
+      {creating ? (
+        <div className="panel panel--editing">
+          <div className="panel__header">
+            <div>
+              <h2>Tambah user</h2>
+              <p className="muted">Password minimal 8 karakter. User baru langsung aktif.</p>
+            </div>
           </div>
+          <form aria-label="Tambah user" noValidate onSubmit={(event) => void handleCreate(event)}>
+            <div className="form-grid">
+              <label className="form-field">
+                Username
+                <input
+                  autoCapitalize="none"
+                  autoComplete="off"
+                  autoFocus
+                  name="username"
+                  required
+                  spellCheck={false}
+                />
+              </label>
+              <label className="form-field">
+                Password awal
+                <input autoComplete="new-password" name="password" required type="password" />
+              </label>
+              <label className="form-field">
+                Role platform
+                <select defaultValue="user" name="platformRole">
+                  <option value="user">User</option>
+                  <option value="platform_admin">Platform admin</option>
+                </select>
+              </label>
+            </div>
+            {formError ? (
+              <p className="form-error" role="alert">
+                <Icon name="error" size={16} />
+                {formError}
+              </p>
+            ) : null}
+            <div className="form-actions">
+              <button className="button button--primary" disabled={mutations.create.isPending} type="submit">
+                <Icon
+                  className={mutations.create.isPending ? 'spinner' : undefined}
+                  name={mutations.create.isPending ? 'loader' : 'plus'}
+                  size={16}
+                />
+                {mutations.create.isPending ? 'Menyimpan...' : 'Tambah user'}
+              </button>
+              <button
+                className="button button--ghost"
+                onClick={() => {
+                  setCreating(false)
+                  setFormError(null)
+                }}
+                type="button"
+              >
+                Batal
+              </button>
+            </div>
+          </form>
         </div>
-        <form aria-label="Tambah user" noValidate onSubmit={(event) => void handleCreate(event)}>
-          <div className="form-grid">
-            <label className="form-field">
-              Username
-              <input autoComplete="off" name="username" required />
-            </label>
-            <label className="form-field">
-              Password awal
-              <input autoComplete="new-password" name="password" required type="password" />
-            </label>
-            <label className="form-field">
-              Role platform
-              <select defaultValue="user" name="platformRole">
-                <option value="user">User</option>
-                <option value="platform_admin">Platform admin</option>
-              </select>
-            </label>
-            <button className="button button--primary" disabled={mutations.create.isPending} type="submit">
-              <Icon name="plus" size={16} />
-              {mutations.create.isPending ? 'Menyimpan…' : 'Tambah'}
-            </button>
-          </div>
-          {formError ? (
-            <p className="form-error" role="alert">
-              <Icon name="error" size={16} />
-              {formError}
-            </p>
-          ) : null}
-        </form>
-      </div>
+      ) : null}
 
       <div className="panel">
         <div className="panel__header">
-          <h2>Daftar user</h2>
-          {users.data ? <span className="badge">{users.data.length} user</span> : null}
+          <div className="panel__title">
+            <h2>Daftar user</h2>
+            {users.data ? <span className="badge">{users.data.length}</span> : null}
+          </div>
+          {!creating ? (
+            <button className="button button--primary" onClick={() => setCreating(true)} type="button">
+              <Icon name="plus" size={16} />
+              Tambah user
+            </button>
+          ) : null}
         </div>
+        {notice ? <StatusMessage tone="success">{notice}</StatusMessage> : null}
         {actionError ? <StatusMessage tone="error">{actionError}</StatusMessage> : null}
-        {users.isPending ? <StatusMessage tone="loading">Memuat user…</StatusMessage> : null}
+        {users.isPending ? <StatusMessage tone="loading">Memuat user...</StatusMessage> : null}
         {users.isError ? (
           <StatusMessage tone="error" title="User gagal dimuat">
             {describeError(users.error)}
@@ -147,10 +200,15 @@ export function AdminUsersPage() {
               </thead>
               <tbody>
                 {users.data.map((user) => (
-                  <tr key={user.id}>
+                  <Fragment key={user.id}>
+                  <tr className={resetTarget?.id === user.id ? 'row-selected' : undefined}>
                     <td data-label="Username">
-                      <strong>{user.username}</strong>
-                      {user.id === currentUser.data?.id ? <span className="muted"> (Anda)</span> : null}
+                      <span className="cell-identity">
+                        <strong className="cell-truncate" title={user.username}>
+                          {user.username}
+                        </strong>
+                        {user.id === currentUser.data?.id ? <span className="badge badge--brand">Anda</span> : null}
+                      </span>
                     </td>
                     <td data-label="Role">
                       <select
@@ -184,8 +242,9 @@ export function AdminUsersPage() {
                           {user.isActive ? 'Nonaktifkan' : 'Aktifkan'}
                         </button>
                         <button
+                          aria-expanded={resetTarget?.id === user.id}
                           className="button button--secondary button--small"
-                          onClick={() => setResetTarget(user)}
+                          onClick={() => openReset(resetTarget?.id === user.id ? null : user)}
                           type="button"
                         >
                           <Icon name="key" size={14} />
@@ -194,36 +253,63 @@ export function AdminUsersPage() {
                       </div>
                     </td>
                   </tr>
+                  {resetTarget?.id === user.id ? (
+                    // Form reset muncul tepat di bawah baris yang dipilih, bukan di kaki panel.
+                    <tr className="row-expand">
+                      <td colSpan={4}>
+                        <form
+                          aria-label={`Reset password ${user.username}`}
+                          className="row-form"
+                          noValidate
+                          onSubmit={(event) => void handleReset(event)}
+                        >
+                          {/* Grid: label / input + tombol / petunjuk / error. Tombol selalu
+                              sejajar input walau username sangat panjang (label dipotong "..."). */}
+                          <label className="row-form__label" htmlFor={`reset-password-${user.id}`} title={user.username}>
+                            Password baru untuk {user.username}
+                          </label>
+                          <input
+                            aria-describedby={`reset-hint-${user.id}${resetError ? ` reset-error-${user.id}` : ''}`}
+                            aria-invalid={resetError ? true : undefined}
+                            autoComplete="new-password"
+                            autoFocus
+                            className="input row-form__input"
+                            id={`reset-password-${user.id}`}
+                            minLength={8}
+                            name="password"
+                            onChange={() => setResetError(null)}
+                            type="password"
+                          />
+                          <p className="form-field__hint row-form__hint" id={`reset-hint-${user.id}`}>
+                            Minimal 8 karakter. Semua sesi user ini akan dicabut.
+                          </p>
+                          {resetError ? (
+                            <p className="form-error row-form__error" id={`reset-error-${user.id}`} role="alert">
+                              <Icon name="error" size={16} />
+                              {resetError}
+                            </p>
+                          ) : null}
+                          <div className="row-form__actions">
+                            <button
+                              className="button button--primary"
+                              disabled={mutations.resetPassword.isPending}
+                              type="submit"
+                            >
+                              {mutations.resetPassword.isPending ? 'Menyimpan...' : 'Simpan password'}
+                            </button>
+                            <button className="button button--ghost" onClick={() => openReset(null)} type="button">
+                              Batal
+                            </button>
+                          </div>
+                        </form>
+                      </td>
+                    </tr>
+                  ) : null}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
           </div>
-        ) : null}
-
-        {resetTarget ? (
-          <form
-            aria-label="Reset password"
-            className="inset-form"
-            noValidate
-            onSubmit={(event) => void handleReset(event)}
-          >
-            <h3>Reset password {resetTarget.username}</h3>
-            <p className="muted">Seluruh session user ini akan dicabut setelah password diganti.</p>
-            <div className="form-grid">
-              <label className="form-field">
-                Password baru
-                <input autoComplete="new-password" name="password" type="password" />
-              </label>
-            </div>
-            <div className="form-actions">
-              <button className="button button--primary" disabled={mutations.resetPassword.isPending} type="submit">
-                Simpan password
-              </button>
-              <button className="button button--secondary" onClick={() => setResetTarget(null)} type="button">
-                Batal
-              </button>
-            </div>
-          </form>
         ) : null}
       </div>
     </div>

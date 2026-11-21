@@ -28,6 +28,14 @@ const messages: Record<string, string> = {
   MIGRATION_CONFLICT: 'Migration ini sudah tidak berstatus draft.',
   MIGRATION_ORDER_BLOCKED: 'Migration sebelumnya harus dijalankan atau diselesaikan terlebih dahulu.',
   ENGINE_MISMATCH: 'Schema sumber dan target harus memakai engine database yang sama.',
+  // Milestone 2 - Person A: leader & approval
+  LEADER_NOT_MEMBER: 'Leader harus anggota group ini. Tambahkan user sebagai anggota dulu.',
+  LEADER_INACTIVE: 'User nonaktif tidak bisa menjadi leader karena tidak dapat login untuk menyetujui.',
+  APPROVAL_REQUIRED: 'Migration belum disetujui semua leader group yang punya akses ke database ini.',
+  APPROVAL_NOT_LEADER: 'Hanya leader group yang punya akses ke database ini yang dapat memberi keputusan.',
+  APPROVAL_STALE_REVISION: 'Migration sudah diedit sejak halaman ini dibuka. Muat ulang dan tinjau revisi terbaru.',
+  APPROVAL_NOT_REVIEWABLE: 'Migration ini tidak lagi bisa ditinjau untuk aksi tersebut.',
+  MIGRATION_REVISION_CHANGED: 'Migration diedit saat akan dijalankan. Tinjau dan setujui revisi terbaru.',
 }
 
 export function describeError(error: unknown) {
@@ -37,7 +45,7 @@ export function describeError(error: unknown) {
   return 'Terjadi kesalahan. Silakan coba lagi.'
 }
 
-// Pose Senja yang cocok untuk suatu error (ui-design-brief §4).
+// Pose Senja yang cocok untuk suatu error.
 export function poseForError(error: unknown): SenjaPose {
   const code = error instanceof ApiError ? error.code : ''
   switch (code) {

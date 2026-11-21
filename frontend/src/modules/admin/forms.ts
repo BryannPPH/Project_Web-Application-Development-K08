@@ -6,7 +6,7 @@ import type { DatabaseEngine } from '@/modules/databases/types'
 export function validateNewUser(username: string, password: string) {
   const trimmed = username.trim()
   if (trimmed.length < 3 || trimmed.length > 64 || /\s/.test(trimmed)) {
-    return 'Username harus 3–64 karakter tanpa spasi.'
+    return 'Username harus 3 sampai 64 karakter tanpa spasi.'
   }
   if (password.length < 8) {
     return 'Password minimal 8 karakter.'

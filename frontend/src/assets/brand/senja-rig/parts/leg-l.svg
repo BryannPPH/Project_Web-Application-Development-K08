@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="20 40 310 430" width="310" height="430">
+  <!-- Senja rig layer "leg-l". Generated from senja-rig.svg by scripts/build-rig.mjs; edit the master. -->
+  <g id="leg-l" data-pivot="172 404">
+      <path fill="#FB7339" d="M152,396 C146,410 144,424 147,434 C150,446 164,450 176,449 C190,448 199,442 198,431 C197,420 192,408 186,398 Z"/>
+      <path fill="none" stroke="#C9502A" stroke-width="1.6" stroke-linecap="round" d="M159,438 C157,442 157,445 158,448 M170,439 C169,443 169,446 170,449"/>
+    </g>
+</svg>
