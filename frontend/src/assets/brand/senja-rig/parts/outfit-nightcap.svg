@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="20 40 310 430" width="310" height="430">
+  <!-- Senja rig layer "outfit-nightcap". Generated from senja-rig.svg by scripts/build-rig.mjs; edit the master. -->
+  <g id="outfit-nightcap" data-pivot="180 140" data-outfit="malam">
+        <path fill="#683862" d="M122,170 C150,138 205,120 238,126 C240,96 222,70 190,66 C150,64 118,92 104,132 C96,156 96,182 100,204 C108,194 114,182 122,170 Z"/>
+        <path fill="#FED493" stroke="#FED493" stroke-width="1" stroke-linejoin="round" d="M186.0,84.0 L187.6,87.8 L191.7,88.1 L188.6,90.8 L189.5,94.9 L186.0,92.7 L182.5,94.9 L183.4,90.8 L180.3,88.1 L184.4,87.8 Z"/><path fill="#FED493" stroke="#FED493" stroke-width="1" stroke-linejoin="round" d="M150.0,97.0 L151.3,100.2 L154.8,100.5 L152.1,102.7 L152.9,106.0 L150.0,104.2 L147.1,106.0 L147.9,102.7 L145.2,100.5 L148.7,100.2 Z"/><path fill="#FED493" stroke="#FED493" stroke-width="1" stroke-linejoin="round" d="M214.0,101.5 L215.2,104.4 L218.3,104.6 L215.9,106.6 L216.6,109.6 L214.0,108.0 L211.4,109.6 L212.1,106.6 L209.7,104.6 L212.8,104.4 Z"/><path fill="#FED493" stroke="#FED493" stroke-width="1" stroke-linejoin="round" d="M124.0,135.5 L125.2,138.4 L128.3,138.6 L125.9,140.6 L126.6,143.6 L124.0,142.0 L121.4,143.6 L122.1,140.6 L119.7,138.6 L122.8,138.4 Z"/><path fill="#FED493" stroke="#FED493" stroke-width="1" stroke-linejoin="round" d="M170.0,126.4 L171.0,128.7 L173.4,128.9 L171.5,130.5 L172.1,132.9 L170.0,131.6 L167.9,132.9 L168.5,130.5 L166.6,128.9 L169.0,128.7 Z"/>
+        <g id="nightcap-pompom" data-pivot="100 200">
+          <circle fill="#DFC0E0" cx="100" cy="209" r="12.5"/>
+        </g>
+      </g>
+</svg>

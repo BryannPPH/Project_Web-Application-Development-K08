@@ -12,6 +12,7 @@ import type { ChangeKind, SchemaChange, SchemaDiffResult } from '@/modules/schem
 import { useSchemas } from '@/modules/viewer/api'
 import '@/modules/schema-diff/schema-diff.css'
 
+// Label, ikon, dan warna badge untuk tiap jenis perubahan (Table baru, Ubah kolom, Hapus, ...).
 const kindStyles: Record<ChangeKind, { label: string; icon: IconName; className: string }> = {
   create_table: { label: 'Table baru', icon: 'plus', className: 'diff-kind diff-kind--add' },
   add_column: { label: 'Kolom baru', icon: 'plus', className: 'diff-kind diff-kind--add' },
@@ -26,6 +27,7 @@ const kindStyles: Record<ChangeKind, { label: string; icon: IconName; className:
 
 // SchemaDiffPage (bonus): bandingkan schema yang diinginkan dengan schema saat
 // ini pada database ini, lalu hasilkan kandidat SQL migration yang dapat diubah.
+// SchemaDiffPage: komponen utama halaman.
 export function SchemaDiffPage() {
   const { databaseId = '' } = useParams()
   const navigate = useNavigate()
@@ -39,6 +41,8 @@ export function SchemaDiffPage() {
   const [sqlEdited, setSqlEdited] = useState(false)
   const [copied, setCopied] = useState(false)
 
+  // compare: kirim perbandingan. Saat sukses: centang SEMUA perubahan, isi kotak SQL
+  // dengan SQL dari backend, reset status "diedit manual" dan "tersalin".
   const compare = useMutation({
     mutationFn: () =>
       compareSchemas({ databaseId: sourceDatabaseId, schema: sourceSchema }, { databaseId, schema: targetSchema }),
@@ -57,7 +61,7 @@ export function SchemaDiffPage() {
   )
 
   if (target.isPending) {
-    return <StatusMessage tone="loading">Memeriksa akses database…</StatusMessage>
+    return <StatusMessage tone="loading">Memeriksa akses database...</StatusMessage>
   }
   if (target.isError) {
     return (
@@ -67,10 +71,14 @@ export function SchemaDiffPage() {
     )
   }
 
+  // result = hasil terakhir. canDraft = boleh dijadikan draft (executable + View+Edit).
+  // ready = semua pilihan sudah diisi -> tombol "Bandingkan schema" aktif.
   const result = compare.data
   const canDraft = result?.executable === true && target.data.accessLevel === 'view_edit'
   const ready = sourceDatabaseId !== '' && sourceSchema !== '' && targetSchema !== ''
 
+  // toggle: centang/hapus centang satu perubahan, lalu (kalau SQL belum diedit
+  // manual) susun ulang SQL hanya dari perubahan yang tercentang.
   function toggle(result: SchemaDiffResult, id: string) {
     const next = new Set(selected)
     if (next.has(id)) {
@@ -85,6 +93,7 @@ export function SchemaDiffPage() {
     }
   }
 
+  // rebuild: tombol "Susun ulang dari pilihan" -> buang editan manual, susun dari centang.
   function rebuild(result: SchemaDiffResult) {
     setSql(buildDiffSQL(result.changes.filter((change) => selected.has(change.id))))
     setSqlEdited(false)
@@ -97,6 +106,7 @@ export function SchemaDiffPage() {
     })
   }
 
+  // copySql: salin SQL ke clipboard; tampilkan "Tersalin" kalau berhasil.
   async function copySql() {
     try {
       await navigator.clipboard.writeText(sql)
@@ -180,7 +190,7 @@ export function SchemaDiffPage() {
         <div className="diff-picker__actions">
           <button className="button button--primary" disabled={!ready || compare.isPending} type="submit">
             <Icon className={compare.isPending ? 'spinner' : undefined} name={compare.isPending ? 'loader' : 'search'} size={16} />
-            {compare.isPending ? 'Membandingkan…' : 'Bandingkan schema'}
+            {compare.isPending ? 'Membandingkan...' : 'Bandingkan schema'}
           </button>
         </div>
       </form>
@@ -281,6 +291,8 @@ export function SchemaDiffPage() {
   )
 }
 
+// ChangeItem: satu baris perubahan -> checkbox, badge jenis, deskripsi,
+// sebelum -> sesudah, peringatan (dan tanda destruktif).
 function ChangeItem({ change, checked, onToggle }: { change: SchemaChange; checked: boolean; onToggle: () => void }) {
   const style = kindStyles[change.kind]
   return (
@@ -323,21 +335,40 @@ interface SchemaSelectProps {
   onChange: (schema: string) => void
 }
 
+// SchemaSelect: dropdown schema untuk satu database (memakai useSchemas milik viewer).
 function SchemaSelect({ databaseId, label, value, onChange }: SchemaSelectProps) {
   const schemas = useSchemas(databaseId)
   return (
-    <label className="form-field">
-      {label}
-      <select disabled={!schemas.data} onChange={(event) => onChange(event.target.value)} value={value}>
-        <option disabled value="">
-          {schemas.isPending ? 'Memuat schema…' : schemas.isError ? 'Schema gagal dimuat' : 'Pilih schema'}
-        </option>
-        {schemas.data?.map((schema) => (
-          <option key={schema.name} value={schema.name}>
-            {schema.name}
+    <div className="form-field">
+      <label className="form-field">
+        {label}
+        <select disabled={!schemas.data} onChange={(event) => onChange(event.target.value)} value={value}>
+          <option disabled value="">
+            {schemas.isPending ? 'Memuat schema...' : schemas.isError ? 'Schema gagal dimuat' : 'Pilih schema'}
           </option>
-        ))}
-      </select>
-    </label>
+          {schemas.data?.map((schema) => (
+            <option key={schema.name} value={schema.name}>
+              {schema.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      {/* Error tidak boleh hanya jadi placeholder abu-abu: beri alasan dan jalan keluar. */}
+      {schemas.isError ? (
+        <div className="field-error" role="alert">
+          <Icon name="error" size={14} />
+          <span>{describeError(schemas.error)}</span>
+          <button
+            className="button button--ghost button--small"
+            disabled={schemas.isFetching}
+            onClick={() => void schemas.refetch()}
+            type="button"
+          >
+            <Icon className={schemas.isFetching ? 'spinner' : undefined} name="refresh" size={14} />
+            Coba lagi
+          </button>
+        </div>
+      ) : null}
+    </div>
   )
 }

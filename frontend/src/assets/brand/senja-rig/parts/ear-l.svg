@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="20 40 310 430" width="310" height="430">
+  <!-- Senja rig layer "ear-l". Generated from senja-rig.svg by scripts/build-rig.mjs; edit the master. -->
+  <g id="ear-l" data-pivot="130 160">
+        <path fill="#FB7339" d="M79,145 C78,118 86,108 104,108 C128,110 152,122 168,135 L150,185 L104,212 C88,196 80,170 79,145 Z"/>
+        <path fill="#FB4461" d="M92,132 C92,126 98,126 104,130 C118,138 130,146 137,150 C130,166 122,182 115,197 C102,182 92,158 92,132 Z"/>
+      </g>
+</svg>

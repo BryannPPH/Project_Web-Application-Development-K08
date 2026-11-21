@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="20 40 310 430" width="310" height="430">
+  <!-- Senja rig layer "scarf". Generated from senja-rig.svg by scripts/build-rig.mjs; edit the master. -->
+  <g id="scarf" data-pivot="208 280">
+      <path fill="#42253A" d="M160,262 C190,257 230,255 256,258 L257,274 C252,291 232,300 207,300 C186,300 169,295 162,288 Z"/>
+    </g>
+</svg>

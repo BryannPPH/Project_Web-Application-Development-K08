@@ -7,16 +7,20 @@ import { StatusMessage } from '@/components/StatusMessage'
 import { explainMigrationSQL } from '@/modules/migrations/api'
 import type { ExplainResult, PlanNode, PlanSummary, StatementPlan } from '@/modules/migrations/types'
 
+// Format angka gaya Indonesia (1.234,56), maksimal 2 angka di belakang koma.
 const numberFormat = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 })
 
+// formatNumber / formatMs: tampilkan angka (atau "–" kalau backend tidak mengirim nilainya,
+// mis. waktu aktual tidak ada pada EXPLAIN biasa).
 function formatNumber(value: number | undefined) {
-  return value === undefined ? '–' : numberFormat.format(value)
+  return value === undefined ? '-' : numberFormat.format(value)
 }
 
 function formatMs(value: number | undefined) {
-  return value === undefined ? '–' : `${numberFormat.format(value)} ms`
+  return value === undefined ? '-' : `${numberFormat.format(value)} ms`
 }
 
+// Props: databaseId = target DB halaman migration; sql = isi editor SAAT INI.
 interface ExplainPanelProps {
   databaseId: string
   sql: string
@@ -25,11 +29,14 @@ interface ExplainPanelProps {
 // Query execution plan analysis: EXPLAIN / EXPLAIN ANALYZE terhadap SQL
 // migration sebelum dieksekusi. Backend selalu me-rollback analisis.
 export function ExplainPanel({ databaseId, sql }: ExplainPanelProps) {
+  // analyzedSql: SQL yang terakhir berhasil dianalisis (untuk deteksi "stale").
+  // explain: mutation; variables.text = SQL yang dikirim, disimpan saat sukses.
   const [analyzedSql, setAnalyzedSql] = useState<string | null>(null)
   const explain = useMutation({
     mutationFn: ({ analyze, text }: { analyze: boolean; text: string }) => explainMigrationSQL(databaseId, text, analyze),
     onSuccess: (_, variables) => setAnalyzedSql(variables.text),
   })
+  // empty -> tombol nonaktif + pesan. stale -> ada hasil, tapi SQL editor sudah berubah.
   const empty = sql.trim() === ''
   const stale = explain.data !== undefined && analyzedSql !== sql
 
@@ -59,7 +66,7 @@ export function ExplainPanel({ databaseId, sql }: ExplainPanelProps) {
             type="button"
           >
             <Icon className={explain.isPending ? 'spinner' : undefined} name={explain.isPending ? 'loader' : 'zap'} size={16} />
-            {explain.isPending ? 'Menganalisis…' : 'EXPLAIN ANALYZE'}
+            {explain.isPending ? 'Menganalisis...' : 'EXPLAIN ANALYZE'}
           </button>
         </div>
       </div>
@@ -83,6 +90,7 @@ export function ExplainPanel({ databaseId, sql }: ExplainPanelProps) {
   )
 }
 
+// ExplainResults: daftar hasil per statement (satu kartu StatementResult per statement).
 function ExplainResults({ result }: { result: ExplainResult }) {
   return (
     <div className="explain-results">
@@ -97,12 +105,15 @@ function ExplainResults({ result }: { result: ExplainResult }) {
   )
 }
 
+// Label + warna badge untuk 3 status statement dari backend: plan / executed / error.
 const kindLabels: Record<StatementPlan['kind'], { label: string; className: string }> = {
   plan: { label: 'Plan', className: 'badge badge--info' },
   executed: { label: 'DDL dijalankan sementara', className: 'badge' },
   error: { label: 'Gagal', className: 'badge badge--danger' },
 }
 
+// StatementResult: satu kartu statement -> nomor + SQL, badge status, catatan/error,
+// ringkasan (SummaryView), pohon plan (PlanTreeNode), dan output mentah (bisa dibuka-tutup).
 function StatementResult({ statement }: { statement: StatementPlan }) {
   const kind = kindLabels[statement.kind]
   return (
@@ -136,6 +147,8 @@ function StatementResult({ statement }: { statement: StatementPlan }) {
   )
 }
 
+// SummaryView: kotak metrik (estimasi cost, estimasi row, row aktual, planning, eksekusi)
+// + chip jenis scan, index, join + daftar peringatan dari backend.
 function SummaryView({ summary }: { summary: PlanSummary }) {
   const metrics = [
     { label: 'Estimasi cost', value: formatNumber(summary.totalCost) },
@@ -155,7 +168,7 @@ function SummaryView({ summary }: { summary: PlanSummary }) {
         ))}
       </dl>
       <div className="explain-tags">
-        <TagGroup empty="—" icon="table" items={summary.scanTypes} label="Jenis scan" />
+        <TagGroup empty="-" icon="table" items={summary.scanTypes} label="Jenis scan" />
         <TagGroup empty="Tanpa index" icon="key" items={summary.indexes} label="Index" />
         <TagGroup empty="Tanpa join" icon="link" items={summary.joinTypes} label="Join" />
       </div>
@@ -168,6 +181,7 @@ function SummaryView({ summary }: { summary: PlanSummary }) {
   )
 }
 
+// TagGroup: satu baris chip (mis. "Index: customers_pkey"); kosong -> teks pengganti.
 function TagGroup({ label, items, empty, icon }: { label: string; items: string[]; empty: string; icon: 'table' | 'key' | 'link' }) {
   return (
     <div className="explain-tags__group">

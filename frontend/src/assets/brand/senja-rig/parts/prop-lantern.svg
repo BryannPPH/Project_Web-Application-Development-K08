@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="20 40 310 430" width="310" height="430">
+  <!-- Senja rig layer "prop-lantern". Generated from senja-rig.svg by scripts/build-rig.mjs; edit the master. -->
+  <g id="prop-lantern" data-pivot="240 356" data-outfit="sore">
+          <g transform="translate(8 52)">
+            <path fill="none" stroke="#381F33" stroke-width="3.2" stroke-linecap="round" d="M223,320 C223,311 227,305 232,304 C237,305 241,311 241,320"/>
+            <ellipse fill="#FCB467" cx="233" cy="346" rx="20" ry="14"/>
+            <rect fill="#FCDCA7" x="220" y="329" width="26" height="33" rx="8"/>
+            <path fill="#381F33" d="M227,317 L238,317 C241,317 243,319 245,322 L249,327 C250,329 249,331 246,331 L220,331 C217,331 216,329 217,327 L221,322 C223,319 224,317 227,317 Z"/>
+            <rect fill="#381F33" x="219" y="361" width="29" height="9" rx="4.5"/>
+          </g>
+        </g>
+</svg>

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="20 40 310 430" width="310" height="430">
+  <!-- Senja rig layer "prop-mug". Generated from senja-rig.svg by scripts/build-rig.mjs; edit the master. -->
+  <g id="prop-mug" data-outfit="pagi">
+    <path fill="none" stroke="#824A74" stroke-width="5" d="M298,425 C309,425 310,441 298,441"/>
+    <rect fill="#824A74" x="265" y="413" width="34" height="38" rx="6"/>
+    <ellipse fill="#6B3A2E" cx="282" cy="417" rx="13.5" ry="3"/>
+    <path fill="#FCD2A0" d="M282,441 C276,436 273,433 273,430 C273,427 276,425.5 278.5,425.5 C280,425.5 281.3,426.4 282,427.6 C282.7,426.4 284,425.5 285.5,425.5 C288,425.5 291,427 291,430 C291,433 288,436 282,441 Z"/>
+    <path id="steam-a" opacity="0.85" fill="none" stroke="#FEC995" stroke-width="3" stroke-linecap="round" d="M276,406 C272,400 280,396 276,388"/>
+    <path id="steam-b" opacity="0.85" fill="none" stroke="#FEC995" stroke-width="3" stroke-linecap="round" d="M288,404 C284,397 292,392 288,384"/>
+  </g>
+</svg>

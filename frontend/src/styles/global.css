@@ -1,4 +1,4 @@
-/* Design tokens — Sunset palette (lihat ui-design-brief §2). */
+/* Design tokens: palet Senja. */
 :root {
   --brand-peach: #ffb38a;
   --brand-sunset: #ff7a45;
@@ -7,9 +7,15 @@
 
   --action: #c2410c;
   --action-hover: #9a3412;
+  --badge-view-ink: #1f5fbf;
+  --badge-view-bg: #e5f0ff;
   --action-soft: #fff1ee;
+  /* Warna teks/ikon di atas latar --action (tombol utama, badge edit). */
+  --on-action: #ffffff;
 
   --bg: #fff1ee;
+  /* Kanvas krem hangat di belakang konten: kartu putih jadi menonjol. */
+  --canvas: #fff8f2;
   --surface: #ffffff;
   --surface-subtle: #fff8f6;
   --ink: #2b1b2e;
@@ -55,11 +61,37 @@
   --font-ui: 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
-  --radius-sm: 6px;
-  --radius: 8px;
+  /* Warna area: setiap bagian aplikasi punya satu warna yang konsisten di ikon,
+     header, dan kartu; pengguna belajar "di mana saya" dari warnanya. */
+  --area-database: #ff7a45;
+  --area-database-soft: #fff0e8;
+  --area-migration: #f0457a;
+  --area-migration-soft: #ffeaf1;
+  --area-diff: #7c5cff;
+  --area-diff-soft: #f1edff;
+  --area-admin: #0fa5a0;
+  --area-admin-soft: #e3f7f5;
+  --area-home: #f5a524;
+  --area-home-soft: #fff6e0;
+
+  /* Bentuk: ramah dan membulat, tetap rapi untuk tabel data. */
+  --radius-sm: 8px;
+  --radius: 12px;
   --radius-lg: 18px;
-  --shadow: 0 1px 2px rgb(43 27 46 / 5%);
+  --radius-xl: 24px;
+  --shadow: 0 1px 2px rgb(43 27 46 / 6%);
+  --shadow-card: 0 1px 2px rgb(43 27 46 / 5%), 0 6px 20px -6px rgb(43 27 46 / 12%);
+  --shadow-lift: 0 2px 4px rgb(43 27 46 / 6%), 0 14px 32px -10px rgb(43 27 46 / 22%);
   --shadow-lg: 0 12px 32px rgb(43 27 46 / 18%);
+
+  /* Gerak: durasi pendek untuk umpan balik, ease-out untuk masuk. */
+  --dur-instant: 100ms;
+  --dur-fast: 150ms;
+  --dur-base: 220ms;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  /* Sedikit melewati target lalu kembali: untuk elemen kecil yang "muncul". */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 
   --control-h: 2.25rem;
   --control-h-sm: 1.875rem;
@@ -84,9 +116,14 @@
 :root[data-theme='dark'] {
   color-scheme: dark;
 
+  /* Aksi lebih terang agar terbaca di atas plum; teks di atasnya jadi plum gelap. */
+  --action: #ff8a5c;
+  --action-hover: #ffa47e;
+  --on-action: #2b1b2e;
   --action-soft: #3a2026;
 
   --bg: #1e1420;
+  --canvas: #1e1420;
   --surface: #2b1b2e;
   --surface-subtle: #33223a;
   --ink: #fbeee9;
@@ -128,7 +165,19 @@
   --overlay: rgb(0 0 0 / 25%);
 
   --shadow: 0 1px 2px rgb(0 0 0 / 30%);
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 30%), 0 6px 20px -6px rgb(0 0 0 / 45%);
+  --shadow-lift: 0 2px 4px rgb(0 0 0 / 35%), 0 14px 32px -10px rgb(0 0 0 / 60%);
   --shadow-lg: 0 12px 32px rgb(0 0 0 / 45%);
+
+  /* Ubin area: warna area yang sama, latarnya digelapkan. */
+  --area-database-soft: #3e2822;
+  --area-migration-soft: #3e2131;
+  --area-diff-soft: #2c2547;
+  --area-admin-soft: #173634;
+  --area-home-soft: #3b2f18;
+
+  --badge-view-ink: #b3cdff;
+  --badge-view-bg: #1d2e4d;
 }
 
 * {
@@ -147,12 +196,10 @@ body,
 }
 
 html {
-  min-width: 320px;
   min-height: 100%;
 }
 
 body {
-  min-width: 320px;
   min-height: 100vh;
   margin: 0;
   background: var(--bg);
@@ -165,19 +212,22 @@ h3 {
   line-height: 1.25;
 }
 
+/* Skala tipe: 12, 14, 16, 20, 24, 32. Judul halaman 24px; aplikasi
+   operasional, bukan halaman pemasaran. */
 h1 {
-  font-size: 1.875rem;
+  font-size: clamp(1.5rem, 1.25rem + 0.9vw, 1.875rem);
   font-weight: 800;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
 }
 
 h2 {
-  font-size: 1.0625rem;
+  font-size: 1rem;
   font-weight: 700;
 }
 
 h3 {
-  font-size: 0.9375rem;
+  font-size: 0.875rem;
   font-weight: 700;
 }
 
@@ -222,23 +272,93 @@ img {
   gap: 0.4rem;
   height: var(--control-h);
   border: 1px solid transparent;
-  border-radius: 999px;
-  padding: 0 1.125rem;
+  border-radius: var(--radius);
+  padding: 0 1rem;
   cursor: pointer;
   font-size: 0.875rem;
   font-weight: 600;
   line-height: 1;
   text-decoration: none;
   white-space: nowrap;
+  touch-action: manipulation;
   transition:
-    background-color 120ms ease,
-    border-color 120ms ease,
-    color 120ms ease;
+    background-color var(--dur-instant) var(--ease-out),
+    border-color var(--dur-instant) var(--ease-out),
+    color var(--dur-instant) var(--ease-out),
+    transform var(--dur-instant) var(--ease-out);
 }
 
 .button svg {
   flex: none;
 }
+
+/* Umpan balik tekan: sedikit mengecil, tidak berubah bentuk. */
+.button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* Tombol utama sedikit "terangkat" saat disorot. */
+.button--primary {
+  box-shadow: 0 1px 2px rgb(194 65 12 / 25%), 0 6px 14px -6px rgb(194 65 12 / 45%);
+}
+
+.button--primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgb(194 65 12 / 25%), 0 10px 20px -8px rgb(194 65 12 / 55%);
+}
+
+.button--primary:active:not(:disabled) {
+  transform: translateY(0) scale(0.97);
+}
+
+/* ---------- Gerak bersama ---------- */
+
+/* Konten halaman naik pelan saat dibuka; anak-anaknya menyusul bergiliran. */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+}
+
+/* Gerak naik-turun lembut untuk ilustrasi Senja di empty state. */
+@keyframes float {
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes wave {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+
+  25% {
+    transform: rotate(-8deg);
+  }
+
+  75% {
+    transform: rotate(6deg);
+  }
+}
+
+.stagger > * {
+  animation: rise-in 420ms var(--ease-out) both;
+}
+
+.stagger > *:nth-child(2) { animation-delay: 40ms; }
+.stagger > *:nth-child(3) { animation-delay: 80ms; }
+.stagger > *:nth-child(4) { animation-delay: 120ms; }
+.stagger > *:nth-child(5) { animation-delay: 160ms; }
+.stagger > *:nth-child(n + 6) { animation-delay: 200ms; }
 
 .button:disabled {
   cursor: not-allowed;
@@ -247,7 +367,7 @@ img {
 
 .button--primary {
   border-color: var(--action);
-  color: #fff;
+  color: var(--on-action);
   background: var(--action);
 }
 
@@ -260,7 +380,6 @@ img {
   border-color: var(--line);
   color: var(--ink);
   background: var(--surface);
-  box-shadow: var(--shadow);
 }
 
 .button--secondary:hover:not(:disabled) {
@@ -289,15 +408,19 @@ img {
   background: #b42318;
 }
 
+/* Aksi berisiko yang diulang per baris: netral saat diam, merah saat disorot.
+   Konfirmasi yang menyebut targetnya tetap jadi pengaman utama. */
 .button--danger-outline {
-  border-color: #f4b8b3;
-  color: var(--danger);
+  border-color: var(--line);
+  color: var(--ink-soft);
   background: var(--surface);
 }
 
-.button--danger-outline:hover:not(:disabled) {
+.button--danger-outline:hover:not(:disabled),
+.button--danger-outline:focus-visible {
   border-color: var(--danger);
-  background: var(--danger-bg);
+  color: var(--danger-strong);
+  background: var(--danger-soft);
 }
 
 .button--small {

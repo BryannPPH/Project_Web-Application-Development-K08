@@ -15,6 +15,9 @@ export interface AdminGroup {
   name: string
   description: string | null
   memberCount: number
+  /** Milestone 2: leader group (null = belum ada). Leader wajib anggota group. */
+  leaderUserId: string | null
+  leaderUsername: string | null
   createdAt: string
   updatedAt: string
 }

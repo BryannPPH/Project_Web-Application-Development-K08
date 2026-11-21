@@ -85,7 +85,7 @@ describe('LoginPage', () => {
     fireEvent.click(submit)
 
     await waitFor(() => expect(submit).toBeDisabled())
-    expect(screen.getByRole('button', { name: 'Sedang masuk…' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Sedang masuk...' })).toBeDisabled()
     fireEvent.click(submit)
     expect(
       fetchMock.mock.calls.filter(([input]) =>
@@ -198,6 +198,6 @@ describe('LoginPage', () => {
     expect(document.querySelector('.login-hero__bubble')).toHaveTextContent(
       'Kelola, lihat, dan migrasikan database PostgreSQL Anda dengan aman.',
     )
-    expect(document.querySelector('img[src*="senja-waving"]')).toBeInTheDocument()
+    expect(document.querySelector('.login-hero__mascot[data-senja-loop="walk"] svg')).toBeInTheDocument()
   })
 })

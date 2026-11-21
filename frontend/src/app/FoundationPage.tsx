@@ -1,10 +1,10 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 
-import { RoleBadge } from '@/components/Badges'
 import { logoMarkLight, senja } from '@/components/brand'
-import { Icon } from '@/components/Icon'
+import { Icon, type IconName } from '@/components/Icon'
 import { ApiError } from '@/lib/api-client'
+import { useTheme } from '@/lib/theme'
 import { useCurrentUser } from '@/modules/auth/use-current-user'
 import { useLogout } from '@/modules/auth/use-logout'
 import { useAccessibleDatabase } from '@/modules/databases/api'
@@ -15,13 +15,25 @@ export function FoundationPage() {
   const currentUser = useCurrentUser()
   const logout = useLogout()
   const [menuOpen, setMenuOpen] = useState(false)
+  const { pathname } = useLocation()
   const user = currentUser.data
+
+  // Drawer mobile: Escape menutup menu, seperti dialog pada umumnya.
+  useEffect(() => {
+    if (!menuOpen) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenuOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [menuOpen])
 
   if (!user) {
     return null
   }
 
   const isAdmin = user.platformRole === 'platform_admin'
+  const pageKey = pathname.split('/').slice(0, 4).join('/')
 
   return (
     <div className={menuOpen ? 'workspace workspace--menu-open' : 'workspace'}>
@@ -36,41 +48,49 @@ export function FoundationPage() {
           </Link>
 
           <nav aria-label="Navigasi utama" className="sidebar__nav" onClick={() => setMenuOpen(false)}>
-            <NavLink end to="/">
-              <Icon name="dashboard" size={18} />
+            <NavLink data-area="home" end to="/">
+              <NavIcon name="dashboard" />
               Dashboard
             </NavLink>
-            <NavLink to="/databases">
-              <Icon name="database" size={18} />
+            <NavLink data-area="database" to="/databases">
+              <NavIcon name="database" />
               Database
             </NavLink>
             {/* Menu admin hanya UX; backend tetap menolak non-admin dengan 403. */}
             {isAdmin ? (
               <>
                 <span className="sidebar__section">Administrasi</span>
-                <NavLink to="/admin/users">
-                  <Icon name="user" size={18} />
+                <NavLink data-area="admin" to="/admin/users">
+                  <NavIcon name="user" />
                   User
                 </NavLink>
-                <NavLink to="/admin/groups">
-                  <Icon name="users" size={18} />
-                  Group &amp; akses
+                <NavLink data-area="admin" to="/admin/groups">
+                  <NavIcon name="users" />
+                  Group & akses
                 </NavLink>
-                <NavLink to="/admin/databases">
-                  <Icon name="plug" size={18} />
+                <NavLink data-area="admin" to="/admin/databases">
+                  <NavIcon name="plug" />
                   Koneksi database
                 </NavLink>
               </>
             ) : null}
           </nav>
 
-          {/* Kartu Senja di kiri bawah sekaligus tempat tombol keluar. */}
-          <div className="sidebar__card">
-            <img alt="" className="sidebar__card-art" src={senja.sleeping} />
-            <strong>Sudah selesai?</strong>
-            <p>Jangan lupa keluar agar sesi Anda tetap aman.</p>
+          {/* Akun di kaki sidebar (brief S02): siapa yang login, perannya, dan Keluar. */}
+          <div className="sidebar__account">
+            {/* Senja mengintip dari balik kartu akun; melambai saat disorot. */}
+            <img alt="" className="sidebar__peek" src={senja.waving} />
+            <span aria-hidden="true" className="sidebar__avatar">
+              {user.username.charAt(0).toUpperCase()}
+            </span>
+            <span className="sidebar__identity">
+              <span className="sidebar__username" title={user.username}>
+                {user.username}
+              </span>
+              <span className="sidebar__role">{isAdmin ? 'Admin platform' : 'Pengguna'}</span>
+            </span>
             <button
-              className="sidebar__card-button"
+              className="sidebar__logout"
               disabled={logout.isPending}
               onClick={() => logout.mutate()}
               type="button"
@@ -78,9 +98,9 @@ export function FoundationPage() {
               <Icon
                 className={logout.isPending ? 'spinner' : undefined}
                 name={logout.isPending ? 'loader' : 'logout'}
-                size={15}
+                size={16}
               />
-              {logout.isPending ? 'Keluar…' : 'Keluar'}
+              {logout.isPending ? 'Keluar...' : 'Keluar'}
             </button>
           </div>
         </aside>
@@ -106,15 +126,7 @@ export function FoundationPage() {
               <Icon name={menuOpen ? 'close' : 'menu'} size={20} />
             </button>
             <Breadcrumb />
-            <div className="topbar__user">
-              <div className="topbar__identity">
-                <span className="topbar__username">{user.username}</span>
-                <RoleBadge role={user.platformRole} />
-              </div>
-              <span aria-hidden="true" className="topbar__avatar">
-                {user.username.charAt(0).toUpperCase()}
-              </span>
-            </div>
+            <ThemeToggle />
           </header>
 
           <main className="workspace-main">
@@ -126,7 +138,10 @@ export function FoundationPage() {
                   : 'Logout gagal. Silakan coba lagi.'}
               </p>
             ) : null}
-            <Outlet />
+            {/* Animasi masuk diputar ulang per halaman, bukan per klik table di viewer. */}
+            <div className="page-enter" key={pageKey}>
+              <Outlet />
+            </div>
           </main>
         </div>
       </div>
@@ -207,5 +222,33 @@ function Breadcrumb() {
 
 function DatabaseCrumb({ id }: { id: string }) {
   const database = useAccessibleDatabase(id)
-  return <>{database.data?.name ?? '…'}</>
+  return <>{database.data?.name ?? '...'}</>
+}
+
+// ThemeToggle: ganti mode terang/gelap. Ikon menunjukkan mode yang akan dipilih
+// (bulan = ke mode gelap), label lengkap tetap tersedia untuk pembaca layar.
+function ThemeToggle() {
+  const { theme, toggle } = useTheme()
+  const dark = theme === 'dark'
+  return (
+    <button
+      aria-label={dark ? 'Ganti ke mode terang' : 'Ganti ke mode gelap'}
+      aria-pressed={dark}
+      className="button button--ghost button--icon topbar__theme"
+      onClick={toggle}
+      title={dark ? 'Mode terang' : 'Mode gelap'}
+      type="button"
+    >
+      <Icon name={dark ? 'sun' : 'moon'} size={18} />
+    </button>
+  )
+}
+
+// NavIcon: ikon menu di dalam ubin berwarna sesuai area (lihat workspace.css).
+function NavIcon({ name }: { name: IconName }) {
+  return (
+    <span aria-hidden="true" className="nav-icon">
+      <Icon name={name} size={17} />
+    </span>
+  )
 }

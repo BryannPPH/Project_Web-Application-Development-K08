@@ -11,6 +11,8 @@ export interface MigrationEntry {
   id: string
   databaseId: string
   version: number
+  /** Milestone 2: naik setiap nama/SQL diedit. Approval berlaku per revisi. */
+  revision: number
   name: string
   sql: string
   status: MigrationStatus
@@ -42,6 +44,44 @@ export interface MigrationPage {
   offset: number
   total: number
   canEdit: boolean
+}
+
+// ---------- Approval (Milestone 2 - Person A) ----------
+
+export type ApprovalAction = 'apply' | 'rollback' | 'forward'
+export type ApprovalDecision = 'approved' | 'rejected'
+/** approved = boleh jalan; pending = menunggu leader; rejected = ada yang menolak;
+ *  blocked = ada group ber-akses yang belum punya leader. */
+export type ApprovalStatus = 'approved' | 'pending' | 'rejected' | 'blocked'
+
+export interface ApprovalGroup {
+  groupId: string
+  groupName: string
+  accessLevel: 'view_only' | 'view_edit'
+  leader: { userId: string; username: string } | null
+  decision: ApprovalDecision | null
+  note: string | null
+  decidedAt: string | null
+}
+
+export interface ApprovalReview {
+  migrationId: string
+  databaseId: string
+  action: ApprovalAction
+  revision: number
+  status: ApprovalStatus
+  groups: ApprovalGroup[]
+  approvedCount: number
+  requiredCount: number
+  canDecide: boolean
+  myDecision: ApprovalDecision | null
+}
+
+export interface ApprovalInput {
+  action: ApprovalAction
+  revision: number
+  decision: ApprovalDecision
+  note?: string
 }
 
 export interface DraftInput {

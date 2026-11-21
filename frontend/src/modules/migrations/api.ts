@@ -1,5 +1,14 @@
 import { apiRequest } from '@/lib/api-client'
-import type { DraftInput, ExplainResult, MigrationEntry, MigrationPage, ReconciliationInput } from '@/modules/migrations/types'
+import type {
+  ApprovalAction,
+  ApprovalInput,
+  ApprovalReview,
+  DraftInput,
+  ExplainResult,
+  MigrationEntry,
+  MigrationPage,
+  ReconciliationInput,
+} from '@/modules/migrations/types'
 
 function migrationPath(databaseId: string, suffix = '') {
   return `/databases/${encodeURIComponent(databaseId)}/migrations${suffix}`
@@ -43,4 +52,20 @@ export function explainMigrationSQL(databaseId: string, sql: string, analyze: bo
     method: 'POST',
     json: { sql, analyze },
   })
+}
+
+export async function getApprovalReview(databaseId: string, migrationId: string, action: ApprovalAction, signal?: AbortSignal) {
+  const response = await apiRequest<{ review: ApprovalReview }>(
+    migrationPath(databaseId, `/${encodeURIComponent(migrationId)}/approvals?action=${action}`),
+    { signal },
+  )
+  return response.review
+}
+
+export async function decideApproval(databaseId: string, migrationId: string, input: ApprovalInput) {
+  const response = await apiRequest<{ review: ApprovalReview }>(
+    migrationPath(databaseId, `/${encodeURIComponent(migrationId)}/approvals`),
+    { method: 'POST', json: input },
+  )
+  return response.review
 }

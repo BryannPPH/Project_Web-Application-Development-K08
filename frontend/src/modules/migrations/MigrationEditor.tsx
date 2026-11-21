@@ -10,6 +10,8 @@ interface MigrationEditorProps {
   disabled?: boolean
   pending?: boolean
   submitLabel: string
+  // true bila simpan adalah aksi utama halaman (buat draft); false bila ada aksi lain yang lebih utama (Jalankan).
+  primary?: boolean
   onSubmit: (input: DraftInput) => void
   // false untuk target (mis. MySQL) yang melakukan implicit commit pada DDL.
   transactionalDdl?: boolean
@@ -20,6 +22,7 @@ interface MigrationEditorProps {
 export function MigrationEditor({
   initialValue = { name: '', sql: '' },
   disabled = false,
+  primary = false,
   pending = false,
   submitLabel,
   onSubmit,
@@ -95,8 +98,8 @@ export function MigrationEditor({
       ) : null}
       {!disabled ? (
         <div className="migration-editor__actions">
-          <button className="button button--secondary" disabled={pending} type="submit">
-            {pending ? 'Menyimpan…' : submitLabel}
+          <button className={primary ? 'button button--primary' : 'button button--secondary'} disabled={pending} type="submit">
+            {pending ? 'Menyimpan...' : submitLabel}
           </button>
         </div>
       ) : null}
