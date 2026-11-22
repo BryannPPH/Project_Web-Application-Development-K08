@@ -28,6 +28,23 @@ type MigrationService interface {
 	Reconcile(context.Context, auth.Principal, string, string, string) (Entry, error)
 }
 
+type DefinitionMigrationService interface {
+	CreateDraftWithDefinition(context.Context, auth.Principal, string, Definition) (Entry, error)
+	UpdateDraftWithDefinition(context.Context, auth.Principal, string, string, Definition) (Entry, error)
+}
+
+type ExecutionActionService interface {
+	Retry(context.Context, auth.Principal, string, string) (Entry, error)
+	Rollback(context.Context, auth.Principal, string, string) (Entry, error)
+	Forward(context.Context, auth.Principal, string, string) (Entry, error)
+}
+
+type HistoryMigrationService interface {
+	ListHistory(context.Context, auth.Principal, string, HistoryOptions) (HistoryPage, error)
+	GetExecution(context.Context, auth.Principal, string, string) (ExecutionAttempt, error)
+	GetBatchProgress(context.Context, auth.Principal, string, string) (BatchProgress, error)
+}
+
 type Handler struct {
 	service             MigrationService
 	logger              *slog.Logger
@@ -57,12 +74,24 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, security *httpapi.AuthMiddl
 	mux.Handle("GET /api/v1/databases/{databaseId}/migrations/{migrationId}", read(http.HandlerFunc(h.detail)))
 	mux.Handle("PATCH /api/v1/databases/{databaseId}/migrations/{migrationId}", mutate(http.HandlerFunc(h.update)))
 	mux.Handle("POST /api/v1/databases/{databaseId}/migrations/{migrationId}/execute", mutate(http.HandlerFunc(h.execute)))
+	mux.Handle("POST /api/v1/databases/{databaseId}/migrations/{migrationId}/retry", mutate(http.HandlerFunc(h.retry)))
+	mux.Handle("POST /api/v1/databases/{databaseId}/migrations/{migrationId}/rollback", mutate(http.HandlerFunc(h.rollback)))
+	mux.Handle("POST /api/v1/databases/{databaseId}/migrations/{migrationId}/forward", mutate(http.HandlerFunc(h.forward)))
 	mux.Handle("POST /api/v1/databases/{databaseId}/migrations/{migrationId}/reconcile", mutate(http.HandlerFunc(h.reconcile)))
+	mux.Handle("GET /api/v1/databases/{databaseId}/migration-history", read(http.HandlerFunc(h.history)))
+	mux.Handle("GET /api/v1/databases/{databaseId}/migration-executions/{executionId}", read(http.HandlerFunc(h.executionDetail)))
+	mux.Handle("GET /api/v1/databases/{databaseId}/migration-executions/{executionId}/progress", read(http.HandlerFunc(h.executionProgress)))
 }
 
 type draftRequest struct {
-	Name string `json:"name"`
-	SQL  string `json:"sql"`
+	Name               string        `json:"name"`
+	SQL                string        `json:"sql"`
+	DownSQL            *string       `json:"downSql"`
+	IrreversibleReason *string       `json:"irreversibleReason"`
+	ExecutionMode      ExecutionMode `json:"executionMode"`
+	BatchSelectSQL     *string       `json:"batchSelectSql"`
+	BatchSize          *int          `json:"batchSize"`
+	BatchCursorStart   int64         `json:"batchCursorStart"`
 }
 
 type reconcileRequest struct {
@@ -79,7 +108,13 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &request, h.maxSQLJSONBodyBytes) {
 		return
 	}
-	entry, err := h.service.CreateDraft(r.Context(), principal, databaseID, request.Name, request.SQL)
+	var entry Entry
+	var err error
+	if definitionService, ok := h.service.(DefinitionMigrationService); ok {
+		entry, err = definitionService.CreateDraftWithDefinition(r.Context(), principal, databaseID, request.definition())
+	} else {
+		entry, err = h.service.CreateDraft(r.Context(), principal, databaseID, request.Name, request.SQL)
+	}
 	if err != nil {
 		h.writeServiceError(w, r, err)
 		return
@@ -96,12 +131,30 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &request, h.maxSQLJSONBodyBytes) {
 		return
 	}
-	entry, err := h.service.UpdateDraft(r.Context(), principal, databaseID, r.PathValue("migrationId"), request.Name, request.SQL)
+	var entry Entry
+	var err error
+	if definitionService, ok := h.service.(DefinitionMigrationService); ok && request.hasDefinition() {
+		entry, err = definitionService.UpdateDraftWithDefinition(r.Context(), principal, databaseID, r.PathValue("migrationId"), request.definition())
+	} else {
+		entry, err = h.service.UpdateDraft(r.Context(), principal, databaseID, r.PathValue("migrationId"), request.Name, request.SQL)
+	}
 	if err != nil {
 		h.writeServiceError(w, r, err)
 		return
 	}
 	writeMigrationJSON(w, http.StatusOK, entry)
+}
+
+func (request draftRequest) definition() Definition {
+	return Definition{Name: request.Name, SQL: request.SQL, DownSQL: request.DownSQL,
+		IrreversibleReason: request.IrreversibleReason, ExecutionMode: request.ExecutionMode,
+		BatchSelectSQL: request.BatchSelectSQL, BatchSize: request.BatchSize,
+		BatchCursorStart: request.BatchCursorStart}
+}
+
+func (request draftRequest) hasDefinition() bool {
+	return request.DownSQL != nil || request.IrreversibleReason != nil || request.ExecutionMode != "" ||
+		request.BatchSelectSQL != nil || request.BatchSize != nil || request.BatchCursorStart != 0
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
@@ -151,6 +204,117 @@ func (h *Handler) execute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeMigrationJSON(w, http.StatusOK, entry)
+}
+
+func (h *Handler) retry(w http.ResponseWriter, r *http.Request) {
+	h.runAction(w, r, ActionRetry)
+}
+
+func (h *Handler) rollback(w http.ResponseWriter, r *http.Request) {
+	h.runAction(w, r, ActionRollback)
+}
+
+func (h *Handler) forward(w http.ResponseWriter, r *http.Request) {
+	h.runAction(w, r, ActionForward)
+}
+
+func (h *Handler) runAction(w http.ResponseWriter, r *http.Request, action ExecutionAction) {
+	databaseID, principal, ok := requestIdentity(w, r, true)
+	if !ok {
+		return
+	}
+	actionService, ok := h.service.(interface {
+		ExecuteAction(context.Context, auth.Principal, string, string, ExecutionAction) (Entry, error)
+	})
+	if !ok {
+		writeMigrationError(w, http.StatusConflict, "MIGRATION_CONFLICT", "migration action is unavailable")
+		return
+	}
+	entry, err := actionService.ExecuteAction(r.Context(), principal, databaseID, r.PathValue("migrationId"), action)
+	if err != nil {
+		h.writeServiceError(w, r, err)
+		return
+	}
+	writeMigrationJSON(w, http.StatusOK, entry)
+}
+
+func (h *Handler) history(w http.ResponseWriter, r *http.Request) {
+	databaseID, principal, ok := requestIdentity(w, r, false)
+	if !ok {
+		return
+	}
+	service, ok := h.service.(HistoryMigrationService)
+	if !ok {
+		writeMigrationError(w, http.StatusConflict, "MIGRATION_CONFLICT", "migration history is unavailable")
+		return
+	}
+	limit, valid := queryInteger(r, "limit", DefaultPageSize)
+	if !valid {
+		writeMigrationError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid pagination")
+		return
+	}
+	offset, valid := queryInteger(r, "offset", 0)
+	if !valid {
+		writeMigrationError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid pagination")
+		return
+	}
+	executionID := strings.TrimSpace(r.URL.Query().Get("executionId"))
+	if executionID != "" && !uuidPattern.MatchString(executionID) {
+		writeMigrationError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid execution identifier")
+		return
+	}
+	page, err := service.ListHistory(r.Context(), principal, databaseID, HistoryOptions{Limit: limit, Offset: offset, ExecutionID: executionID})
+	if err != nil {
+		h.writeServiceError(w, r, err)
+		return
+	}
+	writeMigrationJSON(w, http.StatusOK, page)
+}
+
+func (h *Handler) executionDetail(w http.ResponseWriter, r *http.Request) {
+	databaseID, principal, ok := requestIdentity(w, r, false)
+	if !ok {
+		return
+	}
+	executionID := r.PathValue("executionId")
+	if !uuidPattern.MatchString(executionID) {
+		writeMigrationError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid execution identifier")
+		return
+	}
+	service, ok := h.service.(HistoryMigrationService)
+	if !ok {
+		writeMigrationError(w, http.StatusConflict, "MIGRATION_CONFLICT", "migration history is unavailable")
+		return
+	}
+	attempt, err := service.GetExecution(r.Context(), principal, databaseID, executionID)
+	if err != nil {
+		h.writeServiceError(w, r, err)
+		return
+	}
+	writeMigrationJSON(w, http.StatusOK, attempt)
+}
+
+func (h *Handler) executionProgress(w http.ResponseWriter, r *http.Request) {
+	databaseID, principal, ok := requestIdentity(w, r, false)
+	if !ok {
+		return
+	}
+	executionID := r.PathValue("executionId")
+	if !uuidPattern.MatchString(executionID) {
+		writeMigrationError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid execution identifier")
+		return
+	}
+	service, ok := h.service.(HistoryMigrationService)
+	if !ok {
+		writeMigrationError(w, http.StatusConflict, "MIGRATION_CONFLICT", "migration progress is unavailable")
+		return
+	}
+	progress, err := service.GetBatchProgress(r.Context(), principal, databaseID, executionID)
+	if err != nil {
+		h.writeServiceError(w, r, err)
+		return
+	}
+	writeMigrationJSON(w, http.StatusOK, progress)
 }
 
 func (h *Handler) reconcile(w http.ResponseWriter, r *http.Request) {
@@ -257,6 +421,10 @@ func (h *Handler) writeServiceError(w http.ResponseWriter, r *http.Request, err 
 		writeMigrationError(w, http.StatusConflict, "MIGRATION_CONFLICT", "migration is no longer an editable draft")
 	case errors.Is(err, ErrWrongOrder):
 		writeMigrationError(w, http.StatusConflict, "MIGRATION_ORDER_BLOCKED", "an earlier migration blocks execution")
+	case errors.Is(err, ErrIrreversible):
+		writeMigrationError(w, http.StatusConflict, "MIGRATION_IRREVERSIBLE", "migration is marked irreversible and cannot be rolled back")
+	case errors.Is(err, ErrNoAttempt):
+		writeMigrationError(w, http.StatusNotFound, "EXECUTION_NOT_FOUND", "migration execution not found")
 	case errors.Is(err, ErrInvalidInput):
 		writeMigrationError(w, http.StatusBadRequest, "INVALID_INPUT", "migration name or SQL is invalid")
 	case errors.Is(err, ErrSQLPolicy):

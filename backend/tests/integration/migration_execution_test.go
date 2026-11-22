@@ -140,8 +140,54 @@ func TestMigrationExecutionCommitAndRollback(t *testing.T) {
 	t.Cleanup(func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cleanupCancel()
-		if _, err := platform.Exec(cleanupCtx, `DELETE FROM migration_entries WHERE database_id=$1`, databaseID); err != nil {
+		cleanupTx, err := platform.Begin(cleanupCtx)
+		if err != nil {
+			t.Errorf("begin migration fixture cleanup: %v", err)
+			return
+		}
+		defer func() { _ = cleanupTx.Rollback(context.Background()) }()
+		for _, statement := range []string{
+			`ALTER TABLE migration_execution_events DISABLE TRIGGER migration_execution_events_append_only`,
+			`ALTER TABLE migration_execution_attempts DISABLE TRIGGER migration_execution_attempts_append_only`,
+		} {
+			if _, err := cleanupTx.Exec(cleanupCtx, statement); err != nil {
+				t.Errorf("cleanup trigger setup %q: %v", statement, err)
+				return
+			}
+		}
+		if _, err := cleanupTx.Exec(cleanupCtx, `DELETE FROM migration_execution_events WHERE execution_id IN (
+			SELECT id FROM migration_execution_attempts WHERE database_id=$1)`, databaseID); err != nil {
+			t.Errorf("cleanup migration execution events: %v", err)
+			return
+		}
+		for {
+			command, err := cleanupTx.Exec(cleanupCtx, `DELETE FROM migration_execution_attempts a
+				WHERE a.database_id=$1 AND NOT EXISTS (
+					SELECT 1 FROM migration_execution_attempts child WHERE child.related_execution_id=a.id)`, databaseID)
+			if err != nil {
+				t.Errorf("cleanup migration execution attempts: %v", err)
+				return
+			}
+			if command.RowsAffected() == 0 {
+				break
+			}
+		}
+		if _, err := cleanupTx.Exec(cleanupCtx, `DELETE FROM migration_entries WHERE database_id=$1`, databaseID); err != nil {
 			t.Errorf("cleanup migration entries: %v", err)
+			return
+		}
+		for _, statement := range []string{
+			`ALTER TABLE migration_execution_events ENABLE TRIGGER migration_execution_events_append_only`,
+			`ALTER TABLE migration_execution_attempts ENABLE TRIGGER migration_execution_attempts_append_only`,
+		} {
+			if _, err := cleanupTx.Exec(cleanupCtx, statement); err != nil {
+				t.Errorf("cleanup trigger restore %q: %v", statement, err)
+				return
+			}
+		}
+		if err := cleanupTx.Commit(cleanupCtx); err != nil {
+			t.Errorf("commit migration fixture cleanup: %v", err)
+			return
 		}
 		if _, err := platform.Exec(cleanupCtx, `DELETE FROM managed_databases WHERE id=$1`, databaseID); err != nil {
 			t.Errorf("cleanup managed database: %v", err)
@@ -280,6 +326,182 @@ func TestMigrationExecutionCommitAndRollback(t *testing.T) {
 	}
 	if len(seen) != concurrentDrafts {
 		t.Fatalf("allocated %d concurrent versions, want %d", len(seen), concurrentDrafts)
+	}
+}
+
+func TestMigrationHistoryRollbackForwardAndImmutableSQL(t *testing.T) {
+	platformURL := os.Getenv("TEST_PLATFORM_DATABASE_URL")
+	targetURL := os.Getenv("TEST_TARGET_DATABASE_URL")
+	if platformURL == "" {
+		t.Skip("platform test database URL is required")
+	}
+	if targetURL == "" {
+		targetURL = loadTargetSettings(t).url()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	platform, err := pgxpool.New(ctx, platformURL)
+	if err != nil {
+		t.Fatalf("connect platform database: %v", err)
+	}
+	t.Cleanup(platform.Close)
+	target, err := pgx.Connect(ctx, targetURL)
+	if err != nil {
+		t.Fatalf("connect target database: %v", err)
+	}
+	t.Cleanup(func() { _ = target.Close(context.Background()) })
+
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	table := "migration_reversible_" + suffix
+	username, databaseName := "history_user_"+suffix, "history_db_"+suffix
+	var userID, databaseID string
+	if err := platform.QueryRow(ctx, `INSERT INTO users (username,password_hash) VALUES ($1,'test-only') RETURNING id::text`, username).Scan(&userID); err != nil {
+		t.Fatalf("create migration user: %v", err)
+	}
+	if err := platform.QueryRow(ctx, `INSERT INTO managed_databases
+		(name,host,database_name,username,credential_ciphertext,ssl_mode)
+		VALUES ($1,'localhost','target_db','target_owner',$2,'disable') RETURNING id::text`,
+		databaseName, []byte("test-only")).Scan(&databaseID); err != nil {
+		t.Fatalf("create managed database: %v", err)
+	}
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cleanupCancel()
+		_, _ = target.Exec(cleanupCtx, `DROP TABLE IF EXISTS `+table+`_next`)
+		_, _ = target.Exec(cleanupCtx, `DROP TABLE IF EXISTS `+table)
+		cleanupTx, beginErr := platform.Begin(cleanupCtx)
+		if beginErr != nil {
+			t.Errorf("begin execution ledger cleanup: %v", beginErr)
+			return
+		}
+		defer func() { _ = cleanupTx.Rollback(context.Background()) }()
+		for _, statement := range []string{
+			`ALTER TABLE migration_execution_events DISABLE TRIGGER migration_execution_events_append_only`,
+			`ALTER TABLE migration_execution_attempts DISABLE TRIGGER migration_execution_attempts_append_only`,
+		} {
+			if _, err := cleanupTx.Exec(cleanupCtx, statement); err != nil {
+				t.Errorf("disable history trigger: %v", err)
+				return
+			}
+		}
+		if _, err := cleanupTx.Exec(cleanupCtx, `DELETE FROM migration_execution_events WHERE execution_id IN (
+			SELECT id FROM migration_execution_attempts WHERE database_id=$1)`, databaseID); err != nil {
+			t.Errorf("delete execution events: %v", err)
+			return
+		}
+		for {
+			command, err := cleanupTx.Exec(cleanupCtx, `DELETE FROM migration_execution_attempts a
+				WHERE a.database_id=$1 AND NOT EXISTS (SELECT 1 FROM migration_execution_attempts child WHERE child.related_execution_id=a.id)`, databaseID)
+			if err != nil {
+				t.Errorf("delete execution attempts: %v", err)
+				return
+			}
+			if command.RowsAffected() == 0 {
+				break
+			}
+		}
+		if _, err := cleanupTx.Exec(cleanupCtx, `DELETE FROM migration_entries WHERE database_id=$1`, databaseID); err != nil {
+			t.Errorf("delete migration definitions: %v", err)
+			return
+		}
+		for _, statement := range []string{
+			`ALTER TABLE migration_execution_events ENABLE TRIGGER migration_execution_events_append_only`,
+			`ALTER TABLE migration_execution_attempts ENABLE TRIGGER migration_execution_attempts_append_only`,
+		} {
+			if _, err := cleanupTx.Exec(cleanupCtx, statement); err != nil {
+				t.Errorf("enable history trigger: %v", err)
+				return
+			}
+		}
+		if err := cleanupTx.Commit(cleanupCtx); err != nil {
+			t.Errorf("commit execution ledger cleanup: %v", err)
+			return
+		}
+		if _, err := platform.Exec(cleanupCtx, `DELETE FROM managed_databases WHERE id=$1`, databaseID); err != nil {
+			t.Errorf("delete managed database: %v", err)
+		}
+		if _, err := platform.Exec(cleanupCtx, `DELETE FROM users WHERE id=$1`, userID); err != nil {
+			t.Errorf("delete migration user: %v", err)
+		}
+	})
+
+	repository := migration.NewPGRepository(platform)
+	service, err := migration.NewService(repository, allowMigrationAccess{}, migration.NewPGAdvisoryLocker(platform),
+		migration.NewPGExecutor(integrationTargetProvider{url: targetURL}), approveAll{}, migration.RealClock{},
+		slog.New(slog.NewTextHandler(io.Discard, nil)), migration.ServiceConfig{ExecutionTimeout: 20 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	principal := auth.Principal{UserID: userID, Username: username}
+	up := fmt.Sprintf(`CREATE TABLE %s(id bigint PRIMARY KEY)`, table)
+	down := fmt.Sprintf(`DROP TABLE %s`, table)
+	entry, err := service.CreateDraftWithDefinition(ctx, principal, databaseID, migration.Definition{
+		Name: "reversible table", SQL: up, DownSQL: &down, ExecutionMode: migration.ExecutionModeSingle,
+	})
+	if err != nil {
+		t.Fatalf("create reversible definition: %v", err)
+	}
+	entry, err = service.Execute(ctx, principal, databaseID, entry.ID)
+	if err != nil || entry.Status != migration.StatusSucceeded || !entry.IsActive || entry.LatestExecutionID == nil {
+		t.Fatalf("apply migration = %#v, error %v", entry, err)
+	}
+	applyID := *entry.LatestExecutionID
+	rolledBack, err := service.Rollback(ctx, principal, databaseID, entry.ID)
+	if err != nil || rolledBack.Status != migration.StatusRolledBack || rolledBack.IsActive {
+		t.Fatalf("rollback migration = %#v, error %v", rolledBack, err)
+	}
+	rollbackID := *rolledBack.LatestExecutionID
+	forwarded, err := service.Forward(ctx, principal, databaseID, entry.ID)
+	if err != nil || forwarded.Status != migration.StatusSucceeded || !forwarded.IsActive {
+		t.Fatalf("forward migration = %#v, error %v", forwarded, err)
+	}
+	forwardID := *forwarded.LatestExecutionID
+	for executionID, want := range map[string]struct {
+		action  migration.ExecutionAction
+		sql     string
+		related string
+	}{
+		applyID:    {migration.ActionApply, up, ""},
+		rollbackID: {migration.ActionRollback, down, applyID},
+		forwardID:  {migration.ActionForward, up, rollbackID},
+	} {
+		attempt, err := repository.GetHistory(ctx, databaseID, executionID)
+		if err != nil {
+			t.Fatalf("get execution %s: %v", executionID, err)
+		}
+		if attempt.Action != want.action || attempt.SQLSnapshot != want.sql || attempt.Status != string(migration.StatusSucceeded) {
+			t.Fatalf("execution %s = %#v, want action=%s SQL=%q status=succeeded", executionID, attempt, want.action, want.sql)
+		}
+		if want.related == "" && attempt.RelatedExecutionID != nil ||
+			want.related != "" && (attempt.RelatedExecutionID == nil || *attempt.RelatedExecutionID != want.related) {
+			t.Fatalf("execution %s related ID=%v, want %q", executionID, attempt.RelatedExecutionID, want.related)
+		}
+	}
+	filtered, err := repository.ListHistory(ctx, databaseID, migration.HistoryOptions{Limit: 10, ExecutionID: rollbackID})
+	if err != nil || filtered.Total != 1 || len(filtered.Items) != 1 || filtered.Items[0].ID != rollbackID {
+		t.Fatalf("execution ID filter = %#v, error %v", filtered, err)
+	}
+	if _, err := platform.Exec(ctx, `UPDATE migration_entries SET sql_text='SELECT 42' WHERE id=$1`, entry.ID); err == nil {
+		t.Fatal("executed migration definition was mutable")
+	}
+
+	nextDown := "DROP TABLE does_not_exist"
+	next, err := service.CreateDraftWithDefinition(ctx, principal, databaseID, migration.Definition{
+		Name: "failed rollback", SQL: fmt.Sprintf(`CREATE TABLE %s_next(id bigint)`, table),
+		DownSQL: &nextDown, ExecutionMode: migration.ExecutionModeSingle,
+	})
+	if err != nil {
+		t.Fatalf("create second migration: %v", err)
+	}
+	if next, err = service.Execute(ctx, principal, databaseID, next.ID); err != nil || !next.IsActive {
+		t.Fatalf("apply second migration = %#v, error %v", next, err)
+	}
+	failedRollback, err := service.Rollback(ctx, principal, databaseID, next.ID)
+	if err != nil || failedRollback.Status != migration.StatusSucceeded || !failedRollback.IsActive {
+		t.Fatalf("failed rollback changed active position: entry=%#v error=%v", failedRollback, err)
+	}
+	if _, err := service.Rollback(ctx, principal, databaseID, entry.ID); !errors.Is(err, migration.ErrWrongOrder) {
+		t.Fatalf("rollback of earlier active migration error=%v, want order conflict", err)
 	}
 }
 

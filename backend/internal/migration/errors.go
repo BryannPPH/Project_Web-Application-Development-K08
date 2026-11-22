@@ -10,4 +10,6 @@ var (
 	ErrSQLPolicy    = errors.New("sql violates migration policy")
 	// ErrRevisionChanged: SQL diedit setelah gerbang approval dicek.
 	ErrRevisionChanged = errors.New("migration revision changed during execution request")
+	ErrNoAttempt       = errors.New("migration has no execution attempt")
+	ErrIrreversible    = errors.New("migration is irreversible")
 )

@@ -232,15 +232,62 @@ func (h *platformHarness) cleanup() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	like := strings.ReplaceAll(h.prefix, "_", `\_`) + "%"
+	tx, err := h.database.Begin(ctx)
+	if err != nil {
+		h.t.Errorf("begin fixture cleanup: %v", err)
+		return
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	for _, statement := range []string{
+		`ALTER TABLE migration_execution_events DISABLE TRIGGER migration_execution_events_append_only`,
+		`ALTER TABLE migration_execution_attempts DISABLE TRIGGER migration_execution_attempts_append_only`,
+	} {
+		if _, err := tx.Exec(ctx, statement); err != nil {
+			h.t.Errorf("cleanup trigger setup %q: %v", statement, err)
+			return
+		}
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM migration_execution_events WHERE execution_id IN (
+			SELECT a.id FROM migration_execution_attempts a
+			JOIN migration_entries m ON m.id=a.migration_id
+			JOIN managed_databases d ON d.id=m.database_id WHERE d.name LIKE $1)`, like); err != nil {
+		h.t.Errorf("cleanup migration execution events: %v", err)
+		return
+	}
 	statements := []string{
 		`DELETE FROM migration_entries WHERE database_id IN (SELECT id FROM managed_databases WHERE name LIKE $1)`,
 		`DELETE FROM groups WHERE name LIKE $1`,
 		`DELETE FROM managed_databases WHERE name LIKE $1`,
 		`DELETE FROM users WHERE username LIKE $1`,
 	}
-	for _, statement := range statements {
-		if _, err := h.database.Exec(ctx, statement, like); err != nil {
-			h.t.Errorf("cleanup %q: %v", statement, err)
+	for {
+		command, err := tx.Exec(ctx, `DELETE FROM migration_execution_attempts a
+			WHERE a.database_id IN (SELECT id FROM managed_databases WHERE name LIKE $1)
+			AND NOT EXISTS (SELECT 1 FROM migration_execution_attempts child WHERE child.related_execution_id=a.id)`, like)
+		if err != nil {
+			h.t.Errorf("cleanup migration execution attempts: %v", err)
+			return
 		}
+		if command.RowsAffected() == 0 {
+			break
+		}
+	}
+	for _, statement := range statements {
+		if _, err := tx.Exec(ctx, statement, like); err != nil {
+			h.t.Errorf("cleanup %q: %v", statement, err)
+			return
+		}
+	}
+	for _, statement := range []string{
+		`ALTER TABLE migration_execution_events ENABLE TRIGGER migration_execution_events_append_only`,
+		`ALTER TABLE migration_execution_attempts ENABLE TRIGGER migration_execution_attempts_append_only`,
+	} {
+		if _, err := tx.Exec(ctx, statement); err != nil {
+			h.t.Errorf("cleanup trigger restore %q: %v", statement, err)
+			return
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		h.t.Errorf("commit fixture cleanup: %v", err)
 	}
 }

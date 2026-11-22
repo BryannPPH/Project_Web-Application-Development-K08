@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 	"time"
@@ -16,9 +17,19 @@ import (
 
 type PGExecutor struct {
 	provider targetdb.Provider
+	logger   *slog.Logger
 }
 
-func NewPGExecutor(provider targetdb.Provider) *PGExecutor { return &PGExecutor{provider: provider} }
+func NewPGExecutor(provider targetdb.Provider) *PGExecutor {
+	return NewPGExecutorWithLogger(provider, nil)
+}
+
+func NewPGExecutorWithLogger(provider targetdb.Provider, logger *slog.Logger) *PGExecutor {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &PGExecutor{provider: provider, logger: logger}
+}
 
 func (e *PGExecutor) Validate(ctx context.Context, databaseID, sqlText string) error {
 	connection, err := e.provider.Open(ctx, databaseID)

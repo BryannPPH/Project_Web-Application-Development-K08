@@ -3,9 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/app"
@@ -29,7 +32,19 @@ func run() error {
 		return fmt.Errorf("load configuration: %w", err)
 	}
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	logWriter := io.Writer(os.Stdout)
+	if logPath := strings.TrimSpace(os.Getenv("APP_LOG_FILE")); logPath != "" {
+		if err := os.MkdirAll(filepath.Dir(logPath), 0750); err != nil {
+			return fmt.Errorf("create application log directory: %w", err)
+		}
+		logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			return fmt.Errorf("open application log file: %w", err)
+		}
+		defer logFile.Close()
+		logWriter = io.MultiWriter(os.Stdout, logFile)
+	}
+	logger := slog.New(slog.NewJSONHandler(logWriter, &slog.HandlerOptions{
 		Level: cfg.LogLevel,
 	}))
 

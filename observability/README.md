@@ -12,6 +12,52 @@ docker compose --profile observability up -d
 | Prometheus | http://localhost:9090 | scrape `backend:8080/metrics` setiap 15 detik |
 | Grafana | http://localhost:3000 | login `admin` / `admin` (ubah lewat `GRAFANA_ADMIN_PASSWORD`) |
 
+Collector, Loki, Tempo, and Grafana provisioning:
+
+- OpenTelemetry Collector: http://localhost:4317 (gRPC) and http://localhost:4318 (HTTP)
+- Loki: http://localhost:3100
+- Tempo: http://localhost:3200
+- Collector configuration: [`observability/otel/collector.yaml`](otel/collector.yaml)
+- Loki and Tempo configuration: [`observability/loki.yaml`](loki.yaml) and [`observability/tempo.yaml`](tempo.yaml)
+- Grafana data sources: [`observability/grafana/provisioning/datasources/correlation.yml`](grafana/provisioning/datasources/correlation.yml)
+
+### Mengumpulkan log dan trace
+
+Isi `.env` untuk mengaktifkan ekspor OTLP dari backend:
+
+```dotenv
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+```
+
+Kemudian jalankan seluruh stack observability:
+
+```bash
+docker compose --profile observability up --build -d --wait
+```
+
+Backend tetap menulis structured JSON ke stdout. Pada Compose, salinan JSON juga
+ditulis ke volume `app-logs`; Collector membaca file itu dengan `filelog`, mengambil
+timestamp/severity dan `trace_id`/`span_id`, lalu meneruskan log ke Loki. Trace OTLP
+dikirim ke Tempo. Metrik aplikasi tetap diambil Prometheus langsung dari `/metrics`.
+Saat task C menambahkan trace context pada log, trace ID dan span ID tersebut
+menautkan log ke trace di Grafana. Data source Tempo juga membuka log dan query
+metrik Prometheus dari rentang waktu trace.
+
+Contoh korelasi yang diharapkan di Grafana Explore:
+
+```text
+Loki log:    event=migration_batch_committed execution_id=... trace_id=4bf92f3577b34da6a3ce929d0e0e4736 span_id=00f067aa0ba902b7
+Tempo trace: API → queue → worker → database lock → batch UPDATE
+Prometheus:  dbmp_migration_duration_seconds_count{status="succeeded"} 1
+```
+
+Log dan trace ID adalah atribut/metadata; jangan jadikan ID user, job, migration,
+execution, ataupun SQL sebagai label Prometheus atau label Loki.
+
+Jalankan `docker compose --profile observability logs -f otel-collector` untuk
+melihat keluaran debug Collector. Di Grafana Explore, pilih Loki untuk log dan Tempo
+untuk trace. Klik field `TraceID` pada log untuk membuka trace terkait.
+
 Dashboard **DB Manager Overview** dimuat otomatis lewat provisioning:
 - data source: [`observability/grafana/provisioning/datasources/prometheus.yml`](grafana/provisioning/datasources/prometheus.yml)
 - dashboard: [`observability/grafana/dashboards/dbmp-overview.json`](grafana/dashboards/dbmp-overview.json)

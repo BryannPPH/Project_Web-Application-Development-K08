@@ -1,0 +1,38 @@
+apiVersion: 1
+datasources:
+  - name: Loki
+    uid: dbmp-loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: false
+    jsonData:
+      derivedFields:
+        - name: TraceID
+          matcherRegex: '"trace_id":"([0-9a-f]{32})"'
+          datasourceUid: dbmp-tempo
+          url: '$${__value.raw}'
+          urlDisplayLabel: View trace
+  - name: Tempo
+    uid: dbmp-tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    editable: false
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: dbmp-loki
+        spanStartTimeShift: 1h
+        spanEndTimeShift: 1h
+        filterByTraceID: true
+        filterBySpanID: true
+        tags:
+          - key: service.name
+            value: service_name
+      tracesToMetrics:
+        datasourceUid: dbmp-prometheus
+        spanStartTimeShift: 1h
+        spanEndTimeShift: 1h
+        queries:
+          - name: Migration duration
+            query: sum(rate(dbmp_migration_duration_seconds_sum[5m]))

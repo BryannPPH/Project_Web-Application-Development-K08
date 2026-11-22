@@ -18,14 +18,23 @@ func NewPGRepository(pool *pgxpool.Pool) *PGRepository { return &PGRepository{po
 
 const entryColumns = `id::text, database_id::text, version, name, sql_text, status,
 created_by::text, executed_by::text, created_at, started_at, finished_at, error_message,
-reconciled_from_status, reconciled_by::text, reconciled_at, reconciliation_note, revision`
+reconciled_from_status, reconciled_by::text, reconciled_at, reconciliation_note, revision,
+sql_down, irreversible_reason, is_active, last_execution_id::text, execution_mode, batch_select_sql, batch_size, batch_cursor_start`
 
 const readableEntryColumns = `m.id::text, m.database_id::text, m.version, m.name, m.sql_text, m.status,
 m.created_by::text, m.executed_by::text, m.created_at, m.started_at, m.finished_at, m.error_message,
  m.reconciled_from_status, m.reconciled_by::text, m.reconciled_at, m.reconciliation_note,
-creator.username, executor.username, reconciler.username, m.revision`
+creator.username, executor.username, reconciler.username, m.revision,
+m.sql_down, m.irreversible_reason, m.is_active, m.last_execution_id::text, m.execution_mode, m.batch_select_sql, m.batch_size, m.batch_cursor_start`
 
 func (r *PGRepository) CreateDraft(ctx context.Context, databaseID, name, sqlText, creatorID string, now time.Time) (Entry, error) {
+	reason := "No down SQL was supplied by this legacy Milestone 1 client."
+	return r.CreateDraftDefinition(ctx, databaseID, Definition{
+		Name: name, SQL: sqlText, IrreversibleReason: &reason, ExecutionMode: ExecutionModeSingle,
+	}, creatorID, now)
+}
+
+func (r *PGRepository) CreateDraftDefinition(ctx context.Context, databaseID string, definition Definition, creatorID string, now time.Time) (Entry, error) {
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return Entry{}, fmt.Errorf("begin create draft: %w", err)
@@ -38,10 +47,15 @@ func (r *PGRepository) CreateDraft(ctx context.Context, databaseID, name, sqlTex
 	}
 
 	row := tx.QueryRow(ctx, `
-		INSERT INTO migration_entries (database_id, version, name, sql_text, status, created_by, created_at, updated_at)
-		SELECT $1::uuid, COALESCE(MAX(version), 0) + 1, $2, $3, 'draft', $4::uuid, $5, $5
+		INSERT INTO migration_entries (database_id, version, name, sql_text, sql_down, irreversible_reason,
+			execution_mode, batch_select_sql, batch_size, batch_cursor_start,
+			status, created_by, created_at, updated_at)
+		SELECT $1::uuid, COALESCE(MAX(version), 0) + 1, $2, $3, $4, $5,
+			$6, $7, $8, $9, 'draft', $10::uuid, $11, $11
 		FROM migration_entries WHERE database_id = $1::uuid
-		RETURNING `+entryColumns, databaseID, name, sqlText, creatorID, now)
+		RETURNING `+entryColumns, databaseID, definition.Name, definition.SQL, definition.DownSQL,
+		definition.IrreversibleReason, normalizeExecutionMode(definition.ExecutionMode), definition.BatchSelectSQL,
+		definition.BatchSize, definition.BatchCursorStart, creatorID, now)
 	entry, err := scanEntry(row)
 	if err != nil {
 		return Entry{}, mapRepositoryError(err)
@@ -50,6 +64,29 @@ func (r *PGRepository) CreateDraft(ctx context.Context, databaseID, name, sqlTex
 		return Entry{}, fmt.Errorf("commit create draft: %w", err)
 	}
 	return entry, nil
+}
+
+func (r *PGRepository) UpdateDraftDefinition(ctx context.Context, databaseID, migrationID string, definition Definition, now time.Time) (Entry, error) {
+	row := r.pool.QueryRow(ctx, `
+		WITH updated AS (
+			UPDATE migration_entries SET name=$3, sql_text=$4, sql_down=$5, irreversible_reason=$6,
+				execution_mode=$7, batch_select_sql=$8, batch_size=$9, batch_cursor_start=$10, updated_at=$11
+			WHERE database_id=$1::uuid AND id=$2::uuid AND status='draft'
+			RETURNING *
+		)
+		SELECT `+readableEntryColumns+`
+		FROM updated m
+		JOIN users creator ON creator.id=m.created_by
+		LEFT JOIN users executor ON executor.id=m.executed_by
+		LEFT JOIN users reconciler ON reconciler.id=m.reconciled_by`,
+		databaseID, migrationID, definition.Name, definition.SQL, definition.DownSQL,
+		definition.IrreversibleReason, normalizeExecutionMode(definition.ExecutionMode), definition.BatchSelectSQL,
+		definition.BatchSize, definition.BatchCursorStart, now)
+	entry, err := scanReadableEntry(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Entry{}, r.classifyMissingOrConflict(ctx, databaseID, migrationID)
+	}
+	return entry, mapRepositoryError(err)
 }
 
 func (r *PGRepository) UpdateDraft(ctx context.Context, databaseID, migrationID, name, sqlText string, now time.Time) (Entry, error) {
@@ -184,13 +221,29 @@ func (r *PGRepository) Reconcile(ctx context.Context, databaseID, migrationID, r
 }
 
 func (r *PGRepository) RecoverRunning(ctx context.Context, before time.Time, reason string) (int64, error) {
-	command, err := r.pool.Exec(ctx, `UPDATE migration_entries
-		SET status='interrupted', error_message=$2, finished_at=$1, updated_at=$1
-		WHERE status='running' AND started_at < $1`, before, reason)
+	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return 0, mapRepositoryError(err)
 	}
-	return command.RowsAffected(), nil
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	var recovered int64
+	err = tx.QueryRow(ctx, `WITH recovered AS (
+		UPDATE migration_entries SET status='interrupted', error_message=$2, finished_at=$1, updated_at=$1
+		WHERE status='running' AND started_at < $1
+		RETURNING last_execution_id
+	), logged AS (
+		INSERT INTO migration_execution_events (execution_id,status,event,occurred_at,error_message)
+		SELECT last_execution_id,'interrupted','interrupted',$1,$2 FROM recovered WHERE last_execution_id IS NOT NULL
+		RETURNING execution_id
+	)
+	SELECT count(*) FROM recovered`, before, reason).Scan(&recovered)
+	if err != nil {
+		return 0, mapRepositoryError(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("commit interrupted execution recovery: %w", err)
+	}
+	return recovered, nil
 }
 
 func (r *PGRepository) classifyMissingOrConflict(ctx context.Context, databaseID, migrationID string) error {
@@ -213,7 +266,9 @@ func scanEntry(row rowScanner) (Entry, error) {
 	err := row.Scan(&entry.ID, &entry.DatabaseID, &entry.Version, &entry.Name, &entry.SQL,
 		&entry.Status, &entry.CreatedBy, &executedBy, &entry.CreatedAt, &entry.StartedAt,
 		&entry.FinishedAt, &entry.ErrorMessage, &entry.ReconciledFrom, &entry.ReconciledBy,
-		&entry.ReconciledAt, &entry.ReconciliationNote, &entry.Revision)
+		&entry.ReconciledAt, &entry.ReconciliationNote, &entry.Revision,
+		&entry.DownSQL, &entry.IrreversibleReason, &entry.IsActive, &entry.LatestExecutionID, &entry.ExecutionMode,
+		&entry.BatchSelectSQL, &entry.BatchSize, &entry.BatchCursorStart)
 	entry.ExecutedBy = executedBy
 	return entry, err
 }
@@ -225,7 +280,8 @@ func scanReadableEntry(row rowScanner) (Entry, error) {
 		&entry.Status, &entry.CreatedBy, &entry.ExecutedBy, &entry.CreatedAt, &entry.StartedAt,
 		&entry.FinishedAt, &entry.ErrorMessage, &entry.ReconciledFrom, &entry.ReconciledBy,
 		&entry.ReconciledAt, &entry.ReconciliationNote, &entry.CreatedByUsername, &entry.ExecutedByUsername,
-		&reconciledByUsername, &entry.Revision)
+		&reconciledByUsername, &entry.Revision, &entry.DownSQL, &entry.IrreversibleReason,
+		&entry.IsActive, &entry.LatestExecutionID, &entry.ExecutionMode, &entry.BatchSelectSQL, &entry.BatchSize, &entry.BatchCursorStart)
 	entry.ReconciledByUsername = reconciledByUsername
 	return entry, err
 }
@@ -238,13 +294,21 @@ func scanReadableEntryWithTotal(row rowScanner) (Entry, int64, error) {
 		&entry.Status, &entry.CreatedBy, &entry.ExecutedBy, &entry.CreatedAt, &entry.StartedAt,
 		&entry.FinishedAt, &entry.ErrorMessage, &entry.ReconciledFrom, &entry.ReconciledBy,
 		&entry.ReconciledAt, &entry.ReconciliationNote, &entry.CreatedByUsername, &entry.ExecutedByUsername,
-		&reconciledByUsername, &entry.Revision, &total)
+		&reconciledByUsername, &entry.Revision, &entry.DownSQL, &entry.IrreversibleReason,
+		&entry.IsActive, &entry.LatestExecutionID, &entry.ExecutionMode, &entry.BatchSelectSQL, &entry.BatchSize, &entry.BatchCursorStart, &total)
 	entry.ReconciledByUsername = reconciledByUsername
 	return entry, total, err
 }
 
+func normalizeExecutionMode(mode ExecutionMode) ExecutionMode {
+	if mode == "" {
+		return ExecutionModeSingle
+	}
+	return mode
+}
+
 func mapRepositoryError(err error) error {
-	if err == nil || errors.Is(err, ErrNotFound) || errors.Is(err, ErrConflict) || errors.Is(err, ErrWrongOrder) || errors.Is(err, ErrRevisionChanged) {
+	if err == nil || errors.Is(err, ErrNotFound) || errors.Is(err, ErrConflict) || errors.Is(err, ErrWrongOrder) || errors.Is(err, ErrRevisionChanged) || errors.Is(err, ErrNoAttempt) || errors.Is(err, ErrIrreversible) {
 		return err
 	}
 	return fmt.Errorf("migration repository: %w", err)

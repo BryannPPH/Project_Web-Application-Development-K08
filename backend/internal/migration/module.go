@@ -32,7 +32,7 @@ func NewModule(
 		repository,
 		authorizer,
 		NewPGAdvisoryLocker(platformDatabase),
-		NewPGExecutor(targets),
+		NewPGExecutorWithLogger(targets, logger),
 		approvals,
 		RealClock{},
 		logger,

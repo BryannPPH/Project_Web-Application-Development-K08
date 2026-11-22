@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -342,5 +343,69 @@ func TestNewServiceRequiresApprovalGate(t *testing.T) {
 		fixedClock{}, slog.New(slog.NewTextHandler(io.Discard, nil)), ServiceConfig{})
 	if err == nil {
 		t.Fatal("NewService() must fail without an approval gate")
+	}
+}
+
+func TestValidateDefinitionDefaultsLegacyMigrationsToIrreversible(t *testing.T) {
+	t.Parallel()
+	service := newTestService(t, &fakeRepository{}, &fakeAuthorizer{}, &fakeLocker{}, &fakeExecutor{})
+	definition, err := service.validateDefinition(Definition{Name: "legacy", SQL: "SELECT 1"}, true)
+	if err != nil {
+		t.Fatalf("validate legacy definition: %v", err)
+	}
+	if definition.DownSQL != nil || definition.IrreversibleReason == nil || definition.ExecutionMode != ExecutionModeSingle {
+		t.Fatalf("legacy definition = %#v", definition)
+	}
+}
+
+func TestValidateDefinitionRequiresEitherDownSQLOrReason(t *testing.T) {
+	t.Parallel()
+	service := newTestService(t, &fakeRepository{}, &fakeAuthorizer{}, &fakeLocker{}, &fakeExecutor{})
+	down := "DROP TABLE widgets"
+	reason := "data cannot be restored"
+	tests := []struct {
+		name       string
+		definition Definition
+		valid      bool
+	}{
+		{name: "reversible", definition: Definition{Name: "widgets", SQL: "CREATE TABLE widgets(id int)", DownSQL: &down}, valid: true},
+		{name: "irreversible", definition: Definition{Name: "widgets", SQL: "DELETE FROM widgets", IrreversibleReason: &reason}, valid: true},
+		{name: "neither", definition: Definition{Name: "widgets", SQL: "DELETE FROM widgets"}},
+		{name: "both", definition: Definition{Name: "widgets", SQL: "CREATE TABLE widgets(id int)", DownSQL: &down, IrreversibleReason: &reason}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := service.validateDefinition(test.definition, false)
+			if (err == nil) != test.valid {
+				t.Fatalf("validateDefinition() error = %v, valid=%v", err, test.valid)
+			}
+		})
+	}
+}
+
+func TestValidateBatchDefinitionRequiresBoundedCursorSQL(t *testing.T) {
+	t.Parallel()
+	service := newTestService(t, &fakeRepository{}, &fakeAuthorizer{}, &fakeLocker{}, &fakeExecutor{})
+	down := "UPDATE records SET value=value-1 WHERE id > $1 AND id <= $2"
+	batchSize := 25
+	selector := "SELECT id FROM records WHERE id > $1 ORDER BY id LIMIT $2"
+	definition := Definition{Name: "increment", SQL: "UPDATE records SET value=value+1 WHERE id > $1 AND id <= $2",
+		DownSQL: &down, ExecutionMode: ExecutionModeBatch, BatchSelectSQL: &selector, BatchSize: &batchSize}
+	if _, err := service.validateDefinition(definition, false); err != nil {
+		t.Fatalf("valid batch definition rejected: %v", err)
+	}
+	badSelector := "SELECT id FROM records WHERE id > $1 ORDER BY id"
+	definition.BatchSelectSQL = &badSelector
+	if _, err := service.validateDefinition(definition, false); err == nil {
+		t.Fatal("unbounded batch selector was accepted")
+	}
+}
+
+func TestRedactSQLForLogMasksCredentialValues(t *testing.T) {
+	t.Parallel()
+	got := redactSQLForLog(`SELECT 'postgres://owner:secret@db/app', password='sensitive'`)
+	if strings.Contains(got, "secret") || strings.Contains(got, "sensitive") {
+		t.Fatalf("SQL log leaked a credential: %s", got)
 	}
 }
