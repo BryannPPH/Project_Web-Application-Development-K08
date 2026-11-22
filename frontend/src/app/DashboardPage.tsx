@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 
 import type { SenjaClipName } from '@/assets/brand/senja-rig/web/senja-data'
 import { describeError } from '@/components/error-message'
+import { CaveScene } from '@/components/CaveScene'
 import { Icon, type IconName } from '@/components/Icon'
 import { SenjaRig, type SenjaOutfit } from '@/components/SenjaRig'
 import { StatusMessage } from '@/components/StatusMessage'
@@ -62,14 +63,12 @@ export function DashboardPage() {
   return (
     <section className="dashboard">
       <header className={`hero hero--${part}`} ref={heroRef}>
+        <CaveScene className="hero__scene" />
         <div className="hero__text">
           <p className="hero__date">{todayFormat.format(now)}</p>
           <h1 className="hero__greeting">
             Selamat {part}, <span className="hero__name">{user.username}</span>
           </h1>
-          <p className="hero__summary">
-            <AccessSummary editable={editable} loaded={databases.isSuccess} total={list.length} />
-          </p>
         </div>
         <SenjaRig
           className="hero__art"
@@ -81,6 +80,10 @@ export function DashboardPage() {
         />
       </header>
 
+      <div className="dashboard__body">
+      <StatsRail editable={editable} isAdmin={isAdmin} loaded={databases.isSuccess} total={list.length} />
+
+      <div className="dashboard__main">
       <div className="section-head">
         <h2 className="section-head__title" data-area="database">
           <span aria-hidden="true" className="area-tile">
@@ -125,31 +128,105 @@ export function DashboardPage() {
       {list.length > 0 ? <DatabaseRows databases={list.slice(0, DASHBOARD_LIMIT)} /> : null}
 
       {isAdmin ? <AdminSummary /> : null}
+      </div>
+      </div>
     </section>
   )
 }
 
-// Ringkasan akses sebagai satu kalimat; angka ditebalkan (tabular) agar tetap mudah dipindai.
-function AccessSummary({ loaded, total, editable }: { loaded: boolean; total: number; editable: number }) {
-  if (!loaded) return <>Memuat akses Anda...</>
-  if (total === 0) return <>Anda belum punya akses ke database mana pun.</>
-  const viewOnly = total - editable
-  const parts = [
-    editable > 0 ? <span key="edit"><strong>{editable}</strong> bisa diubah</span> : null,
-    viewOnly > 0 ? <span key="view"><strong>{viewOnly}</strong> hanya lihat</span> : null,
-  ].filter(Boolean)
+interface StatsRailProps {
+  editable: number
+  isAdmin: boolean
+  loaded: boolean
+  total: number
+}
+
+// Rel kanan berisi ubin persegi berukuran kecil: angka yang paling sering dicari
+// (berapa database di sistem, berapa yang bisa diakses, berapa yang bisa diubah).
+// User, group, dan koneksi ada di bagian Administrasi.
+function StatsRail({ editable, isAdmin, loaded, total }: StatsRailProps) {
+  return (
+    <aside aria-label="Ringkasan database" className="rail">
+      {isAdmin ? (
+        <AdminTiles editable={editable} loaded={loaded} total={total} />
+      ) : (
+        <>
+          <StatTile label="Bisa Anda akses" note="database" tone="lilac" value={loaded ? total : undefined} />
+          <StatTile
+            label="Bisa diubah"
+            note={`dari ${total}`}
+            share={total > 0 ? editable / total : 0}
+            tone="mint"
+            value={loaded ? editable : undefined}
+          />
+        </>
+      )}
+    </aside>
+  )
+}
+
+// AdminTiles: hook admin hanya dipanggil bila user admin (komponen ini hanya dirender untuk admin).
+function AdminTiles({ editable, loaded, total }: Omit<StatsRailProps, 'isAdmin'>) {
+  const connections = useManagedDatabases()
+  const system = connections.data?.length
   return (
     <>
-      Anda punya akses ke <strong>{total}</strong> database
-      {parts.length > 0 ? ': ' : '.'}
-      {parts.map((part, index) => (
-        <span key={index}>
-          {index > 0 ? ', ' : null}
-          {part}
-        </span>
-      ))}
-      {parts.length > 0 ? '.' : null}
+      <StatTile label="Di sistem" note="terdaftar" tone="peach" value={system} />
+      <StatTile
+        label="Bisa Anda akses"
+        note={system === undefined ? 'database' : `dari ${system}`}
+        share={system ? total / system : undefined}
+        tone="lilac"
+        value={loaded ? total : undefined}
+      />
+      <StatTile
+        label="Bisa diubah"
+        note={`dari ${total}`}
+        share={total > 0 ? editable / total : 0}
+        tone="mint"
+        value={loaded ? editable : undefined}
+      />
     </>
+  )
+}
+
+const RING_RADIUS = 34
+const RING_LENGTH = 2 * Math.PI * RING_RADIUS
+
+interface StatTileProps {
+  label: string
+  note: string
+  share?: number
+  tone: 'peach' | 'lilac' | 'mint'
+  value: number | undefined
+}
+
+// Ubin persegi: label di atas, angka (di dalam cincin bila ada pembanding) di tengah, catatan di bawah.
+function StatTile({ label, note, share, tone, value }: StatTileProps) {
+  const shown = value ?? '-'
+  return (
+    <div className={`stat stat--${tone}`}>
+      <p className="stat__label">{label}</p>
+      {share === undefined ? (
+        <p className="stat__value">{shown}</p>
+      ) : (
+        <div className="stat__gauge">
+          <svg aria-hidden="true" className="stat__ring" viewBox="0 0 80 80">
+            <circle className="stat__ring-track" cx="40" cy="40" r={RING_RADIUS} />
+            <circle
+              className="stat__ring-bar"
+              cx="40"
+              cy="40"
+              r={RING_RADIUS}
+              strokeDasharray={RING_LENGTH}
+              strokeDashoffset={RING_LENGTH * (1 - Math.min(share, 1))}
+            />
+          </svg>
+          <p className="stat__value">{shown}</p>
+        </div>
+      )}
+      <p className="stat__note">{note}</p>
+    </div>
   )
 }
 
@@ -171,6 +248,7 @@ function AdminSummary() {
       </div>
       <ul className="admin-summary">
         <SummaryLink
+          tone="mint"
           count={users.data?.length}
           hint="Akun yang bisa masuk"
           icon="user"
@@ -178,6 +256,7 @@ function AdminSummary() {
           to="/admin/users"
         />
         <SummaryLink
+          tone="lilac"
           count={groups.data?.length}
           hint="Siapa boleh akses apa"
           icon="users"
@@ -185,6 +264,7 @@ function AdminSummary() {
           to="/admin/groups"
         />
         <SummaryLink
+          tone="peach"
           count={connections.data?.length}
           hint="Database terdaftar"
           icon="plug"
@@ -202,13 +282,14 @@ interface SummaryLinkProps {
   icon: IconName
   label: string
   to: string
+  tone: 'peach' | 'lilac' | 'mint'
 }
 
 // Seluruh ubin adalah satu target klik besar (bukan angka + tombol kecil terpisah).
-function SummaryLink({ count, hint, icon, label, to }: SummaryLinkProps) {
+function SummaryLink({ count, hint, icon, label, to, tone }: SummaryLinkProps) {
   return (
     <li>
-      <Link className="admin-summary__item" to={to}>
+      <Link className={`admin-summary__item admin-summary__item--${tone}`} to={to}>
         <span aria-hidden="true" className="admin-summary__icon">
           <Icon name={icon} size={20} />
         </span>

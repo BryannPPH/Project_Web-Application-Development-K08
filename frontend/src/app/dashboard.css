@@ -1,42 +1,69 @@
-.hero {
-  --sky: var(--brand-coral);
+/* ---------- Hero: gua Emberden ----------
+   Banner gelap berisi gua dan lentera; waktu hari hanya mengubah terang bukaan gua
+   (pagi/siang lebih terang, malam redup), sementara lentera tetap menyala. */
 
+.dashboard {
+  /* Sejajar dengan kolom konten, juga di layar lebar (konten dipusatkan, gambar penuh). */
+  --gutter: max(var(--content-pad, 1rem), calc((100% - var(--content-max, 1280px)) / 2 + var(--content-pad, 1rem)));
+}
+
+.hero {
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
   gap: 1.5rem;
-  margin-bottom: 0.5rem;
-  border-bottom: 1px solid var(--line);
+  /* Tinggi menyisakan ruang untuk top bar yang menumpang di atas gambar. */
+  min-height: clamp(15rem, 26vw, 30rem);
+  padding: 4.25rem var(--gutter) 0;
+  overflow: hidden;
+  background: var(--canvas);
   isolation: isolate;
+
+  /* Mode terang: gua lavender, teks gelap. Mode gelap: gua gelap, teks krem (lihat bawah). */
+  --scrim: 246 240 253;
+  --hero-date: var(--muted);
+  --hero-title: var(--ink);
+  --hero-name: var(--action);
 }
 
-.hero::before {
+:root[data-theme='dark'] .hero {
+  --scrim: 16 7 28;
+  --hero-date: #d8c4ea;
+  --hero-title: #fff4e6;
+  --hero-name: #ffb061;
+}
+
+.hero__scene {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  display: block;
+  /* Gambar benar-benar hilang sebelum tepi bawah, jadi tidak ada sisa garis di batas ke latar. */
+  mask-image: linear-gradient(to bottom, #000 68%, transparent 94%);
+}
+
+/* Dua lapis: penutup tipis di sisi teks (kontras sapaan) dan pudar ke warna latar halaman,
+ * sehingga gambar menyatu mulus dengan latar polos di bawahnya. */
+.hero::after {
   content: '';
   position: absolute;
-  /* Melebar ke padding kanan halaman (tidak keluar viewport), supaya pendarnya habis
-   * sebelum tepi, bukan terpotong di tepi kolom konten. */
-  inset: -2rem calc(-1 * var(--content-pad, 1rem)) 0 0;
+  inset: 0;
   z-index: -1;
-  /* Seperti matahari yang baru terbenam: paling terang di cakrawala (garis bawah kepala
-   * halaman) di belakang Senja, memudar ke atas dan ke kiri. */
   background:
-    radial-gradient(38% 140% at 88% 100%, color-mix(in srgb, var(--sky) 40%, transparent), transparent 72%),
-    linear-gradient(to top, color-mix(in srgb, var(--sky) 12%, transparent), transparent 65%);
-  mask-image:
-    linear-gradient(to right, transparent, #000 50%, #000 93%, transparent),
-    linear-gradient(to bottom, transparent, #000 45%);
-  mask-composite: intersect;
+    linear-gradient(180deg, transparent 70%, var(--canvas) 94%),
+    linear-gradient(90deg, rgb(var(--scrim) / 72%), rgb(var(--scrim) / 25%) 52%, transparent 72%);
   pointer-events: none;
 }
 
-.hero--pagi { --sky: var(--brand-peach); }
-.hero--siang { --sky: var(--area-home); }
-.hero--sore { --sky: var(--brand-coral); }
-.hero--malam { --sky: var(--area-diff); }
+.hero--pagi .cave__sky { filter: brightness(1.06) saturate(0.92); }
+.hero--siang .cave__sky { filter: brightness(1.12); }
+:root[data-theme="dark"] .hero--malam .cave__sky { filter: brightness(0.5) saturate(0.8); }
+.hero--malam .cave__sky { filter: brightness(0.9) saturate(0.9); }
 
 .hero__text {
   display: grid;
+  align-self: center;
   gap: 0.375rem;
   min-width: 0;
   padding-bottom: 1.5rem;
@@ -44,14 +71,14 @@
 
 .hero__date {
   margin: 0;
-  color: var(--muted);
+  color: var(--hero-date);
   font-size: 0.8125rem;
   font-weight: 600;
 }
 
 .hero__greeting {
   margin: 0;
-  color: var(--ink);
+  color: var(--hero-title);
   font-size: clamp(1.625rem, 1.3rem + 1.2vw, 2.125rem);
   font-weight: 800;
   letter-spacing: -0.02em;
@@ -60,28 +87,191 @@
 }
 
 .hero__name {
-  /* --action, bukan --brand-sunset: oranye terang hanya 2.5:1 di atas latar krem. */
-  color: var(--action);
+  color: var(--hero-name);
   white-space: nowrap;
 }
 
-.hero__summary {
-  max-width: 68ch;
-  margin: 0;
-  color: var(--ink-soft);
-  font-size: 0.9375rem;
-}
-
-.hero__summary strong {
-  color: var(--ink);
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Senja berdiri tepat di garis bawah: kakinya menyentuh border kepala halaman. */
+/* Senja berdiri di lantai gua, diterangi cahaya lentera. */
 .hero__art {
-  height: clamp(6.5rem, 9vw, 8rem);
-  margin-bottom: -1px;
+  height: clamp(6.5rem, 9vw, 8.5rem);
+  margin-bottom: 0.5rem;
+  filter: drop-shadow(0 0 16px rgb(255 154 60 / 35%));
+}
+
+/* ---------- Badan dashboard: konten utama + rel widget di kanan ---------- */
+
+.dashboard__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 10.75rem;
+  gap: 1.5rem;
+  align-items: start;
+  max-width: var(--content-max, 1280px);
+  margin-inline: auto;
+  padding: 0.5rem var(--content-pad, 1rem) 2.5rem;
+}
+
+.dashboard__main {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+}
+
+/* Mode gelap: widget tetap krem bercahaya dengan teks gelap (seperti kartu krem di atas
+ * latar hijau pada referensi); judul bagian di atas latar gelap diberi warna terang. */
+:root[data-theme='dark'] .dashboard__body {
+  --surface: #ffffff;
+  --surface-subtle: #fff8f6;
+  --ink: #2b1b2e;
+  --ink-soft: #4a3a4d;
+  --muted: #6b4c6e;
+  --line: #e8d5d0;
+  --line-soft: #f3e7e3;
+  --action: #c2410c;
+  --action-hover: #9a3412;
+  --on-action: #fff;
+  --shadow-card: 0 10px 24px -12px rgb(0 0 0 / 55%);
+  --shadow-lift: 0 16px 32px -12px rgb(0 0 0 / 65%);
+}
+
+:root[data-theme='dark'] .dashboard__main .section-head__title { color: #f3e6fb; }
+:root[data-theme='dark'] .dashboard__main .section-head__link { color: #ffb061; }
+
+.dashboard__main .empty-state {
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+}
+
+/* Judul bagian pertama sejajar dengan tepi atas kontainer widget di kanan. */
+.dashboard__main > .section-head:first-child {
+  margin-top: 0;
+}
+
+/* Kontainer widget (ala panel kanan pada referensi Smartech): satu panel berbingkai
+ * berisi ubin-ubin persegi. */
+.rail {
+  position: sticky;
+  top: 1rem;
+  display: grid;
+  grid-column: 2;
+  grid-row: 1;
+  gap: 0.625rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xl);
+  padding: 0.625rem;
+  background: var(--surface-subtle);
+}
+
+:root[data-theme='dark'] .rail {
+  border-color: rgb(255 255 255 / 16%);
+  background: rgb(255 255 255 / 7%);
+}
+
+/* Ubin persegi kecil, ala widget Smartech: label, cincin, catatan. Tiap ubin punya warnanya sendiri. */
+.stat {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  aspect-ratio: 1;
+  min-width: 0;
+  border-radius: var(--radius-lg);
+  padding: 0.75rem 0.875rem;
+  overflow: hidden;
+  border: 1px solid var(--line-soft);
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+}
+
+.stat--peach { --tone-accent: #c2410c; --tone-track: #fde3d2; }
+.stat--lilac { --tone-accent: #5b3fd1; --tone-track: #e6e0fb; }
+.stat--mint { --tone-accent: #0a7a74; --tone-track: #d2f1ed; }
+
+.stat__label {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.stat__note {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.stat__value {
+  margin: 0;
+  align-self: center;
+  color: var(--tone-accent);
+  font-size: 2.25rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  text-align: center;
+}
+
+.stat__gauge {
+  display: grid;
+  place-items: center;
+  min-height: 0;
+}
+
+.stat__gauge > * { grid-area: 1 / 1; }
+
+.stat__gauge .stat__value { font-size: 1.5rem; }
+
+.stat__ring {
+  width: 100%;
+  max-width: 5rem;
+  aspect-ratio: 1;
+  transform: rotate(-90deg);
+}
+
+.stat__ring circle {
+  fill: none;
+  stroke-width: 9;
+}
+
+.stat__ring-track { stroke: var(--tone-track); }
+
+.stat__ring-bar {
+  stroke: var(--tone-accent);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 600ms var(--ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stat__ring-bar { transition: none; }
+}
+
+/* Layar sempit: rel pindah ke atas daftar dan jadi baris ubin, tanpa kunci persegi. */
+@media (max-width: 900px) {
+  .dashboard__body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dashboard__main,
+  .rail {
+    grid-column: 1;
+  }
+
+  .rail {
+    position: static;
+    grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+    margin-bottom: 0.5rem;
+  }
+
+  .dashboard__main {
+    grid-row: 2;
+  }
+
+  .stat {
+    aspect-ratio: auto;
+    min-height: 8.5rem;
+  }
 }
 
 /* ---------- Ubin admin: satu ubin = satu tautan besar ---------- */
@@ -121,7 +311,6 @@
 
 @media (hover: hover) and (pointer: fine) {
   .admin-summary__item:hover {
-    border-color: color-mix(in srgb, var(--area-admin) 45%, var(--line-soft));
     box-shadow: var(--shadow-lift);
   }
 
@@ -141,8 +330,8 @@
   width: 2.75rem;
   height: 2.75rem;
   border-radius: 14px;
-  color: var(--area-admin);
-  background: var(--area-admin-soft);
+  color: var(--tile-accent, var(--area-admin));
+  background: color-mix(in srgb, var(--tile-accent, var(--area-admin)) 13%, var(--surface));
 }
 
 .admin-summary__count {
@@ -173,7 +362,7 @@
   align-items: center;
   gap: 0.25rem;
   margin-top: 0.5rem;
-  color: var(--area-admin);
+  color: var(--tile-accent, var(--area-admin));
   font-size: 0.8125rem;
   font-weight: 700;
 }
@@ -188,11 +377,26 @@
     gap: 0.75rem;
   }
 
+  .hero {
+    min-height: 17rem;
+  }
+
+  .hero::after {
+    background:
+      linear-gradient(180deg, transparent 76%, var(--canvas) 94%),
+      linear-gradient(180deg, rgb(var(--scrim) / 88%), rgb(var(--scrim) / 55%) 60%, rgb(var(--scrim) / 15%));
+  }
+
   .hero__art {
     height: 5.25rem;
   }
 
   .hero__text {
+    align-self: start;
     padding-bottom: 1.25rem;
   }
 }
+
+.admin-summary__item--peach { --tile-accent: #c2410c; }
+.admin-summary__item--lilac { --tile-accent: #5b3fd1; }
+.admin-summary__item--mint { --tile-accent: #0a7a74; }

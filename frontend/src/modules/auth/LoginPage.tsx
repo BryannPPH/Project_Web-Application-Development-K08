@@ -2,11 +2,11 @@ import { useState, type FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 
 import { logoMark } from '@/components/brand'
+import { CaveScene } from '@/components/CaveScene'
 import { Icon } from '@/components/Icon'
 import { SenjaRig } from '@/components/SenjaRig'
 import { ApiError } from '@/lib/api-client'
 import { AuthStatusPage } from '@/modules/auth/AuthStatusPage'
-import { LoginForest } from '@/modules/auth/LoginForest'
 import { useCurrentUser } from '@/modules/auth/use-current-user'
 import { useLogin } from '@/modules/auth/use-login'
 
@@ -97,12 +97,12 @@ export function LoginPage() {
   return (
     <main className="login-page">
       <section aria-hidden="true" className="login-hero">
-        <LoginForest />
+        <CaveScene className="login-hero__cave" variant="portrait" />
         <div className="login-hero__brand">
           <span className="login-hero__logo">
             <img alt="" src={logoMark} />
           </span>
-          DB Manager
+          Emberden
         </div>
         {/* Senja tidak pernah pindah posisi (selalu di tengah); kesan berjalan
             datang dari latar yang bergeser + animasi langkah di tempat. */}

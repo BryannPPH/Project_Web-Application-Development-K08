@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 
 import { logoMarkLight, senja } from '@/components/brand'
+import { CaveScene } from '@/components/CaveScene'
 import { Icon, type IconName } from '@/components/Icon'
 import { ApiError } from '@/lib/api-client'
 import { useTheme } from '@/lib/theme'
@@ -36,14 +37,17 @@ export function FoundationPage() {
   const pageKey = pathname.split('/').slice(0, 4).join('/')
 
   return (
-    <div className={menuOpen ? 'workspace workspace--menu-open' : 'workspace'}>
+    <div className={['workspace', menuOpen && 'workspace--menu-open', pathname === '/' && 'workspace--home'].filter(Boolean).join(' ')}>
       {/* Bingkai plum membungkus sidebar dan panel konten putih (gaya dashboard modern). */}
       <div className="app-frame">
         <aside className="sidebar" id="sidebar">
-          <Link className="sidebar__brand" onClick={() => setMenuOpen(false)} to="/">
-            <img alt="" src={logoMarkLight} />
-            <span>
-              <span className="sidebar__brand-accent">DB</span> Manager
+          <Link aria-label="Emberden, ke dashboard" className="sidebar__sign" onClick={() => setMenuOpen(false)} to="/">
+            <span className="sidebar__sign-board">
+              <img alt="" src={logoMarkLight} />
+              <span>
+                <small>Selamat datang di</small>
+                <strong>Emberden</strong>
+              </span>
             </span>
           </Link>
 
@@ -114,6 +118,7 @@ export function FoundationPage() {
         />
 
         <div className="workspace-body">
+          {pathname === '/' ? null : <CaveScene className="page-band" variant="band" />}
           <header className="topbar">
             <button
               aria-controls="sidebar"

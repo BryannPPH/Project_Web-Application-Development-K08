@@ -1,0 +1,202 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2400 640" preserveAspectRatio="xMaxYMax slice" focusable="false">
+  <defs>
+    <linearGradient id="cv-wall" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#150a26"/>
+      <stop offset="0.55" stop-color="#26143f"/>
+      <stop offset="1" stop-color="#341c52"/>
+    </linearGradient>
+    <linearGradient id="cv-wallSide" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#0f0720" stop-opacity="0.85"/>
+      <stop offset="0.6" stop-color="#0f0720" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="cv-opening" cx="0.5" cy="0.62" r="0.62">
+      <stop offset="0" stop-color="#fff3bd"/>
+      <stop offset="0.28" stop-color="#ffd27a"/>
+      <stop offset="0.6" stop-color="#f4964a"/>
+      <stop offset="1" stop-color="#8a4478"/>
+    </radialGradient>
+    <linearGradient id="cv-floor" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#1a0d2e"/>
+      <stop offset="0.38" stop-color="#6a3466"/>
+      <stop offset="0.62" stop-color="#f0903f"/>
+      <stop offset="0.84" stop-color="#6a3466"/>
+      <stop offset="1" stop-color="#1a0d2e"/>
+    </linearGradient>
+    <linearGradient id="cv-path" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffd488" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#ff9a3c" stop-opacity="0.35"/>
+    </linearGradient>
+    <linearGradient id="cv-rockLit" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff9a52"/>
+      <stop offset="0.45" stop-color="#b8527a"/>
+      <stop offset="1" stop-color="#3a1f5c"/>
+    </linearGradient>
+    <linearGradient id="cv-rockLitR" x1="1" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ff9a52"/>
+      <stop offset="0.45" stop-color="#b8527a"/>
+      <stop offset="1" stop-color="#3a1f5c"/>
+    </linearGradient>
+    <linearGradient id="cv-glass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffb347"/>
+      <stop offset="0.5" stop-color="#ffe493"/>
+      <stop offset="1" stop-color="#ff9a2e"/>
+    </linearGradient>
+    <linearGradient id="cv-frond" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#7a2f5a"/>
+      <stop offset="0.5" stop-color="#e2672b"/>
+      <stop offset="1" stop-color="#ffb061"/>
+    </linearGradient>
+    <radialGradient id="cv-glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffc25a" stop-opacity="0.75"/>
+      <stop offset="0.35" stop-color="#ff8a3a" stop-opacity="0.32"/>
+      <stop offset="1" stop-color="#ff7a45" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="cv-vignette" cx="0.62" cy="0.55" r="0.78">
+      <stop offset="0.45" stop-color="#12081f" stop-opacity="0"/>
+      <stop offset="1" stop-color="#12081f" stop-opacity="0.82"/>
+    </radialGradient>
+    <filter id="cv-soft" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="9"/></filter>
+    <filter id="cv-soft2" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="22"/></filter>
+
+    <path id="cv-leaf" d="M0 0 C-22 -52 -14 -118 0 -176 C14 -118 22 -52 0 0Z"/>
+
+    <g id="cv-post">
+      <rect x="-64" y="-52" width="128" height="52" rx="7" fill="#2a1642"/>
+      <rect x="-54" y="-104" width="108" height="54" rx="7" fill="#321a4e"/>
+      <rect x="-45" y="-156" width="90" height="54" rx="7" fill="#2a1642"/>
+      <path d="M64 -48 V-6 a7 7 0 0 1 -7 6 H44 V-48Z" fill="#ff7a45" opacity="0.38"/>
+      <path d="M54 -100 V-56 H42 V-100Z" fill="#ff7a45" opacity="0.4"/>
+      <path d="M45 -152 V-108 H34 V-152Z" fill="#ff7a45" opacity="0.45"/>
+      <path d="M-64 -2 V-46" stroke="#12081f" stroke-width="10" opacity="0.5"/>
+      <!-- scrolled bracket -->
+      <rect x="-54" y="-170" width="108" height="14" rx="5" fill="#3d2058"/>
+      <path d="M-40 -168 C-62 -160 -66 -184 -48 -190" fill="none" stroke="#3d2058" stroke-width="6" stroke-linecap="round"/>
+      <path d="M40 -168 C62 -160 66 -184 48 -190" fill="none" stroke="#3d2058" stroke-width="6" stroke-linecap="round"/>
+    </g>
+    <g id="cv-head">
+      <rect x="-36" y="-192" width="72" height="24" rx="6" fill="#3a1c46"/>
+      <path d="M-40 -190 L-48 -280 Q0 -292 48 -280 L40 -190Z" fill="url(#cv-glass)"/>
+      <g class="flame">
+        <path d="M0 -255 C-17 -231 -14 -208 0 -198 C14 -208 17 -231 0 -255Z" fill="#fff8d6"/>
+        <path d="M0 -236 C-8 -224 -6 -212 0 -207 C6 -212 8 -224 0 -236Z" fill="#ffd25a"/>
+      </g>
+      <path d="M-18 -190 L-22 -283 M18 -190 L22 -283" stroke="#3a1c46" stroke-width="5"/>
+      <path d="M-44 -193 L-50 -281" stroke="#3a1c46" stroke-width="6"/>
+      <path d="M44 -193 L50 -281" stroke="#3a1c46" stroke-width="6"/>
+      <path d="M-62 -278 Q-54 -322 0 -330 Q54 -322 62 -278 Q0 -290 -62 -278Z" fill="#3a1c46"/>
+      <path d="M12 -327 Q48 -320 58 -284" fill="none" stroke="#ff9a52" stroke-width="4" stroke-linecap="round" opacity="0.8"/>
+      <rect x="-9" y="-344" width="18" height="16" rx="4" fill="#3a1c46"/>
+      <circle cx="0" cy="-356" r="13" fill="none" stroke="#3a1c46" stroke-width="6"/>
+    </g>
+    <g id="cv-lamp"><use href="#cv-post"/><use href="#cv-head"/></g>
+  </defs>
+
+  <!-- 1. sky behind the opening -->
+  <rect width="2400" height="640" fill="#1a0d2e"/>
+  <path class="cave__sky" id="cv-open" d="M1130 640 C1150 480 1220 340 1262 230 C1296 132 1380 62 1500 50 C1630 62 1704 142 1738 236 C1780 344 1850 480 1872 640Z" fill="url(#cv-opening)"/>
+
+  <!-- distant rocks seen through the opening -->
+  <g class="cave__sky" opacity="0.9">
+    <path d="M1260 640 L1290 470 L1330 420 L1360 330 L1390 300 L1410 380 L1440 440 L1450 640Z" fill="#c76a46" opacity="0.55"/>
+    <path d="M1560 640 L1580 500 L1620 450 L1650 360 L1690 330 L1720 420 L1760 500 L1790 640Z" fill="#b25a62" opacity="0.6"/>
+    <path d="M1400 640 L1430 540 L1470 500 L1500 470 L1540 520 L1570 640Z" fill="#8f4a78" opacity="0.7"/>
+  </g>
+
+  <!-- 2. cave wall (everything outside the opening) -->
+  <path fill-rule="evenodd" fill="url(#cv-wall)" d="M0 0 H2400 V640 H0Z M1130 640 C1150 480 1220 340 1262 230 C1296 132 1380 62 1500 50 C1630 62 1704 142 1738 236 C1780 344 1850 480 1872 640Z"/>
+
+  <!-- wall folds, lit from the opening -->
+  <g fill="none" stroke-linecap="round">
+    <path d="M1090 640 C1050 470 1100 300 1210 150 C1250 100 1310 60 1380 36" stroke="#5a3388" stroke-width="5" opacity="0.7"/>
+    <path d="M1010 640 C960 450 1010 270 1130 110" stroke="#44266c" stroke-width="7" opacity="0.8"/>
+    <path d="M1930 640 C1960 470 1900 300 1790 150 C1750 100 1690 60 1620 36" stroke="#5a3388" stroke-width="5" opacity="0.7"/>
+    <path d="M2010 640 C2060 440 2000 260 1880 100" stroke="#44266c" stroke-width="7" opacity="0.8"/>
+    <path d="M760 640 C700 430 740 240 840 60" stroke="#2f1a52" stroke-width="9" opacity="0.7"/>
+    <path d="M520 600 C470 400 520 200 610 20" stroke="#2a1648" stroke-width="10" opacity="0.7"/>
+    <path d="M2200 600 C2260 420 2210 220 2120 20" stroke="#2f1a52" stroke-width="9" opacity="0.7"/>
+  </g>
+  <rect width="1300" height="640" fill="url(#cv-wallSide)"/>
+
+  <!-- rim light around the opening -->
+  <path d="M1130 640 C1150 480 1220 340 1262 230 C1296 132 1380 62 1500 50 C1630 62 1704 142 1738 236 C1780 344 1850 480 1872 640" fill="none" stroke="#ff8a3a" stroke-width="16" opacity="0.5" filter="url(#cv-soft)"/>
+  <path d="M1130 640 C1150 480 1220 340 1262 230 C1296 132 1380 62 1500 50 C1630 62 1704 142 1738 236 C1780 344 1850 480 1872 640" fill="none" stroke="#ffb061" stroke-width="5" stroke-linecap="round"/>
+
+  <!-- stalactites -->
+  <g fill="#1d0f33" stroke="none">
+    <path d="M1290 40 L1336 40 L1312 176 Z"/>
+    <path d="M1366 30 L1412 30 L1388 150 Z"/>
+    <path d="M1590 30 L1636 32 L1616 140 Z"/>
+    <path d="M1664 50 L1712 66 L1686 190 Z"/>
+    <path d="M880 0 L940 0 L914 130 Z"/>
+    <path d="M1010 0 L1060 0 L1040 96 Z"/>
+    <path d="M1830 0 L1900 0 L1866 120 Z"/>
+    <path d="M2050 0 L2110 0 L2086 100 Z"/>
+  </g>
+
+  <!-- 3. big rocks, lit from the centre -->
+  <path d="M860 640 C880 520 940 430 1030 402 C1096 384 1146 450 1186 520 C1208 560 1226 604 1236 640Z" fill="url(#cv-rockLit)"/>
+  <path d="M1030 402 C1096 384 1146 450 1186 520 C1208 560 1226 604 1236 640" fill="none" stroke="#ffb061" stroke-width="5" stroke-linecap="round"/>
+  <path d="M1790 640 C1812 560 1860 470 1930 436 C2000 410 2056 470 2100 540 C2124 576 2140 612 2148 640Z" fill="url(#cv-rockLitR)"/>
+  <path d="M1930 436 C1860 470 1812 560 1790 640" fill="none" stroke="#ffb061" stroke-width="5" stroke-linecap="round"/>
+
+  <!-- tall lit stones at the edges -->
+  <path d="M2180 640 L2200 360 L2236 296 L2272 380 L2296 640Z" fill="url(#cv-rockLitR)" opacity="0.9"/>
+  <path d="M2200 360 L2236 296 L2272 380" fill="none" stroke="#ffb061" stroke-width="4" stroke-linejoin="round" opacity="0.7"/>
+  <path d="M700 640 L722 440 L760 380 L796 470 L816 640Z" fill="url(#cv-rockLit)" opacity="0.8"/>
+
+  <!-- 4. floor + lit path -->
+  <path d="M0 596 C300 570 700 586 1000 560 C1250 540 1750 540 2000 566 C2200 586 2300 576 2400 596 V640 H0Z" fill="url(#cv-floor)"/>
+  <path d="M1290 556 L1710 556 L1960 640 L1060 640Z" fill="url(#cv-path)"/>
+  <g fill="#3a1c46" opacity="0.8">
+    <ellipse cx="1330" cy="610" rx="14" ry="6"/>
+    <ellipse cx="1640" cy="600" rx="18" ry="7"/>
+    <ellipse cx="1480" cy="626" rx="12" ry="5"/>
+    <ellipse cx="1760" cy="628" rx="10" ry="4"/>
+  </g>
+
+  <!-- 5. lantern glow (soft pools) -->
+  <g style="mix-blend-mode:screen">
+    <circle class="glow" cx="1236" cy="352" r="300" fill="url(#cv-glow)"/>
+    <circle class="glow" cx="1790" cy="330" r="340" fill="url(#cv-glow)"/>
+    <ellipse cx="1500" cy="604" rx="600" ry="48" fill="#ff9a3c" opacity="0.28" filter="url(#cv-soft2)"/>
+  </g>
+
+  <!-- 6. lanterns on stone posts -->
+  <use href="#cv-lamp" transform="translate(1236 590)"/>
+  <use href="#cv-lamp" transform="translate(1790 604) scale(1.15)"/>
+
+  <!-- hanging lantern, left -->
+  <g>
+    <path d="M960 0 V160" stroke="#3a1c46" stroke-width="4" stroke-dasharray="9 5"/>
+    <use href="#cv-head" transform="translate(960 345) scale(0.5)"/>
+  </g>
+  <circle class="glow" cx="960" cy="225" r="190" fill="url(#cv-glow)" style="mix-blend-mode:screen"/>
+
+  <!-- 7. foreground plants -->
+  <g transform="translate(1040 640)">
+    <use href="#cv-leaf" transform="rotate(-64)" fill="url(#cv-frond)" opacity="0.7"/>
+    <use href="#cv-leaf" transform="rotate(-36)" fill="url(#cv-frond)"/>
+    <use href="#cv-leaf" transform="rotate(-10) scale(1.1)" fill="url(#cv-frond)"/>
+    <use href="#cv-leaf" transform="rotate(18)" fill="url(#cv-frond)" opacity="0.9"/>
+    <use href="#cv-leaf" transform="rotate(46) scale(0.8)" fill="url(#cv-frond)" opacity="0.7"/>
+  </g>
+  <g transform="translate(2060 640)">
+    <use href="#cv-leaf" transform="rotate(-48) scale(0.85)" fill="url(#cv-frond)" opacity="0.7"/>
+    <use href="#cv-leaf" transform="rotate(-20)" fill="url(#cv-frond)"/>
+    <use href="#cv-leaf" transform="rotate(8) scale(1.15)" fill="url(#cv-frond)"/>
+    <use href="#cv-leaf" transform="rotate(34)" fill="url(#cv-frond)" opacity="0.9"/>
+    <use href="#cv-leaf" transform="rotate(62) scale(0.8)" fill="url(#cv-frond)" opacity="0.7"/>
+  </g>
+
+  <!-- 8. light dust -->
+  <g fill="#ffd488">
+    <circle cx="1420" cy="300" r="3" opacity="0.8"/><circle cx="1560" cy="250" r="2.5" opacity="0.7"/>
+    <circle cx="1480" cy="410" r="2" opacity="0.8"/><circle cx="1640" cy="380" r="3" opacity="0.6"/>
+    <circle cx="1350" cy="460" r="2" opacity="0.6"/><circle cx="1700" cy="470" r="2.5" opacity="0.7"/>
+    <circle cx="1530" cy="180" r="2" opacity="0.8"/><circle cx="1010" cy="400" r="2.5" opacity="0.6"/>
+  </g>
+
+  <!-- 9. purple shadow grade: darkens the rim, keeps the glow -->
+  <rect width="2400" height="640" fill="url(#cv-vignette)"/>
+  <rect width="2400" height="640" fill="#4b1d7a" opacity="0.14" style="mix-blend-mode:multiply"/>
+</svg>

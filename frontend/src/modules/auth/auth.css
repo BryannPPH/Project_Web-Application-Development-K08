@@ -9,7 +9,7 @@
 
 .login-hero {
   /* Tinggi padang rumput; Senja berdiri tepat di atasnya. */
-  --ground-h: clamp(150px, 24vh, 230px);
+  --ground-h: clamp(96px, 14vh, 130px);
 
   position: relative;
   display: flex;
@@ -20,9 +20,14 @@
   min-height: 100vh;
   overflow: hidden;
   padding: 3rem 2rem;
-  color: #fff;
-  background: var(--brand-gradient);
+  color: var(--ink);
+  background: linear-gradient(180deg, #d9c9f4, #ece2fa);
   text-align: center;
+}
+
+:root[data-theme='dark'] .login-hero {
+  color: #fff4e6;
+  background: linear-gradient(180deg, #150a26, #2a1646);
 }
 
 .login-hero__brand {
@@ -30,7 +35,6 @@
   top: 2rem;
   left: 2rem;
   z-index: 2;
-  text-shadow: 0 1px 6px rgb(194 65 12 / 35%);
   display: flex;
   align-items: center;
   gap: 0.625rem;
@@ -53,136 +57,19 @@
   height: 1.75rem;
 }
 
-/* ---------- Hutan senja ----------
- * CARA KERJA ANIMASI DI LAYAR LOGIN (semua murni CSS, tanpa JavaScript):
- *   @keyframes = "naskah" gerakan: keadaan di 0% (from) .. 100% (to).
- *   animation: <nama> <durasi> <easing> <delay?> infinite [alternate];
- *     - infinite  : diulang terus
- *     - alternate : bolak-balik (0->100 lalu 100->0), jadi tidak "loncat"
- *     - linear    : kecepatan konstan (cocok untuk geser latar)
- *     - ease-in-out : pelan-cepat-pelan (cocok untuk gerak makhluk hidup)
- *   Yang dianimasikan hanya background-position, transform, dan opacity.
- *   transform & opacity diproses GPU (compositor) -> halus dan tidak memicu
- *   layout ulang. React tidak terlibat sama sekali setelah render pertama.
- *
- * Daftar animasi:
- *   forest-scroll  22s   pohon bergeser 1 ubin ke kiri (lambat, latar jauh)
- *   grass-scroll   1.4s  rumput bergeser 1 ubin ke kiri (cepat, latar dekat)
- *   firefly        4s    kunang-kunang berkedip + melayang (bolak-balik)
- *   (Senja berjalan bukan CSS: rig animasi SenjaRig, klip "walk" 1s = 2 langkah)
- *   senja-shadow   1s    bayangan mengecil saat maskot terangkat (sinkron dengan walk)
- *   lantern-glow   2.6s  cahaya lentera berdenyut (bolak-balik)
- *   bubble-pop     420ms balon chat muncul SEKALI (tidak infinite)
- */
+/* ---------- Gua Emberden ----------
+ * Latar login adalah gua (CaveScene) di bagian bawah panel; bagian atas melanjutkan warna dinding
+ * gua. Senja berjalan di tempat di antara dua lentera. Pendar lentera dan api berkedip lewat
+ * components/cave-scene.css (otomatis berhenti bila prefers-reduced-motion). */
 
-.forest {
+.login-hero__cave {
   position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.forest__sun {
-  position: absolute;
-  top: 16%;
-  right: 14%;
-  width: clamp(90px, 14vw, 150px);
-  aspect-ratio: 1;
-  border-radius: 999px;
-  background: radial-gradient(circle, #fff6e8 0 55%, #ffe1c2 56% 100%);
-  box-shadow:
-    0 0 40px 18px rgb(255 236 210 / 55%),
-    0 0 120px 60px rgb(255 214 170 / 35%);
-}
-
-.forest__hills,
-.forest__trees,
-.forest__ground {
-  position: absolute;
-  left: 0;
-  width: 100%;
-}
-
-.forest__hills {
-  bottom: calc(var(--ground-h) - 40px);
-  height: clamp(180px, 30vh, 280px);
-}
-
-/* Ubin pohon 3:1 diulang ke samping dan digeser satu ubin per putaran.
- * background-size: auto 100% -> tinggi ubin = tinggi elemen (--trees-h),
- * lebar ubin otomatis = 3 x --trees-h (karena SVG-nya 1200x400).
- * repeat-x -> ubin diulang ke kanan-kiri tanpa batas. */
-.forest__trees {
-  --trees-h: clamp(230px, 40vh, 380px);
-
-  bottom: calc(var(--ground-h) - 30px);
-  height: var(--trees-h);
-  background-repeat: repeat-x;
-  background-position: 0 100%;
-  background-size: auto 100%;
-  animation: forest-scroll 22s linear infinite;
-}
-
-@keyframes forest-scroll {
-  to {
-    background-position: calc(var(--trees-h) * -3) 100%;
-  }
-}
-
-.forest__ground {
-  bottom: 0;
-  height: var(--ground-h);
-}
-
-/* Rumpun rumput + bunga kecil sebagai pola berulang di tepi padang rumput. */
-.forest__grass {
-  position: absolute;
-  bottom: calc(var(--ground-h) - 46px);
-  left: 0;
-  width: 100%;
-  height: 34px;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='34' viewBox='0 0 140 34'%3E%3Cg fill='none' stroke='%237fb04f' stroke-linecap='round' stroke-width='3'%3E%3Cpath d='M8 34 Q6 22 2 14M12 34 Q13 20 18 10M16 34 Q20 24 26 20'/%3E%3Cpath d='M62 34 Q60 24 55 18M67 34 Q68 18 72 8M72 34 Q76 25 82 22'/%3E%3Cpath d='M112 34 Q110 26 106 20M117 34 Q119 22 124 14'/%3E%3C/g%3E%3Cg fill='%23ff8a9a'%3E%3Ccircle cx='38' cy='20' r='3'/%3E%3Ccircle cx='43' cy='20' r='3'/%3E%3Ccircle cx='40.5' cy='16' r='3'/%3E%3Ccircle cx='40.5' cy='24' r='3'/%3E%3C/g%3E%3Ccircle cx='40.5' cy='20' r='2' fill='%23fff3c4'/%3E%3Cpath d='M40.5 26 V34' stroke='%237fb04f' stroke-width='2'/%3E%3Cg fill='%23ffffff'%3E%3Ccircle cx='94' cy='24' r='2.5'/%3E%3Ccircle cx='98' cy='24' r='2.5'/%3E%3Ccircle cx='96' cy='21' r='2.5'/%3E%3Ccircle cx='96' cy='27' r='2.5'/%3E%3C/g%3E%3Ccircle cx='96' cy='24' r='1.6' fill='%23ffb38a'/%3E%3C/svg%3E")
-    repeat-x 0 100%;
-  animation: grass-scroll 1.4s linear infinite;
-}
-
-/* Rumput di depan bergeser lebih cepat daripada pohon (parallax).
- * Gambar rumput (SVG inline di atas) lebarnya 140px, jadi digeser tepat
- * -140px = 1 ubin -> seamless loop, sama prinsipnya dengan forest-scroll.
- * Kecepatan: 140px / 1.4s = 100 px/detik, jauh lebih cepat dari pohon
- * (contoh --trees-h 380px: 1140px / 22s ~ 52 px/detik). Beda kecepatan inilah
- * yang memberi kesan kedalaman. */
-@keyframes grass-scroll {
-  to {
-    background-position: -140px 100%;
-  }
-}
-
-.forest__firefly {
-  position: absolute;
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: #fff3c4;
-  box-shadow: 0 0 10px 4px rgb(255 214 140 / 75%);
-  /* animation-delay tiap kunang-kunang diisi dari LoginForest.tsx (inline style),
-   * sehingga 8 kunang-kunang tidak berkedip bersamaan. */
-  animation: firefly 4s ease-in-out infinite alternate;
-}
-
-@keyframes firefly {
-  0% {
-    opacity: 0.15;
-    transform: translate(0, 0);
-  }
-
-  50% {
-    opacity: 1;
-  }
-
-  100% {
-    opacity: 0.3;
-    transform: translate(10px, -14px);
-  }
+  inset: auto 0 0;
+  z-index: 0;
+  /* Tinggi mengikuti rasio gambar (potongan 780x640), menempel di dasar panel. */
+  aspect-ratio: 780 / 640;
+  /* Tepi atas gambar dilarutkan ke warna dinding supaya tidak ada garis potong. */
+  mask-image: linear-gradient(to bottom, transparent 0, #000 32%);
 }
 
 /* Senja "berbicara": tagline tampil sebagai balon chat dengan ekor ke maskot. */
@@ -212,7 +99,7 @@
   width: 62%;
   height: 22px;
   border-radius: 50%;
-  background: rgb(54 84 34 / 35%);
+  background: rgb(40 16 70 / 35%);
   filter: blur(3px);
   transform: translateX(-50%);
   animation: senja-shadow 1s ease-in-out infinite;
@@ -455,10 +342,7 @@
     min-height: 0;
   }
 
-  .forest__sun,
-  .forest__hills,
-  .forest__trees,
-  .forest__firefly,
+  .login-hero__cave,
   .login-hero__glow {
     display: none;
   }

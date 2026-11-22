@@ -31,24 +31,81 @@
   scrollbar-width: none;
 }
 
-.sidebar__brand {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  margin: 0 18px 1.75rem 4px;
-  color: #fff;
-  font-size: 1.0625rem;
-  font-weight: 700;
+/* Papan nama kayu yang tergantung dari rantai (Emberden). Rantai menempel ke tepi atas sidebar. */
+.sidebar__sign {
+  position: relative;
+  display: block;
+  margin: -1.5rem 18px 1.5rem 4px;
+  padding-top: 2.25rem;
+  color: #fff4e6;
   text-decoration: none;
 }
 
-.sidebar__brand img {
-  width: auto;
-  height: 38px;
+.sidebar__sign::before,
+.sidebar__sign::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 4px;
+  height: 2.5rem;
+  border-radius: 2px;
+  background: repeating-linear-gradient(to bottom, #b69abf 0 5px, transparent 5px 8px);
 }
 
-.sidebar__brand-accent {
-  color: var(--brand-sunset);
+.sidebar__sign::before { left: 22%; }
+.sidebar__sign::after { right: 22%; }
+
+.sidebar__sign-board {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  border-radius: 12px;
+  padding: 0.875rem 1rem;
+  background:
+    radial-gradient(circle 2.5px at 10px 10px, #e2bd92 0 2px, transparent 2.5px),
+    radial-gradient(circle 2.5px at calc(100% - 10px) 10px, #e2bd92 0 2px, transparent 2.5px),
+    repeating-linear-gradient(92deg, transparent 0 11px, rgb(0 0 0 / 9%) 11px 12px),
+    linear-gradient(180deg, #7b4a31, #583221);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 18%),
+    inset 0 -3px 0 rgb(0 0 0 / 25%),
+    0 8px 18px -6px rgb(0 0 0 / 55%);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .sidebar__sign:hover .sidebar__sign-board {
+    transform: rotate(-1.2deg);
+    transform-origin: 50% -1.5rem;
+  }
+}
+
+.sidebar__sign:focus-visible {
+  outline: 2px solid #ffb061;
+  outline-offset: 4px;
+  border-radius: 12px;
+}
+
+.sidebar__sign img {
+  width: auto;
+  height: 34px;
+}
+
+.sidebar__sign small {
+  display: block;
+  color: #ecd2b8;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.sidebar__sign strong {
+  display: block;
+  font-size: 1.3125rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
 }
 
 .sidebar__section {
@@ -274,6 +331,7 @@
 /* ---------- Panel konten ---------- */
 
 .workspace-body {
+  position: relative;
   flex: 1;
   min-width: 0;
   border-radius: var(--panel-radius) 0 0 var(--panel-radius);
@@ -292,7 +350,25 @@
   max-width: calc(var(--content-max) - 2 * var(--content-pad));
   height: 4.25rem;
   margin: 0 var(--content-pad);
-  border-bottom: 1px solid var(--line-soft);
+}
+
+/* Pita gua di belakang top bar dan judul halaman, memudar ke latar halaman. */
+.page-band {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 0;
+  height: 11rem;
+  overflow: hidden;
+  border-top-left-radius: var(--panel-radius);
+  opacity: 0.9;
+  pointer-events: none;
+  mask-image: linear-gradient(to bottom, #000 25%, transparent 100%);
+}
+
+.topbar,
+.workspace-main {
+  position: relative;
+  z-index: 1;
 }
 
 .topbar__menu {
@@ -439,4 +515,54 @@
 /* ---------- Masuk halaman ---------- */
 .page-enter {
   animation: rise-in 380ms var(--ease-out) both;
+}
+
+/* ---------- Beranda: gambar gua penuh di atas, latar polos satu warna di bawahnya ----------
+   Gambar memudar ke warna panel, jadi menyatu ke latar. Mode terang memakai gua lavender di atas
+   panel terang biasa; mode gelap memakai gua gelap di atas panel violet yang sama dengan tepi gambar.
+   Top bar menumpang di atas gambar. */
+
+.workspace--home .workspace-body {
+  position: relative;
+  overflow: clip;
+}
+
+.workspace--home .topbar {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 3;
+  max-width: none;
+  margin: 0;
+  padding: 0 var(--content-pad);
+  border-bottom: 0;
+}
+
+.workspace--home .workspace-main {
+  max-width: none;
+  padding: 0;
+}
+
+.workspace--home .topbar__theme,
+.workspace--home .topbar__menu {
+  background: rgb(255 255 255 / 60%);
+}
+
+:root[data-theme='dark'] .workspace--home {
+  --canvas: #1a0d2e;
+}
+
+:root[data-theme='dark'] .workspace--home .sidebar__nav a[aria-current='page'] {
+  color: #fff4e6;
+}
+
+:root[data-theme='dark'] .workspace--home .breadcrumb li,
+:root[data-theme='dark'] .workspace--home .breadcrumb a,
+:root[data-theme='dark'] .workspace--home .breadcrumb [aria-current='page'] {
+  color: #f0e2fa;
+}
+
+:root[data-theme='dark'] .workspace--home .topbar__theme,
+:root[data-theme='dark'] .workspace--home .topbar__menu {
+  color: #fff4e6;
+  background: rgb(16 7 28 / 55%);
 }
