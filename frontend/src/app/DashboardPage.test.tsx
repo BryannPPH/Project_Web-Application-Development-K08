@@ -68,7 +68,11 @@ describe('DashboardPage', () => {
 
     // Database yang bisa diakses tampil paling atas, lengkap dengan tautan viewer.
     expect(await screen.findByRole('link', { name: 'A' })).toHaveAttribute('href', '/databases/db-1')
-    expect(document.querySelector('.hero__summary')).toHaveTextContent('Anda punya akses ke 2 database: 1 bisa diubah, 1 hanya lihat.')
+    // Angka akses ada di rel widget (bukan kalimat ringkasan di banner).
+    const rail = screen.getByRole('complementary', { name: 'Ringkasan database' })
+    await waitFor(() => expect(rail).toHaveTextContent(/Di sistem\s*2\s*terdaftar/))
+    expect(rail).toHaveTextContent(/Bisa Anda akses\s*2\s*dari 2/)
+    expect(rail).toHaveTextContent(/Bisa diubah\s*1\s*dari 2/)
 
     // Ringkasan platform: tiap angka adalah tautan ke halaman admin-nya.
     expect(screen.getByRole('heading', { name: 'Administrasi platform' })).toBeInTheDocument()
