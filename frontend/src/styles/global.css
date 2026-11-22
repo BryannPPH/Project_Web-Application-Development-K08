@@ -180,6 +180,87 @@
   --badge-view-bg: #1d2e4d;
 }
 
+/* Widget terang di mode gelap: kartu, panel, tabel, kontrol filter, dan kotak status memakai palet
+   mode terang (putih) di atas latar gelap, seperti kartu krem pada referensi. Token diganti pada
+   wadahnya, jadi semua isi (teks, garis, input, warna status) ikut berganti bersama. Teks yang
+   langsung di atas latar (judul halaman, deskripsi) tetap memakai token mode gelap. */
+:root[data-theme='dark'] :is(
+  .panel,
+  .panel--placeholder,
+  .data-table-wrapper,
+  .db-card,
+  .empty-state,
+  .status-message,
+  .segmented,
+  .pill-tabs,
+  .input,
+  .viewer-sidebar,
+  .diff-change,
+  .plan-tree,
+  .explain-statement,
+  .explain-metrics > div,
+  .approval-decision__note,
+  .migration-reconciliation__note
+) {
+  color-scheme: light;
+  color: var(--ink);
+
+  --action: #c2410c;
+  --action-hover: #9a3412;
+  --on-action: #ffffff;
+  --action-soft: #fff1ee;
+  --badge-view-ink: #1f5fbf;
+  --badge-view-bg: #e5f0ff;
+
+  --surface: #ffffff;
+  --surface-subtle: #fff8f6;
+  --ink: #2b1b2e;
+  --ink-soft: #4a3a4d;
+  --muted: #6b4c6e;
+  --line: #e8d5d0;
+  --line-soft: #f3e7e3;
+  --hover: #fff3ec;
+  --selected: #ffe3d3;
+
+  --danger: #d92d20;
+  --danger-bg: #fee4e2;
+  --warning: #b54708;
+  --warning-bg: #fef0c7;
+  --success: #067647;
+  --success-bg: #dcfae6;
+  --info: #175cd3;
+  --info-bg: #d1e9ff;
+  --neutral: #475467;
+  --neutral-bg: #f2f4f7;
+
+  --danger-soft: #fef3f2;
+  --danger-line: #fecdca;
+  --danger-strong: #b42318;
+  --success-soft: #ecfdf3;
+  --success-line: #a6efc4;
+  --warning-soft: #fffaeb;
+  --warning-line: #fedf89;
+  --info-soft: #eef6ff;
+  --info-line: #b2d4fb;
+  --info-strong: #12459e;
+
+  --tint-peach: #fff4ee;
+  --tint-pink: #ffeef1;
+  --tint-lavender: #f6eef6;
+  --coral-strong: #a3243f;
+  --placeholder: #a08aa2;
+
+  --area-database-soft: #fff0e8;
+  --area-migration-soft: #ffeaf1;
+  --area-diff-soft: #f1edff;
+  --area-admin-soft: #e3f7f5;
+  --area-home-soft: #fff6e0;
+
+  --shadow: 0 1px 2px rgb(43 27 46 / 6%);
+  --shadow-card: 0 10px 24px -12px rgb(0 0 0 / 55%);
+  --shadow-lift: 0 16px 32px -12px rgb(0 0 0 / 65%);
+}
+
 * {
   box-sizing: border-box;
 }
