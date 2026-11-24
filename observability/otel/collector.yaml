@@ -6,7 +6,7 @@ receivers:
       http:
         endpoint: 0.0.0.0:4318
   filelog:
-    include: [/var/log/dbmp/application.jsonl]
+    include: [/var/log/dbmp/*.jsonl]
     start_at: beginning
     operators:
       - type: json_parser
@@ -28,12 +28,6 @@ processors:
     limit_mib: 256
   batch:
     timeout: 5s
-  resource:
-    attributes:
-      - key: service.name
-        value: dbmp-backend
-        action: upsert
-
 exporters:
   otlp/tempo:
     endpoint: tempo:4317
@@ -48,9 +42,9 @@ service:
   pipelines:
     logs:
       receivers: [otlp, filelog]
-      processors: [memory_limiter, resource, batch]
+      processors: [memory_limiter, batch]
       exporters: [otlphttp/loki, debug]
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, resource, batch]
+      processors: [memory_limiter, batch]
       exporters: [otlp/tempo, debug]

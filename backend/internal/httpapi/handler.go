@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/observability"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/session"
 )
 
@@ -55,13 +56,13 @@ func NewHandler(deps Dependencies) http.Handler {
 	}
 	mux.HandleFunc("/", notFound)
 
-	return requestID(
+	return observability.HTTPMiddleware(requestID(
 		accessLog(deps.Logger,
 			recoverPanic(deps.Logger,
 				securityHeaders(mux),
 			),
 		),
-	)
+	))
 }
 
 func health(w http.ResponseWriter, _ *http.Request) {

@@ -6,6 +6,9 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/observability"
+	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/requestmeta"
 )
 
 type responseRecorder struct {
@@ -21,7 +24,7 @@ func (r *responseRecorder) WriteHeader(status int) {
 func requestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := newRequestID()
-		ctx := withRequestID(r.Context(), id)
+		ctx := withRequestID(requestmeta.WithRequestID(r.Context(), id), id)
 
 		w.Header().Set("X-Request-ID", id)
 		next.ServeHTTP(w, r.WithContext(ctx))
@@ -35,13 +38,15 @@ func accessLog(logger *slog.Logger, next http.Handler) http.Handler {
 
 		next.ServeHTTP(recorder, r)
 
-		logger.InfoContext(r.Context(), "HTTP request completed",
+		attributes := []any{
 			"request_id", requestIDFromContext(r.Context()),
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", recorder.status,
 			"duration_ms", time.Since(startedAt).Milliseconds(),
-		)
+		}
+		attributes = append(attributes, observability.TraceFields(r.Context())...)
+		logger.InfoContext(r.Context(), "HTTP request completed", attributes...)
 	})
 }
 
