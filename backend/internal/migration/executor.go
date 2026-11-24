@@ -110,9 +110,11 @@ func (e *PGExecutor) Execute(ctx context.Context, databaseID, sqlText string) Ex
 
 var credentialPattern = regexp.MustCompile(`(?i)(password|passwd|pwd|user|username|host|dbname|database|sslkey|sslcert)\s*=\s*([^\s;]+)`)
 var postgresURLPattern = regexp.MustCompile(`(?i)(postgres(?:ql)?://[^:/@\s]+:)[^@\s]+@`)
+var quotedErrorLiteralPattern = regexp.MustCompile(`'(?:''|[^'])*'`)
 
 func sanitizeTargetError(err error) string {
 	message := strings.TrimSpace(err.Error())
+	message = quotedErrorLiteralPattern.ReplaceAllString(message, "'[redacted]'")
 	message = postgresURLPattern.ReplaceAllString(message, "$1[redacted]@")
 	message = credentialPattern.ReplaceAllString(message, "$1=[redacted]")
 	if len(message) > 1000 {

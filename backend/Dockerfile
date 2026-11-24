@@ -13,6 +13,8 @@ ARG TARGETARCH
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath -ldflags="-s -w" -o /out/api ./cmd/api && \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath -ldflags="-s -w" -o /out/worker ./cmd/worker && \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath -ldflags="-s -w" -o /out/migrate ./cmd/migrate && \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath -ldflags="-s -w" -o /out/bootstrap-admin ./cmd/bootstrap-admin
@@ -26,6 +28,7 @@ RUN apk add --no-cache ca-certificates tzdata && \
     chown app:app /var/log/dbmp
 
 COPY --from=builder /out/api /usr/local/bin/api
+COPY --from=builder /out/worker /usr/local/bin/worker
 COPY --from=builder /out/migrate /usr/local/bin/migrate
 COPY --from=builder /out/bootstrap-admin /usr/local/bin/bootstrap-admin
 

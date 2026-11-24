@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/observability"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/targetdb"
 )
 
@@ -75,7 +76,10 @@ func (e *PGExecutor) executeBatchUp(ctx context.Context, connection targetdb.Con
 		return failedBatch("could not read batch checkpoint", err)
 	}
 	for {
-		selectCtx, cancel := context.WithCancel(ctx)
+		activity := targetdb.ActivityFromContext(ctx)
+		activity.BatchNumber = batchNumber + 1
+		batchCtx := targetdb.WithActivity(ctx, activity)
+		selectCtx, cancel := context.WithCancel(batchCtx)
 		tx, err := connection.Begin(selectCtx)
 		if err != nil {
 			cancel()
@@ -144,7 +148,7 @@ func (e *PGExecutor) executeBatchUp(ctx context.Context, connection targetdb.Con
 		commitErr := tx.Commit(selectCtx)
 		cancel()
 		if commitErr != nil {
-			committed, checkErr := e.batchCheckpointExists(ctx, connection, rootID, "up", batchNumber)
+			committed, checkErr := e.batchCheckpointExists(batchCtx, connection, rootID, "up", batchNumber)
 			if checkErr != nil {
 				return ExecutionResult{Status: StatusInterrupted, PublicError: stringPtr("batch commit outcome is uncertain; inspect the target checkpoint before resuming"), InternalError: errors.Join(commitErr, checkErr)}
 			}
@@ -152,12 +156,14 @@ func (e *PGExecutor) executeBatchUp(ctx context.Context, connection targetdb.Con
 				return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "up", "batch transaction did not commit", commitErr)
 			}
 		}
-		e.logger.InfoContext(ctx, "migration batch committed", "event", "migration_batch_committed",
+		logFields := []any{"event", "migration_batch_committed",
 			"database_id", databaseID, "migration_id", plan.Entry.ID, "execution_id", executionID,
 			"actor", plan.ActorUsername, "revision", plan.Entry.Revision,
 			"batch", batchNumber, "cursor_start", cursorStart, "cursor_end", cursorEnd,
 			"rows_affected", rowsAffected, "query", redactSQLForLog(plan.SQLSnapshot),
-			"parameters", []int64{cursorStart, cursorEnd})
+			"parameters", []int64{cursorStart, cursorEnd}}
+		logFields = append(logFields, batchActivityFields(batchCtx)...)
+		e.logger.InfoContext(batchCtx, "migration batch committed", logFields...)
 		if report != nil {
 			if err := report(BatchCommitEvent{Operation: "up", BatchNumber: batchNumber, CursorStart: cursorStart,
 				CursorEnd: cursorEnd, RowsAffected: rowsAffected, QuerySQL: plan.SQLSnapshot}); err != nil {
@@ -183,8 +189,11 @@ func (e *PGExecutor) executeBatchRollback(ctx context.Context, connection target
 		return failedBatch("batch migration is irreversible", ErrIrreversible)
 	}
 	for batchNumber := lastBatch; batchNumber > 0; batchNumber-- {
+		activity := targetdb.ActivityFromContext(ctx)
+		activity.BatchNumber = batchNumber
+		batchCtx := targetdb.WithActivity(ctx, activity)
 		var cursorStart, cursorEnd int64
-		err := connection.QueryRow(ctx, `SELECT cursor_start,cursor_end FROM dbmp_migration_batch_checkpoints
+		err := connection.QueryRow(batchCtx, `SELECT cursor_start,cursor_end FROM dbmp_migration_batch_checkpoints
 			WHERE root_execution_id=$1::uuid AND operation='up' AND batch_number=$2`, rootID, batchNumber).
 			Scan(&cursorStart, &cursorEnd)
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -193,32 +202,32 @@ func (e *PGExecutor) executeBatchRollback(ctx context.Context, connection target
 		if err != nil {
 			return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "down", "could not read source batch range", err)
 		}
-		committed, err := e.batchCheckpointExists(ctx, connection, rootID, "down", batchNumber)
+		committed, err := e.batchCheckpointExists(batchCtx, connection, rootID, "down", batchNumber)
 		if err != nil {
 			return ExecutionResult{Status: StatusInterrupted, PublicError: stringPtr("rollback checkpoint outcome is uncertain"), InternalError: err}
 		}
 		if committed {
 			continue
 		}
-		tx, err := connection.Begin(ctx)
+		tx, err := connection.Begin(batchCtx)
 		if err != nil {
 			return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "down", "could not start rollback batch transaction", err)
 		}
-		result, err := tx.Exec(ctx, plan.SQLSnapshot, cursorStart, cursorEnd)
+		result, err := tx.Exec(batchCtx, plan.SQLSnapshot, cursorStart, cursorEnd)
 		if err != nil {
 			_ = tx.Rollback(context.WithoutCancel(ctx))
 			return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "down", "rollback batch SQL failed", err)
 		}
 		rowsAffected := result.RowsAffected()
-		if _, err := tx.Exec(ctx, `INSERT INTO dbmp_migration_batch_checkpoints
+		if _, err := tx.Exec(batchCtx, `INSERT INTO dbmp_migration_batch_checkpoints
 			(root_execution_id,execution_id,operation,batch_number,cursor_start,cursor_end,rows_affected,committed_at)
 			VALUES ($1::uuid,$2::uuid,'down',$3,$4,$5,$6,$7)`,
 			rootID, executionID, batchNumber, cursorStart, cursorEnd, rowsAffected, time.Now().UTC()); err != nil {
 			_ = tx.Rollback(context.WithoutCancel(ctx))
 			return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "down", "could not save rollback checkpoint", err)
 		}
-		if err := tx.Commit(ctx); err != nil {
-			committed, checkErr := e.batchCheckpointExists(ctx, connection, rootID, "down", batchNumber)
+		if err := tx.Commit(batchCtx); err != nil {
+			committed, checkErr := e.batchCheckpointExists(batchCtx, connection, rootID, "down", batchNumber)
 			if checkErr != nil {
 				return ExecutionResult{Status: StatusInterrupted, PublicError: stringPtr("rollback batch commit outcome is uncertain"), InternalError: errors.Join(err, checkErr)}
 			}
@@ -226,12 +235,14 @@ func (e *PGExecutor) executeBatchRollback(ctx context.Context, connection target
 				return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "down", "rollback batch transaction did not commit", err)
 			}
 		}
-		e.logger.InfoContext(ctx, "migration rollback batch committed", "event", "migration_batch_rollback_committed",
+		logFields := []any{"event", "migration_batch_rollback_committed",
 			"database_id", databaseID, "migration_id", plan.Entry.ID, "execution_id", executionID,
 			"actor", plan.ActorUsername, "revision", plan.Entry.Revision,
 			"batch", batchNumber, "cursor_start", cursorStart, "cursor_end", cursorEnd,
 			"rows_affected", rowsAffected, "query", redactSQLForLog(plan.SQLSnapshot),
-			"parameters", []int64{cursorStart, cursorEnd})
+			"parameters", []int64{cursorStart, cursorEnd}}
+		logFields = append(logFields, batchActivityFields(batchCtx)...)
+		e.logger.InfoContext(batchCtx, "migration rollback batch committed", logFields...)
 		if report != nil {
 			if err := report(BatchCommitEvent{Operation: "down", BatchNumber: batchNumber, CursorStart: cursorStart,
 				CursorEnd: cursorEnd, RowsAffected: rowsAffected, QuerySQL: plan.SQLSnapshot}); err != nil {
@@ -243,12 +254,21 @@ func (e *PGExecutor) executeBatchRollback(ctx context.Context, connection target
 	return ExecutionResult{Status: StatusSucceeded}
 }
 
+func batchActivityFields(ctx context.Context) []any {
+	activity := targetdb.ActivityFromContext(ctx)
+	fields := []any{"job_id", activity.JobID, "attempt", activity.Attempt,
+		"correlation_id", activity.CorrelationID, "batch_number", activity.BatchNumber}
+	return append(fields, observability.TraceFields(ctx)...)
+}
+
 func (e *PGExecutor) batchFailure(ctx context.Context, connection targetdb.Connection, databaseID, executionID, rootID, operation, public string, err error) ExecutionResult {
 	var committed int64
 	if queryErr := connection.QueryRow(ctx, `SELECT count(*) FROM dbmp_migration_batch_checkpoints
 		WHERE root_execution_id=$1::uuid AND operation=$2`, rootID, operation).Scan(&committed); queryErr != nil {
-		e.logger.ErrorContext(ctx, "migration batch checkpoint inspection failed", "event", "migration_batch_checkpoint_uncertain",
-			"database_id", databaseID, "execution_id", executionID, "error", safeError(errors.Join(err, queryErr)))
+		fields := []any{"event", "migration_batch_checkpoint_uncertain",
+			"database_id", databaseID, "execution_id", executionID, "error", safeError(errors.Join(err, queryErr))}
+		fields = append(fields, batchActivityFields(ctx)...)
+		e.logger.ErrorContext(ctx, "migration batch checkpoint inspection failed", fields...)
 		return ExecutionResult{Status: StatusInterrupted, PublicError: stringPtr("batch state is uncertain; inspect target checkpoint evidence before retrying"), InternalError: errors.Join(err, queryErr)}
 	}
 	status := StatusFailed
@@ -257,9 +277,11 @@ func (e *PGExecutor) batchFailure(ctx context.Context, connection targetdb.Conne
 	} else if operation == "up" && committed > 0 {
 		status = StatusPartial
 	}
-	e.logger.ErrorContext(ctx, "migration batch failed", "event", "migration_batch_failed",
+	fields := []any{"event", "migration_batch_failed",
 		"database_id", databaseID, "execution_id", executionID, "committed_batches", committed,
-		"operation", operation, "error", safeError(err))
+		"operation", operation, "error", safeError(err)}
+	fields = append(fields, batchActivityFields(ctx)...)
+	e.logger.ErrorContext(ctx, "migration batch failed", fields...)
 	return ExecutionResult{Status: status, PublicError: stringPtr(public + ": " + sanitizeTargetError(err)), InternalError: err}
 }
 

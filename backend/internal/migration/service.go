@@ -5,11 +5,19 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/auth"
+	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/observability"
+	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/requestmeta"
 	shareduuid "github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/shared/uuid"
+	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/targetdb"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -223,7 +231,25 @@ func (s *Service) Forward(ctx context.Context, principal auth.Principal, databas
 	return s.ExecuteAction(ctx, principal, databaseID, migrationID, ActionForward)
 }
 
-func (s *Service) ExecuteAction(ctx context.Context, principal auth.Principal, databaseID, migrationID string, action ExecutionAction) (Entry, error) {
+func (s *Service) ExecuteAction(ctx context.Context, principal auth.Principal, databaseID, migrationID string,
+	action ExecutionAction) (resultEntry Entry, resultErr error) {
+	ctx = auth.WithPrincipal(ctx, principal)
+	ctx, executionSpan := otel.Tracer("dbmp/migration").Start(ctx, "migration.execute",
+		trace.WithAttributes(attribute.String("db.system", "postgresql"), attribute.String("db.namespace", databaseID),
+			attribute.String("db.migration.id", migrationID), attribute.String("db.migration.action", string(action))))
+	defer func() {
+		if resultErr != nil {
+			executionSpan.RecordError(errors.New("migration execution failed"))
+			executionSpan.SetStatus(codes.Error, "migration execution failed")
+		} else if resultEntry.Status != "" {
+			executionSpan.SetAttributes(attribute.String("db.migration.status", string(resultEntry.Status)))
+			if resultEntry.Status != StatusSucceeded {
+				executionSpan.SetStatus(codes.Error, string(resultEntry.Status))
+			}
+		}
+		executionSpan.End()
+	}()
+	queuedJob, isQueued := queuedExecutionFromContext(ctx)
 	repository, ok := s.repository.(AttemptRepository)
 	if !ok {
 		if action == ActionApply {
@@ -234,10 +260,19 @@ func (s *Service) ExecuteAction(ctx context.Context, principal auth.Principal, d
 	if err := s.authorizer.RequireDatabaseEdit(ctx, principal, databaseID); err != nil {
 		return Entry{}, err
 	}
-	lock, err := s.locker.Acquire(ctx, databaseID)
+	lockStarted := time.Now()
+	lockCtx, lockSpan := otel.Tracer("dbmp/migration").Start(ctx, "migration.lock.acquire",
+		trace.WithAttributes(attribute.String("db.namespace", databaseID)))
+	lock, err := s.locker.Acquire(lockCtx, databaseID)
+	lockWait := time.Since(lockStarted)
+	lockSpan.SetAttributes(attribute.Int64("db.lock.wait_ms", lockWait.Milliseconds()))
 	if err != nil {
+		lockSpan.RecordError(errors.New("migration lock unavailable"))
+		lockSpan.SetStatus(codes.Error, "migration lock unavailable")
+		lockSpan.End()
 		return Entry{}, fmt.Errorf("acquire execution lock: %w", err)
 	}
+	lockSpan.End()
 	defer func() {
 		releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -251,6 +286,15 @@ func (s *Service) ExecuteAction(ctx context.Context, principal auth.Principal, d
 	plan, err := repository.PlanExecution(ctx, databaseID, migrationID, action, principal.UserID)
 	if err != nil {
 		return Entry{}, err
+	}
+	plan.LockWait = lockWait
+	if isQueued {
+		if plan.Entry.Revision != queuedJob.RequestedRevision || plan.Entry.ExecutionMode != queuedJob.ExecutionMode {
+			return Entry{}, ErrRevisionChanged
+		}
+		plan.JobID = queuedJob.ID
+		plan.JobLeaseToken = valueOrEmpty(queuedJob.leaseToken)
+		plan.JobWorkerID = valueOrEmpty(queuedJob.workerID)
 	}
 	approvalAction := string(action)
 	if action == ActionRetry {
@@ -289,20 +333,43 @@ func (s *Service) ExecuteAction(ctx context.Context, principal auth.Principal, d
 	if err != nil {
 		return Entry{}, err
 	}
-	s.logger.InfoContext(ctx, "migration SQL execution started",
+	activity := targetdb.Activity{MigrationID: migrationID, ExecutionID: attempt.ID, Action: string(action),
+		Attempt: 1, CorrelationID: requestmeta.RequestID(ctx)}
+	if isQueued {
+		activity.JobID = queuedJob.ID
+		activity.Attempt = queuedJob.RetryCount + 1
+		if queuedJob.CorrelationID != nil {
+			activity.CorrelationID = *queuedJob.CorrelationID
+		}
+	}
+	ctx = targetdb.WithActivity(ctx, activity)
+	startFields := []any{
 		"event", "migration_sql_started", "actor", principal.Username, "database_id", databaseID,
 		"migration_id", migrationID, "execution_id", attempt.ID, "revision", attempt.Revision,
-		"action", action, "query", redactSQLForLog(attempt.SQLSnapshot), "attempt", 1)
+		"action", action, "query", redactSQLForLog(attempt.SQLSnapshot), "attempt", activity.Attempt,
+		"lock_wait_ms", lockWait.Milliseconds(), "job_id", activity.JobID,
+	}
+	startFields = append(startFields, observability.TraceFields(ctx)...)
+	s.logger.InfoContext(ctx, "migration SQL execution started", startFields...)
 
 	executionCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 	var result ExecutionResult
 	if plan.Entry.ExecutionMode == ExecutionModeBatch {
-		result = batchExecutor.ExecuteBatch(executionCtx, databaseID, attempt.ID, plan, func(batch BatchCommitEvent) error {
+		batchCtx, batchSpan := otel.Tracer("dbmp/migration").Start(executionCtx, "migration.batch.execute",
+			trace.WithAttributes(attribute.String("db.namespace", databaseID),
+				attribute.String("db.migration.id", migrationID), attribute.String("db.execution.id", attempt.ID)))
+		result = batchExecutor.ExecuteBatch(batchCtx, databaseID, attempt.ID, plan, func(batch BatchCommitEvent) error {
 			recordCtx, recordCancel := context.WithTimeout(context.WithoutCancel(executionCtx), 5*time.Second)
 			defer recordCancel()
 			return repository.RecordBatchEvent(recordCtx, attempt.ID, batch, s.clock.Now())
 		})
+		batchSpan.SetAttributes(attribute.String("db.migration.status", string(result.Status)))
+		if result.InternalError != nil {
+			batchSpan.RecordError(errors.New("batch migration failed"))
+			batchSpan.SetStatus(codes.Error, "batch migration failed")
+		}
+		batchSpan.End()
 	} else {
 		result = s.executor.Execute(executionCtx, databaseID, plan.SQLSnapshot)
 	}
@@ -332,14 +399,18 @@ func (s *Service) ExecuteAction(ctx context.Context, principal auth.Principal, d
 		return Entry{}, fmt.Errorf("finalize migration history: %w", finishErr)
 	}
 	if result.InternalError != nil {
-		s.logger.WarnContext(ctx, "migration execution did not succeed", "event", "migration_sql_finished",
+		finishFields := []any{"event", "migration_sql_finished",
 			"actor", principal.Username, "database_id", databaseID, "migration_id", migrationID,
 			"execution_id", attempt.ID, "status", result.Status, "query", redactSQLForLog(attempt.SQLSnapshot),
-			"error", safeError(result.InternalError))
+			"error", safeError(result.InternalError)}
+		finishFields = append(finishFields, observability.TraceFields(ctx)...)
+		s.logger.WarnContext(ctx, "migration execution did not succeed", finishFields...)
 	} else {
-		s.logger.InfoContext(ctx, "migration SQL execution finished", "event", "migration_sql_finished",
+		finishFields := []any{"event", "migration_sql_finished",
 			"actor", principal.Username, "database_id", databaseID, "migration_id", migrationID,
-			"execution_id", attempt.ID, "status", result.Status, "query", redactSQLForLog(attempt.SQLSnapshot))
+			"execution_id", attempt.ID, "status", result.Status, "query", redactSQLForLog(attempt.SQLSnapshot)}
+		finishFields = append(finishFields, observability.TraceFields(ctx)...)
+		s.logger.InfoContext(ctx, "migration SQL execution finished", finishFields...)
 	}
 	entry.CanEdit = true
 	entry.CanReconcile = needsReconciliation(entry.Status)
@@ -508,14 +579,25 @@ func safeError(err error) string {
 	if err == nil {
 		return ""
 	}
-	return sanitizeTargetError(err)
+	if errors.Is(err, targetdb.ErrTargetUnavailable) {
+		return "target database unavailable"
+	}
+	type sqlStateError interface{ SQLState() string }
+	var stateError sqlStateError
+	if errors.As(err, &stateError) && stateError.SQLState() != "" {
+		return "database operation failed (SQLSTATE " + stateError.SQLState() + ")"
+	}
+	return "migration operation failed"
 }
 
 func redactSQLForLog(sqlText string) string {
-	message := postgresURLPattern.ReplaceAllString(sqlText, "$1[redacted]@")
+	message := quotedSQLLiteralPattern.ReplaceAllString(sqlText, "'[redacted]'")
+	message = postgresURLPattern.ReplaceAllString(message, "$1[redacted]@")
 	message = credentialPattern.ReplaceAllString(message, "$1=[redacted]")
 	return message
 }
+
+var quotedSQLLiteralPattern = regexp.MustCompile(`'(?:''|[^'])*'`)
 
 func (s *Service) ListHistory(ctx context.Context, principal auth.Principal, databaseID string, options HistoryOptions) (HistoryPage, error) {
 	if err := s.authorizer.RequireDatabaseView(ctx, principal, databaseID); err != nil {

@@ -124,6 +124,34 @@ services:
       start_period: 5s
     restart: unless-stopped
 
+  worker:
+    <<: *backend-image
+    command: ["/usr/local/bin/worker"]
+    volumes:
+      - app-logs:/var/log/dbmp
+    environment:
+      <<: *backend-environment
+      APP_LOG_FILE: /var/log/dbmp/worker.jsonl
+      OTEL_SERVICE_NAME: dbmp-worker
+      MIGRATION_WORKER_CONCURRENCY: ${MIGRATION_WORKER_CONCURRENCY:-4}
+      MIGRATION_WORKER_POLL_INTERVAL: ${MIGRATION_WORKER_POLL_INTERVAL:-1s}
+      MIGRATION_WORKER_LEASE_DURATION: ${MIGRATION_WORKER_LEASE_DURATION:-45s}
+      MIGRATION_WORKER_HEARTBEAT_INTERVAL: ${MIGRATION_WORKER_HEARTBEAT_INTERVAL:-10s}
+      MIGRATION_WORKER_RECOVERY_LOCK_TIMEOUT: ${MIGRATION_WORKER_RECOVERY_LOCK_TIMEOUT:-300ms}
+      MIGRATION_WORKER_MAX_RETRIES: ${MIGRATION_WORKER_MAX_RETRIES:-5}
+      MIGRATION_WORKER_RETRY_BASE_DELAY: ${MIGRATION_WORKER_RETRY_BASE_DELAY:-2s}
+      MIGRATION_WORKER_RETRY_MAX_DELAY: ${MIGRATION_WORKER_RETRY_MAX_DELAY:-1m}
+    depends_on:
+      platform-db:
+        condition: service_healthy
+      target-db:
+        condition: service_healthy
+      mysql-target:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
   frontend:
     image: wbd-k08-frontend:local
     build:

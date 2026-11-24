@@ -121,12 +121,12 @@ func (r *PGRepository) StartExecution(ctx context.Context, plan ExecutionPlan, a
 
 	var attempt ExecutionAttempt
 	err = tx.QueryRow(ctx, `INSERT INTO migration_execution_attempts
-		(id,database_id, migration_id, version, revision, action, actor_id, requested_at, sql_snapshot, related_execution_id, checkpoint_root_id)
-		VALUES ($1::uuid,$2::uuid,$3::uuid,$4,$5,$6,$7::uuid,$8,$9,$10::uuid,$11::uuid)
+		(id,database_id, migration_id, version, revision, action, actor_id, requested_at, sql_snapshot, related_execution_id, checkpoint_root_id, lock_wait_micros)
+		VALUES ($1::uuid,$2::uuid,$3::uuid,$4,$5,$6,$7::uuid,$8,$9,$10::uuid,$11::uuid,$12)
 		RETURNING id::text, database_id::text, migration_id::text, version, revision, action,
 		actor_id::text, requested_at, sql_snapshot, related_execution_id::text, checkpoint_root_id::text`,
 		plan.ExecutionID, plan.Entry.DatabaseID, plan.Entry.ID, plan.Entry.Version, plan.Entry.Revision, plan.Action,
-		actorID, now, plan.SQLSnapshot, plan.RelatedExecutionID, plan.CheckpointRootID).Scan(
+		actorID, now, plan.SQLSnapshot, plan.RelatedExecutionID, plan.CheckpointRootID, plan.LockWait.Microseconds()).Scan(
 		&attempt.ID, &attempt.DatabaseID, &attempt.MigrationID, &attempt.Version, &attempt.Revision,
 		&attempt.Action, &attempt.ActorID, &attempt.RequestedAt, &attempt.SQLSnapshot, &attempt.RelatedExecutionID,
 		&attempt.CheckpointRootID)
@@ -149,6 +149,18 @@ func (r *PGRepository) StartExecution(ctx context.Context, plan ExecutionPlan, a
 	if _, err := tx.Exec(ctx, `INSERT INTO migration_execution_events
 		(execution_id,status,event,occurred_at) VALUES ($1::uuid,'running','started',$2)`, attempt.ID, now); err != nil {
 		return ExecutionAttempt{}, mapRepositoryError(err)
+	}
+	if plan.JobID != "" {
+		command, err := tx.Exec(ctx, `UPDATE migration_jobs SET execution_id=$1::uuid,updated_at=$4
+			WHERE id=$2::uuid AND database_id=$3::uuid AND status='running' AND lease_token=$5::uuid
+			  AND worker_id=$6 AND lease_expires_at > $4`,
+			attempt.ID, plan.JobID, attempt.DatabaseID, now, plan.JobLeaseToken, plan.JobWorkerID)
+		if err != nil {
+			return ExecutionAttempt{}, mapRepositoryError(err)
+		}
+		if command.RowsAffected() != 1 {
+			return ExecutionAttempt{}, ErrLeaseLost
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return ExecutionAttempt{}, fmt.Errorf("commit migration execution attempt: %w", err)

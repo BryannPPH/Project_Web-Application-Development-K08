@@ -12,4 +12,5 @@ var (
 	ErrRevisionChanged = errors.New("migration revision changed during execution request")
 	ErrNoAttempt       = errors.New("migration has no execution attempt")
 	ErrIrreversible    = errors.New("migration is irreversible")
+	ErrLeaseLost       = errors.New("migration job lease is no longer owned by this worker")
 )
