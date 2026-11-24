@@ -335,26 +335,31 @@ func requestFields(ctx context.Context, databaseID string) []any {
 }
 
 var (
-	quotedLiteralPattern = regexp.MustCompile(`'(?:''|[^'])*'`)
-	credentialSQLPattern = regexp.MustCompile(`(?i)(password|passwd|pwd|token|secret|session)\s*=\s*[^\s,;]+`)
-	postgresURLPattern   = regexp.MustCompile(`(?i)(postgres(?:ql)?://[^:/@\s]+:)[^@\s]+@`)
+	quotedLiteralPattern  = regexp.MustCompile(`'(?:''|[^'])*'`)
+	dollarLiteralPattern  = regexp.MustCompile(`(?s)\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$.*?\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$`)
+	sqlCommentPattern     = regexp.MustCompile(`(?s)/\*.*?\*/|--[^\r\n]*`)
+	numericLiteralPattern = regexp.MustCompile(`(^|[^[:alnum:]_$])([-+]?(?:0[xX][0-9A-Fa-f]+|0[bB][01]+|(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][-+]?[0-9]+)?))([^[:alnum:]_$]|$)`)
+	credentialSQLPattern  = regexp.MustCompile(`(?i)(password|passwd|pwd|token|secret|session)\s*=\s*[^\s,;]+`)
+	postgresURLPattern    = regexp.MustCompile(`(?i)(postgres(?:ql)?://[^:/@\s]+:)[^@\s]+@`)
 )
 
-func redactStatement(query string) string {
-	redacted := quotedLiteralPattern.ReplaceAllString(query, "'[redacted]'")
+// RedactSQLStatement keeps query shape useful for diagnosis while removing
+// literals, comments, and credential values before they reach application logs.
+func RedactSQLStatement(query string) string {
+	redacted := dollarLiteralPattern.ReplaceAllString(query, "'[redacted]'")
+	redacted = quotedLiteralPattern.ReplaceAllString(redacted, "'[redacted]'")
+	redacted = sqlCommentPattern.ReplaceAllString(redacted, "[comment]")
 	redacted = credentialSQLPattern.ReplaceAllString(redacted, "$1=[redacted]")
-	return postgresURLPattern.ReplaceAllString(redacted, "$1[redacted]@")
+	redacted = postgresURLPattern.ReplaceAllString(redacted, "$1[redacted]@")
+	return numericLiteralPattern.ReplaceAllString(redacted, "$1[redacted]$3")
 }
+
+func redactStatement(query string) string { return RedactSQLStatement(query) }
 
 func safeParameters(args []any) []any {
 	values := make([]any, len(args))
-	for index, value := range args {
-		switch value.(type) {
-		case nil, bool, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
-			values[index] = value
-		default:
-			values[index] = "[redacted]"
-		}
+	for index := range args {
+		values[index] = "[redacted]"
 	}
 	return values
 }

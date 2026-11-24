@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"regexp"
 	"strings"
 	"time"
 
@@ -591,13 +590,8 @@ func safeError(err error) string {
 }
 
 func redactSQLForLog(sqlText string) string {
-	message := quotedSQLLiteralPattern.ReplaceAllString(sqlText, "'[redacted]'")
-	message = postgresURLPattern.ReplaceAllString(message, "$1[redacted]@")
-	message = credentialPattern.ReplaceAllString(message, "$1=[redacted]")
-	return message
+	return targetdb.RedactSQLStatement(sqlText)
 }
-
-var quotedSQLLiteralPattern = regexp.MustCompile(`'(?:''|[^'])*'`)
 
 func (s *Service) ListHistory(ctx context.Context, principal auth.Principal, databaseID string, options HistoryOptions) (HistoryPage, error) {
 	if err := s.authorizer.RequireDatabaseView(ctx, principal, databaseID); err != nil {
