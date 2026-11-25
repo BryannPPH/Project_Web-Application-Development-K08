@@ -10,11 +10,13 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/app"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/config"
 	manageddb "github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/database"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/metrics"
+	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/observability"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/platformdb"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/platformfeature"
 )
@@ -46,7 +48,7 @@ func run() error {
 	}
 	logger := slog.New(slog.NewJSONHandler(logWriter, &slog.HandlerOptions{
 		Level: cfg.LogLevel,
-	}))
+	})).With("service.name", "dbmp-backend")
 
 	ctx, stop := signal.NotifyContext(
 		context.Background(),
@@ -54,6 +56,17 @@ func run() error {
 		syscall.SIGTERM,
 	)
 	defer stop()
+	shutdownTracing, err := observability.SetupTracing(ctx, "dbmp-backend")
+	if err != nil {
+		return fmt.Errorf("configure tracing: %w", err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdownTracing(shutdownCtx); err != nil {
+			logger.Warn("flush traces", "error", err)
+		}
+	}()
 
 	database, err := platformdb.Open(ctx, cfg.PlatformDatabase)
 	if err != nil {

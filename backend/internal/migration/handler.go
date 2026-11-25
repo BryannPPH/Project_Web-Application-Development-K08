@@ -15,6 +15,7 @@ import (
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/auth"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/authz"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/httpapi"
+	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/observability"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/shared/apihttp"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/targetdb"
 )
@@ -45,8 +46,14 @@ type HistoryMigrationService interface {
 	GetBatchProgress(context.Context, auth.Principal, string, string) (BatchProgress, error)
 }
 
+type JobHandlerService interface {
+	EnqueueAction(context.Context, auth.Principal, string, string, ExecutionAction, EnqueueMetadata) (Job, error)
+	GetJob(context.Context, auth.Principal, string, string) (Job, error)
+}
+
 type Handler struct {
 	service             MigrationService
+	jobs                JobHandlerService
 	logger              *slog.Logger
 	maxSQLJSONBodyBytes int64
 }
@@ -55,12 +62,21 @@ func NewHandler(service MigrationService, logger *slog.Logger) *Handler {
 	return newHandler(service, logger, DefaultMaxSQLBytes)
 }
 
+func NewHandlerWithJobs(service MigrationService, jobs JobHandlerService, logger *slog.Logger) *Handler {
+	return newHandlerWithJobs(service, jobs, logger, DefaultMaxSQLBytes)
+}
+
 func newHandler(service MigrationService, logger *slog.Logger, maxSQLBytes int) *Handler {
+	return newHandlerWithJobs(service, nil, logger, maxSQLBytes)
+}
+
+func newHandlerWithJobs(service MigrationService, jobs JobHandlerService, logger *slog.Logger, maxSQLBytes int) *Handler {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &Handler{
 		service:             service,
+		jobs:                jobs,
 		logger:              logger,
 		maxSQLJSONBodyBytes: maxMigrationJSONBodyBytes(maxSQLBytes),
 	}
@@ -81,6 +97,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux, security *httpapi.AuthMiddl
 	mux.Handle("GET /api/v1/databases/{databaseId}/migration-history", read(http.HandlerFunc(h.history)))
 	mux.Handle("GET /api/v1/databases/{databaseId}/migration-executions/{executionId}", read(http.HandlerFunc(h.executionDetail)))
 	mux.Handle("GET /api/v1/databases/{databaseId}/migration-executions/{executionId}/progress", read(http.HandlerFunc(h.executionProgress)))
+	mux.Handle("GET /api/v1/databases/{databaseId}/migration-jobs/{jobId}", read(http.HandlerFunc(h.jobStatus)))
 }
 
 type draftRequest struct {
@@ -194,16 +211,7 @@ func (h *Handler) detail(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) execute(w http.ResponseWriter, r *http.Request) {
-	databaseID, principal, ok := requestIdentity(w, r, true)
-	if !ok {
-		return
-	}
-	entry, err := h.service.Execute(r.Context(), principal, databaseID, r.PathValue("migrationId"))
-	if err != nil {
-		h.writeServiceError(w, r, err)
-		return
-	}
-	writeMigrationJSON(w, http.StatusOK, entry)
+	h.runAction(w, r, ActionApply)
 }
 
 func (h *Handler) retry(w http.ResponseWriter, r *http.Request) {
@@ -223,19 +231,46 @@ func (h *Handler) runAction(w http.ResponseWriter, r *http.Request, action Execu
 	if !ok {
 		return
 	}
-	actionService, ok := h.service.(interface {
-		ExecuteAction(context.Context, auth.Principal, string, string, ExecutionAction) (Entry, error)
-	})
-	if !ok {
+	if h.jobs == nil {
 		writeMigrationError(w, http.StatusConflict, "MIGRATION_CONFLICT", "migration action is unavailable")
 		return
 	}
-	entry, err := actionService.ExecuteAction(r.Context(), principal, databaseID, r.PathValue("migrationId"), action)
+	traceparent, tracestate := observability.StoredTraceContext(r.Context())
+	job, err := h.jobs.EnqueueAction(r.Context(), principal, databaseID, r.PathValue("migrationId"), action, EnqueueMetadata{
+		IdempotencyKey: r.Header.Get("Idempotency-Key"),
+		CorrelationID:  httpapi.RequestIDFromContext(r.Context()),
+		Traceparent:    traceparent,
+		Tracestate:     tracestate,
+	})
 	if err != nil {
 		h.writeServiceError(w, r, err)
 		return
 	}
-	writeMigrationJSON(w, http.StatusOK, entry)
+	location := "/api/v1/databases/" + databaseID + "/migration-jobs/" + job.ID
+	w.Header().Set("Location", location)
+	writeMigrationJSON(w, http.StatusAccepted, job)
+}
+
+func (h *Handler) jobStatus(w http.ResponseWriter, r *http.Request) {
+	databaseID, principal, ok := requestIdentity(w, r, false)
+	if !ok {
+		return
+	}
+	jobID := r.PathValue("jobId")
+	if !uuidPattern.MatchString(jobID) {
+		writeMigrationError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid job identifier")
+		return
+	}
+	if h.jobs == nil {
+		writeMigrationError(w, http.StatusConflict, "MIGRATION_CONFLICT", "migration jobs are unavailable")
+		return
+	}
+	job, err := h.jobs.GetJob(r.Context(), principal, databaseID, jobID)
+	if err != nil {
+		h.writeServiceError(w, r, err)
+		return
+	}
+	writeMigrationJSON(w, http.StatusOK, job)
 }
 
 func (h *Handler) history(w http.ResponseWriter, r *http.Request) {

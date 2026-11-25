@@ -35,6 +35,10 @@ type ExecutionPlan struct {
 	Entry              Entry
 	Action             ExecutionAction
 	ExecutionID        string
+	JobID              string
+	JobLeaseToken      string
+	JobWorkerID        string
+	LockWait           time.Duration
 	ActorUsername      string
 	SQLSnapshot        string
 	RelatedExecutionID *string

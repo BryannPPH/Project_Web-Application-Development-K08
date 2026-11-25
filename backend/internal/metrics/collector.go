@@ -1,8 +1,8 @@
 // Package metrics mengekspos metrik Prometheus platform di GET /metrics.
 //
 // Semua nilai dihitung saat di-scrape: statistik pool koneksi dari pgxpool dan
-// ringkasan migration dari tabel migration_entries. Label sengaja bermultiplisitas
-// rendah (status, state); user ID, migration ID, dan SQL tidak pernah dipakai.
+// ringkasan migration, queue, dan batch dari execution history. Label sengaja
+// bermultiplisitas rendah; user ID, migration ID, dan SQL tidak pernah dipakai.
 package metrics
 
 import (
@@ -36,6 +36,12 @@ type Collector struct {
 	poolWaitTime      *prometheus.Desc
 	migrations        *prometheus.Desc
 	migrationDuration *prometheus.Desc
+	jobs              *prometheus.Desc
+	jobRetries        *prometheus.Desc
+	queueWait         *prometheus.Desc
+	lockWait          *prometheus.Desc
+	batchesProcessed  *prometheus.Desc
+	rowsProcessed     *prometheus.Desc
 	scrapeUp          *prometheus.Desc
 }
 
@@ -61,14 +67,21 @@ func NewCollector(pool *pgxpool.Pool, logger *slog.Logger) *Collector {
 		poolWaitTime:      desc("db_pool_wait_seconds_total", "Total waktu menunggu koneksi saat pool kosong."),
 		migrations:        desc("migrations", "Jumlah migration per status.", "status"),
 		migrationDuration: desc("migration_duration_seconds", "Durasi eksekusi migration yang sudah selesai.", "status"),
-		scrapeUp:          desc("metrics_database_up", "1 jika ringkasan migration berhasil dibaca dari platform DB, 0 jika gagal."),
+		jobs:              desc("jobs", "Jumlah migration job per status.", "status"),
+		jobRetries:        desc("job_retries_total", "Jumlah retry worker yang tercatat pada migration job.", "kind"),
+		queueWait:         desc("queue_wait_seconds", "Waktu dari job dibuat sampai pertama kali diambil worker.", "kind"),
+		lockWait:          desc("lock_wait_seconds", "Waktu attempt menunggu advisory lock database.", "kind"),
+		batchesProcessed:  desc("batches_processed_total", "Jumlah batch migration per outcome.", "outcome"),
+		rowsProcessed:     desc("rows_processed_total", "Jumlah baris yang diproses batch per outcome.", "outcome"),
+		scrapeUp:          desc("metrics_database_up", "1 jika metrik platform berhasil dibaca dari database, 0 jika gagal."),
 	}
 }
 
 // Describe mengirim semua deskriptor metrik.
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) {
 	for _, d := range []*prometheus.Desc{c.poolConns, c.poolMaxConns, c.poolAcquires, c.poolEmptyAcquires,
-		c.poolCanceled, c.poolAcquireTime, c.poolWaitTime, c.migrations, c.migrationDuration, c.scrapeUp} {
+		c.poolCanceled, c.poolAcquireTime, c.poolWaitTime, c.migrations, c.migrationDuration, c.jobs,
+		c.jobRetries, c.queueWait, c.lockWait, c.batchesProcessed, c.rowsProcessed, c.scrapeUp} {
 		ch <- d
 	}
 }
@@ -81,6 +94,16 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 	defer cancel()
 	if err := c.collectMigrations(ctx, ch); err != nil {
 		c.logger.Warn("collect migration metrics", "error", err)
+		ch <- prometheus.MustNewConstMetric(c.scrapeUp, prometheus.GaugeValue, 0)
+		return
+	}
+	if err := c.collectQueue(ctx, ch); err != nil {
+		c.logger.Warn("collect migration queue metrics", "error", err)
+		ch <- prometheus.MustNewConstMetric(c.scrapeUp, prometheus.GaugeValue, 0)
+		return
+	}
+	if err := c.collectBatchHistory(ctx, ch); err != nil {
+		c.logger.Warn("collect migration batch metrics", "error", err)
 		ch <- prometheus.MustNewConstMetric(c.scrapeUp, prometheus.GaugeValue, 0)
 		return
 	}
@@ -174,6 +197,173 @@ func (c *Collector) collectMigrations(ctx context.Context, ch chan<- prometheus.
 		}
 	}
 	return nil
+}
+
+var jobStatuses = []string{"queued", "running", "retrying", "succeeded", "failed", "partial", "partially_reverted", "needs_reconciliation"}
+var jobKinds = []string{"apply", "retry", "rollback", "forward", "batch"}
+var batchOutcomes = []string{"committed", "failed", "reverted"}
+
+type histogramSnapshot struct {
+	count   uint64
+	sum     float64
+	buckets []uint64
+}
+
+func newHistogramSnapshot() histogramSnapshot {
+	return histogramSnapshot{buckets: make([]uint64, len(durationBuckets))}
+}
+
+// collectQueue derives durable queue metrics from job rows and execution attempts.
+// IDs and SQL never become metric labels.
+func (c *Collector) collectQueue(ctx context.Context, ch chan<- prometheus.Metric) error {
+	counts := make(map[string]float64, len(jobStatuses))
+	retries := make(map[string]float64, len(jobKinds))
+	queueHistograms := make(map[string]histogramSnapshot, len(jobKinds))
+	lockHistograms := make(map[string]histogramSnapshot, len(jobKinds))
+	for _, status := range jobStatuses {
+		counts[status] = 0
+	}
+	for _, kind := range jobKinds {
+		retries[kind] = 0
+		queueHistograms[kind] = newHistogramSnapshot()
+		lockHistograms[kind] = newHistogramSnapshot()
+	}
+
+	var queueQuery strings.Builder
+	queueQuery.WriteString(`SELECT status,
+		CASE WHEN execution_mode='batch' THEN 'batch' ELSE action END AS kind,
+		count(*)::bigint, COALESCE(sum(retry_count),0)::float8,
+		count(*) FILTER (WHERE started_at IS NOT NULL)::bigint,
+		COALESCE(sum(extract(epoch FROM started_at-created_at)) FILTER (WHERE started_at IS NOT NULL),0)::float8`)
+	for _, upper := range durationBuckets {
+		fmt.Fprintf(&queueQuery, `, count(*) FILTER (WHERE started_at IS NOT NULL AND extract(epoch FROM started_at-created_at) <= %g)::bigint`, upper)
+	}
+	queueQuery.WriteString(` FROM migration_jobs GROUP BY status, kind`)
+	rows, err := c.pool.Query(ctx, queueQuery.String())
+	if err != nil {
+		return fmt.Errorf("load queue metrics: %w", err)
+	}
+	for rows.Next() {
+		var status, kind string
+		var count, queueCount int64
+		var retryCount, queueSum float64
+		buckets := make([]uint64, len(durationBuckets))
+		dest := []any{&status, &kind, &count, &retryCount, &queueCount, &queueSum}
+		for i := range buckets {
+			dest = append(dest, &buckets[i])
+		}
+		if err := rows.Scan(dest...); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan queue metrics: %w", err)
+		}
+		counts[status] += float64(count)
+		retries[kind] += retryCount
+		if histogram, ok := queueHistograms[kind]; ok {
+			histogram.count += uint64(queueCount)
+			histogram.sum += queueSum
+			for i := range buckets {
+				histogram.buckets[i] += buckets[i]
+			}
+			queueHistograms[kind] = histogram
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate queue metrics: %w", err)
+	}
+	for _, status := range jobStatuses {
+		ch <- prometheus.MustNewConstMetric(c.jobs, prometheus.GaugeValue, counts[status], status)
+	}
+	for _, kind := range jobKinds {
+		ch <- prometheus.MustNewConstMetric(c.jobRetries, prometheus.CounterValue, retries[kind], kind)
+		histogram := queueHistograms[kind]
+		ch <- prometheus.MustNewConstHistogram(c.queueWait, histogram.count, histogram.sum,
+			toBucketMap(histogram.buckets), kind)
+	}
+
+	var lockQuery strings.Builder
+	lockQuery.WriteString(`SELECT CASE WHEN m.execution_mode='batch' THEN 'batch' ELSE a.action END AS kind,
+		count(*)::bigint, COALESCE(sum(a.lock_wait_micros)::float8 / 1000000,0)::float8`)
+	for _, upper := range durationBuckets {
+		fmt.Fprintf(&lockQuery, `, count(*) FILTER (WHERE a.lock_wait_micros <= %g)::bigint`, upper*1000000)
+	}
+	lockQuery.WriteString(` FROM migration_execution_attempts a
+		JOIN migration_entries m ON m.id=a.migration_id GROUP BY kind`)
+	lockRows, err := c.pool.Query(ctx, lockQuery.String())
+	if err != nil {
+		return fmt.Errorf("load lock wait metrics: %w", err)
+	}
+	for lockRows.Next() {
+		var kind string
+		var count int64
+		var sum float64
+		buckets := make([]uint64, len(durationBuckets))
+		dest := []any{&kind, &count, &sum}
+		for i := range buckets {
+			dest = append(dest, &buckets[i])
+		}
+		if err := lockRows.Scan(dest...); err != nil {
+			lockRows.Close()
+			return fmt.Errorf("scan lock wait metrics: %w", err)
+		}
+		if histogram, ok := lockHistograms[kind]; ok {
+			histogram.count += uint64(count)
+			histogram.sum += sum
+			for i := range buckets {
+				histogram.buckets[i] += buckets[i]
+			}
+			lockHistograms[kind] = histogram
+		}
+	}
+	lockRows.Close()
+	if err := lockRows.Err(); err != nil {
+		return fmt.Errorf("iterate lock wait metrics: %w", err)
+	}
+	for _, kind := range jobKinds {
+		histogram := lockHistograms[kind]
+		ch <- prometheus.MustNewConstHistogram(c.lockWait, histogram.count, histogram.sum,
+			toBucketMap(histogram.buckets), kind)
+	}
+	return nil
+}
+
+func (c *Collector) collectBatchHistory(ctx context.Context, ch chan<- prometheus.Metric) error {
+	counts := map[string]float64{"committed": 0, "failed": 0, "reverted": 0}
+	rowsProcessed := map[string]float64{"committed": 0, "failed": 0, "reverted": 0}
+	rows, err := c.pool.Query(ctx, `SELECT event,count(*)::bigint,COALESCE(sum(rows_affected),0)::float8
+		FROM migration_execution_events
+		WHERE event IN ('batch_committed','batch_failed','batch_reverted') GROUP BY event`)
+	if err != nil {
+		return fmt.Errorf("load batch history metrics: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var event string
+		var count int64
+		var rowCount float64
+		if err := rows.Scan(&event, &count, &rowCount); err != nil {
+			return fmt.Errorf("scan batch history metrics: %w", err)
+		}
+		outcome := map[string]string{"batch_committed": "committed", "batch_failed": "failed", "batch_reverted": "reverted"}[event]
+		counts[outcome] = float64(count)
+		rowsProcessed[outcome] = rowCount
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate batch history metrics: %w", err)
+	}
+	for _, outcome := range batchOutcomes {
+		ch <- prometheus.MustNewConstMetric(c.batchesProcessed, prometheus.CounterValue, counts[outcome], outcome)
+		ch <- prometheus.MustNewConstMetric(c.rowsProcessed, prometheus.CounterValue, rowsProcessed[outcome], outcome)
+	}
+	return nil
+}
+
+func toBucketMap(values []uint64) map[float64]uint64 {
+	buckets := make(map[float64]uint64, len(durationBuckets))
+	for i, upper := range durationBuckets {
+		buckets[upper] = values[i]
+	}
+	return buckets
 }
 
 // durationQuery menghitung count, sum, dan isi tiap bucket per status di SQL.

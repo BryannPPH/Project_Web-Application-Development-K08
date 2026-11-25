@@ -3,9 +3,7 @@ package migration
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -41,21 +39,9 @@ func NewModule(
 	if err != nil {
 		return nil, err
 	}
-	if err := recoverRunning(ctx, repository, logger, time.Now().UTC()); err != nil {
+	queue, err := NewQueueService(NewPGJobRepository(platformDatabase), repository, authorizer, approvals, RealClock{}, logger)
+	if err != nil {
 		return nil, err
 	}
-	return newHandler(service, logger, service.maxSQLBytes), nil
-}
-
-const recoveryReason = "migration execution was interrupted by a server restart; manual reconciliation is required"
-
-func recoverRunning(ctx context.Context, repository Repository, logger *slog.Logger, before time.Time) error {
-	recovered, err := repository.RecoverRunning(ctx, before, recoveryReason)
-	if err != nil {
-		return fmt.Errorf("recover interrupted migrations: %w", err)
-	}
-	if recovered > 0 {
-		logger.WarnContext(ctx, "recovered interrupted migrations", "count", recovered)
-	}
-	return nil
+	return newHandlerWithJobs(service, queue, logger, service.maxSQLBytes), nil
 }
