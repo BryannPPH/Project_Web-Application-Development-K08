@@ -166,15 +166,18 @@ func (s *Service) load(ctx context.Context, target Target, action Action) ([]Req
 	return groups, decisions, nil
 }
 
-// reviewable: apply untuk draft, rollback untuk succeeded, forward untuk yang gagal/di-rollback.
+// reviewable mengikuti syarat status di migration.PlanExecution:
+//   - apply    : draft, atau failed/partial karena retry memakai approval apply.
+//   - rollback : succeeded atau partially_reverted (lanjutan rollback batch).
+//   - forward  : hanya rolled_back.
 func reviewable(migrationStatus string, action Action) bool {
 	switch action {
 	case ActionApply:
-		return migrationStatus == "draft"
+		return migrationStatus == "draft" || migrationStatus == "failed" || migrationStatus == "partial"
 	case ActionRollback:
-		return migrationStatus == "succeeded"
+		return migrationStatus == "succeeded" || migrationStatus == "partially_reverted"
 	case ActionForward:
-		return migrationStatus == "failed" || migrationStatus == "reconciled" || migrationStatus == "rolled_back"
+		return migrationStatus == "rolled_back"
 	default:
 		return false
 	}
