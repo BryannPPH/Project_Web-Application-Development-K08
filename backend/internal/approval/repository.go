@@ -75,15 +75,36 @@ func (r *PGRepository) RequiredGroups(ctx context.Context, databaseID string) ([
 	return groups, nil
 }
 
-// LatestDecisions: keputusan terbaru per approver untuk satu revisi (DISTINCT ON).
+// supersedingActions: approval rollback/forward hanya berlaku untuk satu siklus.
+// Execution dari aksi di bawah ini yang dimulai SETELAH sebuah keputusan membuat
+// keputusan itu usang, sehingga rollback kedua (setelah forward) atau forward kedua
+// (setelah rollback kedua) wajib di-approve ulang. Resume rollback/forward yang
+// terhenti di tengah tidak menggeser baseline, jadi approval lamanya tetap berlaku.
+// Apply tidak punya siklus: retry memang memakai approval apply yang sama.
+var supersedingActions = map[Action][]string{
+	ActionRollback: {"apply", "retry", "forward"},
+	ActionForward:  {"rollback"},
+	ActionApply:    {},
+}
+
+// LatestDecisions: keputusan terbaru per approver untuk satu revisi (DISTINCT ON),
+// hanya yang diputuskan setelah execution terakhir yang menggantikan siklus approval.
 func (r *PGRepository) LatestDecisions(ctx context.Context, migrationID string, action Action, revision int64) (map[string]DecisionRecord, error) {
+	superseding := supersedingActions[action]
+	if superseding == nil {
+		superseding = []string{}
+	}
 	rows, err := r.pool.Query(ctx, `
 		SELECT DISTINCT ON (a.approver_id)
 			a.approver_id::text, u.username, a.decision, a.note, a.decided_at
 		FROM migration_approvals a
 		JOIN users u ON u.id = a.approver_id
 		WHERE a.migration_id = $1::uuid AND a.action = $2 AND a.revision = $3
-		ORDER BY a.approver_id, a.decided_at DESC, a.id DESC`, migrationID, string(action), revision)
+		  AND a.decided_at > COALESCE((
+		      SELECT max(e.requested_at) FROM migration_execution_attempts e
+		      WHERE e.migration_id = $1::uuid AND e.action = ANY($4::text[])
+		  ), '-infinity'::timestamptz)
+		ORDER BY a.approver_id, a.decided_at DESC, a.id DESC`, migrationID, string(action), revision, superseding)
 	if err != nil {
 		return nil, fmt.Errorf("list approval decisions: %w", err)
 	}

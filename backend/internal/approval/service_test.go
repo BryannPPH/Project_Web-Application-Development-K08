@@ -423,3 +423,28 @@ func TestEvaluateTruthTable(t *testing.T) {
 		}
 	}
 }
+
+// Status yang bisa direview harus sama dengan syarat status di migration.PlanExecution.
+func TestReviewableMatchesExecutionRules(t *testing.T) {
+	cases := []struct {
+		status string
+		action Action
+		want   bool
+	}{
+		{"draft", ActionApply, true},
+		{"failed", ActionApply, true}, // retry memakai approval apply
+		{"partial", ActionApply, true},
+		{"succeeded", ActionApply, false},
+		{"succeeded", ActionRollback, true},
+		{"partially_reverted", ActionRollback, true},
+		{"rolled_back", ActionRollback, false},
+		{"rolled_back", ActionForward, true},
+		{"failed", ActionForward, false},
+		{"reconciled", ActionForward, false},
+	}
+	for _, c := range cases {
+		if got := reviewable(c.status, c.action); got != c.want {
+			t.Errorf("reviewable(%q, %q) = %v, want %v", c.status, c.action, got, c.want)
+		}
+	}
+}

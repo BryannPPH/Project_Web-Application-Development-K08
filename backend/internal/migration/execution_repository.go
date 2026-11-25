@@ -346,7 +346,7 @@ func (r *PGRepository) GetHistory(ctx context.Context, databaseID, executionID s
 }
 
 func (r *PGRepository) executionEvents(ctx context.Context, executionID string) ([]ExecutionEvent, error) {
-	rows, err := r.pool.Query(ctx, `SELECT id,status,event,occurred_at,error_message,query_sql,query_parameters,rows_affected,
+	rows, err := r.pool.Query(ctx, `SELECT id,status,event,occurred_at,error_message,COALESCE(query_sql,''),query_parameters,rows_affected,
 		batch_number,cursor_start,cursor_end FROM migration_execution_events
 		WHERE execution_id=$1::uuid ORDER BY id`, executionID)
 	if err != nil {

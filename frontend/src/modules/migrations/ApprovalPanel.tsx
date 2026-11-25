@@ -9,7 +9,7 @@ import { ApiError } from '@/lib/api-client'
 import { decideApproval } from '@/modules/migrations/api'
 import { displayTime, migrationQueryKeys } from '@/modules/migrations/query-helpers'
 import { compatibilityHints } from '@/modules/migrations/review-hints'
-import type { ApprovalDecision, ApprovalGroup, ApprovalReview, ApprovalStatus } from '@/modules/migrations/types'
+import type { ApprovalAction, ApprovalDecision, ApprovalGroup, ApprovalReview, ApprovalStatus } from '@/modules/migrations/types'
 
 const statusView: Record<ApprovalStatus, { className: string; icon: IconName; label: (r: ApprovalReview) => string }> = {
   approved: { className: 'badge badge--success', icon: 'check', label: () => 'Disetujui semua leader' },
@@ -22,7 +22,20 @@ const statusView: Record<ApprovalStatus, { className: string; icon: IconName; la
   blocked: { className: 'badge badge--danger', icon: 'lock', label: () => 'Terblokir: ada group tanpa leader' },
 }
 
+const actionPhrase: Record<ApprovalAction, string> = {
+  apply: 'dijalankan',
+  rollback: 'di-rollback (Down SQL dijalankan)',
+  forward: 'dijalankan ulang (forward)',
+}
+
+const panelTitle: Record<ApprovalAction, string> = {
+  apply: 'Review & approval',
+  rollback: 'Review & approval rollback',
+  forward: 'Review & approval forward',
+}
+
 interface ApprovalPanelProps {
+  action: ApprovalAction
   databaseId: string
   migrationId: string
   databaseName: string
@@ -32,13 +45,13 @@ interface ApprovalPanelProps {
   error: unknown
 }
 
-export function ApprovalPanel({ databaseId, migrationId, databaseName, sql, review, loading, error }: ApprovalPanelProps) {
+export function ApprovalPanel({ action, databaseId, migrationId, databaseName, sql, review, loading, error }: ApprovalPanelProps) {
   const titleId = useId()
 
   return (
     <section aria-labelledby={titleId} className="panel approval-panel">
       <div className="approval-panel__head">
-        <h3 id={titleId}>Review &amp; approval</h3>
+        <h3 id={titleId}>{panelTitle[action]}</h3>
         {review ? <ApprovalStatusBadge review={review} /> : null}
       </div>
 
@@ -49,8 +62,8 @@ export function ApprovalPanel({ databaseId, migrationId, databaseName, sql, revi
         <>
           <p className="approval-panel__lead">
             Revisi <strong className="tabular">{review.revision}</strong>. Leader dari <strong>setiap</strong> group yang punya
-            akses ke {databaseName} harus menyetujui revisi ini sebelum dijalankan. Mengedit SQL membuat revisi baru dan
-            approval harus diulang.
+            akses ke {databaseName} harus menyetujui revisi ini sebelum {actionPhrase[review.action]}. Mengedit SQL membuat
+            revisi baru dan approval harus diulang.
           </p>
 
           <ul className="approval-groups">
@@ -63,6 +76,12 @@ export function ApprovalPanel({ databaseId, migrationId, databaseName, sql, revi
           ) : null}
 
           <CompatibilityHints sql={sql} />
+          {action === 'rollback' ? (
+            <p className="approval-panel__note muted">
+              <Icon name="info" size={14} />
+              SQL di atas adalah Down SQL yang akan dijalankan.
+            </p>
+          ) : null}
 
           {review.canDecide ? (
             <DecisionForm databaseId={databaseId} migrationId={migrationId} review={review} />
@@ -157,13 +176,13 @@ function DecisionForm({ databaseId, migrationId, review }: { databaseId: string;
   const decide = useMutation({
     mutationFn: (decision: ApprovalDecision) =>
       decideApproval(databaseId, migrationId, {
-        action: 'apply',
+        action: review.action,
         revision: review.revision,
         decision,
         note: note.trim() || undefined,
       }),
     onSuccess: (updated) => {
-      queryClient.setQueryData(migrationQueryKeys.approval(databaseId, migrationId, 'apply'), updated)
+      queryClient.setQueryData(migrationQueryKeys.approval(databaseId, migrationId, review.action), updated)
       setNote('')
     },
     onError: (error) => {

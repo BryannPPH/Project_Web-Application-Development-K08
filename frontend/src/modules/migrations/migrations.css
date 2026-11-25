@@ -780,3 +780,155 @@
     flex: 1 1 auto;
   }
 }
+
+/* ---------- Job status, progres batch, riwayat execution (Milestone 2 - Person A) ---------- */
+
+.job-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: var(--radius-md);
+  padding: 0.75rem 1rem;
+}
+
+.job-status__body {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.job-status__body p,
+.job-status__body pre {
+  margin: 0;
+}
+
+.job-status__body pre {
+  overflow-x: auto;
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.75rem;
+  background: var(--overlay);
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+}
+
+.job-status__meta {
+  color: var(--ink-soft);
+  font-size: 0.8125rem;
+}
+
+.job-status--info { border-color: var(--info-line); background: var(--info-soft); }
+.job-status--success { border-color: var(--success-line); background: var(--success-soft); }
+.job-status--warning { border-color: var(--warning-line); background: var(--warning-soft); }
+.job-status--danger { border-color: var(--danger-line); background: var(--danger-soft); }
+
+.batch-progress {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.batch-progress__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+}
+
+.batch-progress__head h3 {
+  margin: 0;
+}
+
+.batch-progress__bar {
+  position: relative;
+  height: 0.5rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--overlay);
+}
+
+.batch-progress__bar > span {
+  position: absolute;
+  inset: 0;
+  background: var(--action);
+  opacity: 0.55;
+}
+
+.batch-progress__bar.is-live > span {
+  width: 35%;
+  opacity: 0.9;
+  animation: batch-sweep 1.4s var(--ease-out) infinite;
+}
+
+@keyframes batch-sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(300%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .batch-progress__bar.is-live > span {
+    width: 100%;
+    animation: none;
+  }
+}
+
+.batch-progress__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 2rem;
+  margin: 0;
+}
+
+.batch-progress__stats dt {
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+}
+
+.batch-progress__stats dd {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.batch-progress__note {
+  margin: 0;
+  font-size: 0.75rem;
+}
+
+.execution-history {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 2rem;
+}
+
+.execution-history__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+.execution-history__head h2,
+.execution-history__lead,
+.execution-history__hidden {
+  margin: 0;
+}
+
+.execution-history__lead {
+  max-width: 70ch;
+  font-size: 0.875rem;
+}
+
+.execution-history__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+}

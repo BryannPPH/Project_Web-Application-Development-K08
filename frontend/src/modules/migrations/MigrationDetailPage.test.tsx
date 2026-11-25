@@ -208,7 +208,7 @@ describe('MigrationDetailPage', () => {
     expect(await screen.findByText('Menunggu 1 dari 2 leader')).toBeInTheDocument()
     const run = screen.getByRole('button', { name: 'Jalankan v3' })
     expect(run).toBeDisabled()
-    expect(screen.getAllByText(/Menunggu persetujuan 1 dari 2 leader untuk revisi 2/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/Menunggu persetujuan 1 dari 2 leader sebelum dijalankan \(revisi 2\)/).length).toBeGreaterThan(0)
     expect(screen.getByText('Menunggu 1 dari 2 leader')).toBeInTheDocument()
     expect(screen.getByText('Analis Data')).toBeInTheDocument()
     expect(screen.getByText('sari').closest('li')).toHaveTextContent('belum memutuskan')

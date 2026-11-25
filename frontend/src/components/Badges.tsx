@@ -23,6 +23,9 @@ const statusStyles: Record<MigrationStatus, { className: string; icon: IconName 
   interrupted: { className: 'badge badge--warning', icon: 'alert' },
   needs_reconciliation: { className: 'badge badge--warning', icon: 'alert' },
   reconciled: { className: 'badge badge--info', icon: 'check' },
+  rolled_back: { className: 'badge badge--info', icon: 'history' },
+  partial: { className: 'badge badge--warning', icon: 'alert' },
+  partially_reverted: { className: 'badge badge--warning', icon: 'history' },
 }
 
 export function MigrationStatusBadge({ status }: { status: MigrationStatus }) {
