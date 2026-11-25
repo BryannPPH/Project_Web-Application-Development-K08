@@ -3,9 +3,13 @@ import type {
   ApprovalAction,
   ApprovalInput,
   ApprovalReview,
+  BatchProgress,
   DraftInput,
+  ExecutionAction,
+  ExecutionHistoryPage,
   ExplainResult,
   MigrationEntry,
+  MigrationJob,
   MigrationPage,
   ReconciliationInput,
 } from '@/modules/migrations/types'
@@ -33,10 +37,37 @@ export function updateMigration(databaseId: string, migrationId: string, input: 
   })
 }
 
-export function executeMigration(databaseId: string, migrationId: string) {
-  return apiRequest<MigrationEntry>(migrationPath(databaseId, `/${encodeURIComponent(migrationId)}/execute`), {
-    method: 'POST',
-  })
+const actionPaths: Record<ExecutionAction, string> = {
+  apply: 'execute',
+  retry: 'retry',
+  rollback: 'rollback',
+  forward: 'forward',
+}
+
+// Backend menjawab 202 + job: SQL berjalan di worker, bukan di request ini.
+export function enqueueMigrationAction(databaseId: string, migrationId: string, action: ExecutionAction) {
+  return apiRequest<MigrationJob>(
+    migrationPath(databaseId, `/${encodeURIComponent(migrationId)}/${actionPaths[action]}`),
+    { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() } },
+  )
+}
+
+export function getMigrationJob(databaseId: string, jobId: string, signal?: AbortSignal) {
+  return apiRequest<MigrationJob>(`/databases/${encodeURIComponent(databaseId)}/migration-jobs/${encodeURIComponent(jobId)}`, { signal })
+}
+
+export function getBatchProgress(databaseId: string, executionId: string, signal?: AbortSignal) {
+  return apiRequest<BatchProgress>(
+    `/databases/${encodeURIComponent(databaseId)}/migration-executions/${encodeURIComponent(executionId)}/progress`,
+    { signal },
+  )
+}
+
+export function listExecutionHistory(databaseId: string, signal?: AbortSignal) {
+  return apiRequest<ExecutionHistoryPage>(
+    `/databases/${encodeURIComponent(databaseId)}/migration-history?limit=100`,
+    { signal },
+  )
 }
 
 export function reconcileMigration(databaseId: string, migrationId: string, input: ReconciliationInput) {

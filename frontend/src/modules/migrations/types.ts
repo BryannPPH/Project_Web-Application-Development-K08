@@ -6,6 +6,9 @@ export type MigrationStatus =
   | 'interrupted'
   | 'needs_reconciliation'
   | 'reconciled'
+  | 'rolled_back'
+  | 'partial'
+  | 'partially_reverted'
 
 export interface MigrationEntry {
   id: string
@@ -31,6 +34,12 @@ export interface MigrationEntry {
   reconciliationNote: string | null
   canEdit: boolean
   canReconcile: boolean
+  /** Milestone 2 (Person B). Opsional supaya payload lama tetap valid. */
+  isActive?: boolean
+  executionMode?: ExecutionMode
+  latestExecutionId?: string | null
+  downSql?: string | null
+  irreversibleReason?: string | null
 }
 
 export interface ReconciliationInput {
@@ -82,6 +91,67 @@ export interface ApprovalInput {
   revision: number
   decision: ApprovalDecision
   note?: string
+}
+
+// ---------- Execution, job & batch (Milestone 2 - Person B/C) ----------
+
+export type ExecutionMode = 'single' | 'batch'
+export type ExecutionAction = 'apply' | 'retry' | 'rollback' | 'forward'
+export type JobStatus =
+  | 'queued'
+  | 'running'
+  | 'retrying'
+  | 'succeeded'
+  | 'failed'
+  | 'partial'
+  | 'partially_reverted'
+  | 'needs_reconciliation'
+
+export interface BatchProgress {
+  executionId: string
+  committedBatches: number
+  committedRows: number
+  lastCursor: number
+  status: string
+}
+
+export interface MigrationJob {
+  jobId: string
+  databaseId: string
+  migrationId: string
+  revision: number
+  action: ExecutionAction
+  executionMode: ExecutionMode
+  actor: string
+  status: JobStatus
+  retryCount: number
+  executionId?: string
+  createdAt: string
+  startedAt?: string
+  finishedAt?: string
+  errorCode?: string
+  errorMessage?: string
+  batchProgress?: BatchProgress
+}
+
+export interface ExecutionAttempt {
+  executionId: string
+  migrationId: string
+  version: number
+  revision: number
+  action: ExecutionAction
+  actorUsername: string
+  requestedAt: string
+  relatedExecutionId: string | null
+  status: string
+  errorMessage: string | null
+}
+
+export interface ExecutionHistoryPage {
+  items: ExecutionAttempt[]
+  limit: number
+  offset: number
+  total: number
 }
 
 export interface DraftInput {

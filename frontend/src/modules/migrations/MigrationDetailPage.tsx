@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { MigrationStatusBadge } from '@/components/Badges'
@@ -8,10 +8,13 @@ import { Icon } from '@/components/Icon'
 import { StatusMessage } from '@/components/StatusMessage'
 import { ApiError } from '@/lib/api-client'
 import { useAccessibleDatabase } from '@/modules/databases/api'
-import { createMigration, executeMigration, getMigration, reconcileMigration, updateMigration } from '@/modules/migrations/api'
+import { createMigration, enqueueMigrationAction, getMigration, reconcileMigration, updateMigration } from '@/modules/migrations/api'
+import { nextAction } from '@/modules/migrations/actions'
 import { executionBlockedReason, useApprovalReview } from '@/modules/migrations/approval'
 import { ApprovalPanel } from '@/modules/migrations/ApprovalPanel'
 import { ExplainPanel } from '@/modules/migrations/ExplainPanel'
+import { isTerminalJob, jobQueryKeys, useBatchProgress, useMigrationJob } from '@/modules/migrations/jobs'
+import { BatchProgressPanel, JobStatusPanel } from '@/modules/migrations/JobStatusPanel'
 import { MigrationEditor } from '@/modules/migrations/MigrationEditor'
 import { displayTime, migrationQueryKeys } from '@/modules/migrations/query-helpers'
 import type { DraftInput, MigrationEntry } from '@/modules/migrations/types'
@@ -41,8 +44,15 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
     queryFn: ({ signal }) => getMigration(databaseId, migrationId, signal),
     enabled: !create && databaseId !== '' && migrationId !== '',
   })
-  // Milestone 2 - Person A: status approval hanya relevan untuk draft (aksi "apply").
-  const approval = useApprovalReview(databaseId, migrationId, !create && detail.data?.status === 'draft')
+  // Milestone 2 - Person A: aksi berikutnya menentukan approval mana yang harus lengkap.
+  const pending = !create && detail.data ? nextAction(detail.data) : null
+  const approval = useApprovalReview(databaseId, migrationId, pending ? pending.approval : null)
+  const [jobId, setJobId] = useState<string | null>(null)
+  const job = useMigrationJob(databaseId, jobId)
+  const jobDone = job.data ? isTerminalJob(job.data.status) : false
+  const batchExecutionId = detail.data?.executionMode === 'batch' ? job.data?.executionId ?? detail.data.latestExecutionId : null
+  const batchLive = jobId !== null && !jobDone
+  const batchProgress = useBatchProgress(databaseId, batchExecutionId, batchLive)
   const save = useMutation({
     mutationFn: (input: DraftInput) => create
       ? createMigration(databaseId, input)
@@ -53,14 +63,24 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
     },
   })
   const execute = useMutation({
-    mutationFn: () => executeMigration(databaseId, migrationId),
-    onSuccess: (entry) => {
-      queryClient.setQueryData(migrationQueryKeys.detail(databaseId, migrationId), entry)
+    mutationFn: () => {
+      if (!pending) throw new Error('Tidak ada aksi yang tersedia untuk status ini.')
+      return enqueueMigrationAction(databaseId, migrationId, pending.action)
+    },
+    // 202: job masuk antrean. Status akhir dipantau lewat polling, bukan dari response ini.
+    onSuccess: (queued) => setJobId(queued.jobId),
+    // Ditolak gerbang approval (approval berubah sejak halaman dibuka): muat ulang status.
+    onError: () => {
       void queryClient.invalidateQueries({ queryKey: migrationQueryKeys.all(databaseId) })
     },
-    // Ditolak gerbang approval (approval berubah sejak halaman dibuka): muat ulang status.
-    onError: () => void queryClient.invalidateQueries({ queryKey: migrationQueryKeys.all(databaseId) }),
   })
+  // Job selesai: segarkan migration, approval, dan riwayat; approval lama tidak berlaku untuk aksi berikutnya.
+  useEffect(() => {
+    if (!jobDone) return
+    void queryClient.invalidateQueries({ queryKey: migrationQueryKeys.all(databaseId) })
+    void queryClient.invalidateQueries({ queryKey: jobQueryKeys.history(databaseId) })
+    void queryClient.invalidateQueries({ queryKey: ['migration-progress', databaseId] })
+  }, [jobDone, databaseId, queryClient])
   const reconcile = useMutation({
     mutationFn: () => reconcileMigration(databaseId, migrationId, {
       inspectedTarget: true,
@@ -77,20 +97,20 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
 
   const entry = detail.data
   const editable = create || (entry?.canEdit === true && entry.status === 'draft')
-  const busy = save.isPending || execute.isPending || reconcile.isPending
+  const jobActive = jobId !== null && !jobDone
+  const busy = save.isPending || execute.isPending || reconcile.isPending || jobActive
   const currentSql = liveSql ?? entry?.sql ?? prefill?.sql ?? ''
   const databaseName = database.data?.name ?? 'database ini'
   const transactionalDdl = database.data?.capabilities?.transactionalDdl !== false
-  const isDraft = entry?.status === 'draft'
-  // null = boleh dijalankan; selain itu = alasan tombol Jalankan dikunci.
-  const blockedReason = isDraft ? executionBlockedReason(approval.data) : null
+  // null = boleh dijalankan; selain itu = alasan tombol dikunci.
+  const blockedReason = pending ? executionBlockedReason(approval.data) : null
 
   function confirmExecution() {
-    if (!entry) return
+    if (!entry || !pending) return
     const executionNote = transactionalDdl
       ? 'Dijalankan dalam satu transaksi; jika gagal semua perubahan dibatalkan.'
       : 'DML dijalankan dalam transaksi. DDL melakukan implicit commit; jika gagal, sebagian perubahan mungkin sudah diterapkan dan target perlu direkonsiliasi.'
-    const confirmed = window.confirm(`Jalankan v${entry.version} (${entry.name}) pada ${databaseName}?\n\n${executionNote}\nDraft tidak dapat diedit lagi.`)
+    const confirmed = window.confirm(`${pending.confirmTitle(entry.version, databaseName)}\n(${entry.name})\n\n${executionNote}\n${pending.confirmNote}`)
     if (confirmed) execute.mutate()
   }
 
@@ -117,7 +137,7 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
             </div>
           ) : null}
         </div>
-        {entry?.canEdit && entry.status === 'draft' ? (
+        {entry?.canEdit && pending ? (
           <div className="page-header__actions migration-run">
             <button
               aria-describedby={blockedReason ? 'migration-run-reason' : undefined}
@@ -127,7 +147,7 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
               type="button"
             >
               <Icon className={execute.isPending ? 'spinner' : undefined} name={execute.isPending ? 'loader' : blockedReason ? 'lock' : 'play'} size={16} />
-              {execute.isPending ? 'Menjalankan...' : `Jalankan v${entry.version}`}
+              {execute.isPending ? pending.runningLabel : pending.label(entry.version)}
             </button>
             {blockedReason ? (
               <p className="migration-run__reason" id="migration-run-reason">{blockedReason}</p>
@@ -136,7 +156,15 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
         ) : null}
       </div>
 
+      {jobId ? <JobStatusPanel error={job.isError ? job.error : null} job={job.data} loading={job.isPending} /> : null}
+      {batchProgress.data ? <BatchProgressPanel action={job.data?.action} progress={batchProgress.data} /> : null}
       {entry ? <MigrationResult entry={entry} transactionalDdl={transactionalDdl} /> : null}
+      {entry && !pending && entry.isActive !== false && (entry.status === 'succeeded' || entry.status === 'partially_reverted') && entry.downSql == null ? (
+        <StatusMessage tone="info">
+          Migration ini tidak punya Down SQL, jadi tidak dapat di-rollback.
+          {entry.irreversibleReason ? ` Alasan: ${entry.irreversibleReason}` : ''}
+        </StatusMessage>
+      ) : null}
       {save.isError ? <ErrorMessage error={save.error} /> : null}
       {execute.isError ? <ErrorMessage error={execute.error} /> : null}
       {reconcile.isError ? <ErrorMessage error={reconcile.error} /> : null}
@@ -191,15 +219,16 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
             transactionalDdl={transactionalDdl}
           />
           {/* Milestone 2: review setelah SQL, supaya leader membaca SQL dulu baru memutuskan. */}
-          {entry && isDraft ? (
+          {entry && pending ? (
             <ApprovalPanel
+              action={pending.approval}
               databaseId={databaseId}
               databaseName={databaseName}
               error={approval.isError ? approval.error : null}
               loading={approval.isPending}
               migrationId={migrationId}
               review={approval.data}
-              sql={entry.sql}
+              sql={pending.action === 'rollback' ? (entry.downSql ?? '') : entry.sql}
             />
           ) : null}
           {editable ? <ExplainPanel databaseId={databaseId} sql={currentSql} /> : null}
@@ -319,6 +348,34 @@ function MigrationResult({ entry, transactionalDdl }: { entry: MigrationEntry; t
         <div>
           <strong>Target perlu direkonsiliasi</strong>
           <p>DDL MySQL dapat menyisakan perubahan sebelumnya. Migration berikutnya diblokir sampai kondisi target diperiksa.</p>
+          {entry.errorMessage ? <pre>{entry.errorMessage}</pre> : null}
+        </div>
+      </div>
+    )
+  }
+  if (entry.status === 'rolled_back') {
+    return (
+      <div className="migration-result migration-result--warning" role="status">
+        <img alt="" src={senja.rewind} />
+        <div>
+          <strong>Migration sudah di-rollback</strong>
+          <p>Perubahan v{entry.version} dibatalkan lewat Down SQL. Jalankan ulang (forward) membutuhkan approval baru.</p>
+        </div>
+      </div>
+    )
+  }
+  if (entry.status === 'partial' || entry.status === 'partially_reverted') {
+    const reverted = entry.status === 'partially_reverted'
+    return (
+      <div className="migration-result migration-result--warning" role="alert">
+        <img alt="" src={senja.unplugged} />
+        <div>
+          <strong>{reverted ? 'Rollback berhenti di tengah' : 'Migration batch berhenti di tengah'}</strong>
+          <p>
+            {reverted
+              ? 'Sebagian batch sudah dibatalkan. Lanjutkan rollback dari checkpoint terakhir setelah approval lengkap.'
+              : 'Batch yang sudah committed tetap tersimpan. Coba ulang melanjutkan dari checkpoint terakhir, bukan dari awal.'}
+          </p>
           {entry.errorMessage ? <pre>{entry.errorMessage}</pre> : null}
         </div>
       </div>

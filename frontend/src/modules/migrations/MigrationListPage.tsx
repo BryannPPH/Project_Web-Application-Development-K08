@@ -5,6 +5,7 @@ import { MigrationStatusBadge } from '@/components/Badges'
 import { Icon } from '@/components/Icon'
 import { StatusMessage } from '@/components/StatusMessage'
 import { ApiError } from '@/lib/api-client'
+import { ExecutionHistory } from '@/modules/migrations/ExecutionHistory'
 import { listMigrations } from '@/modules/migrations/api'
 import { displayTime, migrationQueryKeys } from '@/modules/migrations/query-helpers'
 import '@/modules/migrations/migrations.css'
@@ -103,6 +104,9 @@ export function MigrationListPage() {
             </tbody>
           </table>
         </div>
+      ) : null}
+      {query.data && query.data.items.length > 0 ? (
+        <ExecutionHistory databaseId={databaseId} migrations={query.data.items} />
       ) : null}
     </section>
   )
