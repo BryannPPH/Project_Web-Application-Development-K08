@@ -256,3 +256,20 @@ func TestPingUnreachableTargetFailsFast(t *testing.T) {
 		t.Fatal("Ping() did not respect timeout")
 	}
 }
+
+func TestSafeParametersOnlyExposeMarkedIntegerCursors(t *testing.T) {
+	parameters := safeParameters([]any{int64(42), "session-secret", int64(99), []byte("credential")}, []int{0, 1})
+	if len(parameters) != 4 {
+		t.Fatalf("safe parameter count = %d, want 4", len(parameters))
+	}
+	if parameters[0].Value != int64(42) || parameters[0].Type != "int64" || parameters[0].Redacted {
+		t.Fatalf("marked integer cursor = %#v", parameters[0])
+	}
+	if parameters[1].Value != "[redacted]" || !parameters[1].Redacted {
+		t.Fatalf("marked string parameter must remain redacted: %#v", parameters[1])
+	}
+	if parameters[2].Value != "[redacted]" || !parameters[2].Redacted ||
+		parameters[3].Value != "[redacted]" || !parameters[3].Redacted {
+		t.Fatalf("unmarked parameters must remain redacted: %#v", parameters[2:])
+	}
+}

@@ -15,6 +15,9 @@ receivers:
           layout: '%Y-%m-%dT%H:%M:%S.%LZ'
         severity:
           parse_from: attributes.level
+      - type: move
+        from: attributes["service.name"]
+        to: resource["service.name"]
       - type: trace_parser
         trace_id:
           parse_from: attributes.trace_id

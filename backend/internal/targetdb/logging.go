@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"reflect"
 	"regexp"
 	"sync"
 	"time"
@@ -19,13 +20,14 @@ import (
 )
 
 type Activity struct {
-	JobID         string
-	MigrationID   string
-	ExecutionID   string
-	Action        string
-	Attempt       int
-	BatchNumber   int64
-	CorrelationID string
+	JobID                string
+	MigrationID          string
+	ExecutionID          string
+	Action               string
+	Attempt              int
+	BatchNumber          int64
+	CorrelationID        string
+	SafeParameterIndexes []int
 }
 
 type activityContextKey struct{}
@@ -37,6 +39,12 @@ func WithActivity(ctx context.Context, activity Activity) context.Context {
 func ActivityFromContext(ctx context.Context) Activity {
 	activity, _ := ctx.Value(activityContextKey{}).(Activity)
 	return activity
+}
+
+func WithSafeParameterIndexes(ctx context.Context, indexes ...int) context.Context {
+	activity := ActivityFromContext(ctx)
+	activity.SafeParameterIndexes = append([]int(nil), indexes...)
+	return WithActivity(ctx, activity)
 }
 
 type loggingProvider struct {
@@ -264,7 +272,7 @@ func startQuery(ctx context.Context, logger *slog.Logger, databaseID, operation,
 			attribute.String("db.query.text", statement)))
 	started := time.Now()
 	fields := requestFields(ctx, databaseID)
-	fields = append(fields, "operation", operation, "query", statement, "parameters", safeParameters(args))
+	fields = append(fields, "operation", operation, "query", statement, "parameters", safeParameters(args, ActivityFromContext(ctx).SafeParameterIndexes))
 	fields = append(fields, observability.TraceFields(ctx)...)
 	logger.InfoContext(ctx, "target SQL started", append([]any{"event", "database_query_started"}, fields...)...)
 	return ctx, span, started
@@ -274,7 +282,7 @@ func finishQuery(ctx context.Context, logger *slog.Logger, databaseID, operation
 	started time.Time, rows int64, err error, span trace.Span) {
 	duration := time.Since(started)
 	fields := requestFields(ctx, databaseID)
-	fields = append(fields, "operation", operation, "query", redactStatement(query), "parameters", safeParameters(args),
+	fields = append(fields, "operation", operation, "query", redactStatement(query), "parameters", safeParameters(args, ActivityFromContext(ctx).SafeParameterIndexes),
 		"duration_ms", duration.Milliseconds(), "rows_affected", rows)
 	fields = append(fields, observability.TraceFields(ctx)...)
 	if err != nil {
@@ -356,12 +364,66 @@ func RedactSQLStatement(query string) string {
 
 func redactStatement(query string) string { return RedactSQLStatement(query) }
 
-func safeParameters(args []any) []any {
-	values := make([]any, len(args))
-	for index := range args {
-		values[index] = "[redacted]"
+type parameterLog struct {
+	Index    int    `json:"index"`
+	Type     string `json:"type"`
+	Value    any    `json:"value"`
+	Redacted bool   `json:"redacted"`
+}
+
+func safeParameters(args []any, safeIndexes []int) []parameterLog {
+	allowed := make(map[int]struct{}, len(safeIndexes))
+	for _, index := range safeIndexes {
+		allowed[index] = struct{}{}
+	}
+	values := make([]parameterLog, len(args))
+	for index, value := range args {
+		parameter := parameterLog{Index: index + 1, Type: parameterType(value), Value: "[redacted]", Redacted: true}
+		if _, ok := allowed[index]; ok {
+			if safeValue, integer := safeIntegerParameter(value); integer {
+				parameter.Value, parameter.Redacted = safeValue, false
+			}
+		}
+		values[index] = parameter
 	}
 	return values
+}
+
+func parameterType(value any) string {
+	if value == nil {
+		return "null"
+	}
+	return reflect.TypeOf(value).String()
+}
+
+func safeIntegerParameter(value any) (int64, bool) {
+	switch number := value.(type) {
+	case int:
+		return int64(number), true
+	case int8:
+		return int64(number), true
+	case int16:
+		return int64(number), true
+	case int32:
+		return int64(number), true
+	case int64:
+		return number, true
+	case uint:
+		if uint64(number) <= uint64(^uint64(0)>>1) {
+			return int64(number), true
+		}
+	case uint8:
+		return int64(number), true
+	case uint16:
+		return int64(number), true
+	case uint32:
+		return int64(number), true
+	case uint64:
+		if number <= uint64(^uint64(0)>>1) {
+			return int64(number), true
+		}
+	}
+	return 0, false
 }
 
 func safeDBError(err error) string {

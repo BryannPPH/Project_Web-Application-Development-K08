@@ -1,0 +1,326 @@
+{
+  "executedAtUtc": "2026-11-26T13:58:37.565823968Z",
+  "environment": "isolated local Docker Compose project with disposable volumes",
+  "apiStatus": 202,
+  "jobId": "bc62a80c-25ec-4250-9127-863acb0e6f14",
+  "migrationId": "96b8ee32-8372-481c-bb40-c541ade99702",
+  "databaseId": "41e76237-1fb1-40bb-9c4f-a6a69c5f68d9",
+  "terminalEvent": {
+    "event": "migration_job_finished",
+    "status": "succeeded"
+  },
+  "traceId": "1c7cd0e6280bcb4e181bb89345954647",
+  "correlatedLogRecords": {
+    "api": 1,
+    "worker": 9,
+    "sharedTraceId": true
+  },
+  "traceSpans": [
+    {
+      "service": "dbmp-backend",
+      "name": "http.server"
+    },
+    {
+      "service": "dbmp-backend",
+      "name": "migration.job.enqueue"
+    },
+    {
+      "service": "dbmp-worker",
+      "name": "migration.job.process"
+    },
+    {
+      "service": "dbmp-worker",
+      "name": "migration.execute"
+    },
+    {
+      "service": "dbmp-worker",
+      "name": "migration.lock.acquire"
+    },
+    {
+      "service": "dbmp-worker",
+      "name": "db.connection.open"
+    },
+    {
+      "service": "dbmp-worker",
+      "name": "db.connection.open"
+    },
+    {
+      "service": "dbmp-worker",
+      "name": "db.transaction"
+    },
+    {
+      "service": "dbmp-worker",
+      "name": "db.query"
+    }
+  ],
+  "prometheusMetrics": {
+    "jobs": [
+      {
+        "labels": {
+          "__name__": "dbmp_jobs",
+          "instance": "backend:8080",
+          "job": "dbmp-backend",
+          "status": "failed"
+        },
+        "value": "0"
+      },
+      {
+        "labels": {
+          "__name__": "dbmp_jobs",
+          "instance": "backend:8080",
+          "job": "dbmp-backend",
+          "status": "needs_reconciliation"
+        },
+        "value": "0"
+      },
+      {
+        "labels": {
+          "__name__": "dbmp_jobs",
+          "instance": "backend:8080",
+          "job": "dbmp-backend",
+          "status": "partial"
+        },
+        "value": "0"
+      },
+      {
+        "labels": {
+          "__name__": "dbmp_jobs",
+          "instance": "backend:8080",
+          "job": "dbmp-backend",
+          "status": "partially_reverted"
+        },
+        "value": "0"
+      },
+      {
+        "labels": {
+          "__name__": "dbmp_jobs",
+          "instance": "backend:8080",
+          "job": "dbmp-backend",
+          "status": "queued"
+        },
+        "value": "0"
+      },
+      {
+        "labels": {
+          "__name__": "dbmp_jobs",
+          "instance": "backend:8080",
+          "job": "dbmp-backend",
+          "status": "retrying"
+        },
+        "value": "0"
+      },
+      {
+        "labels": {
+          "__name__": "dbmp_jobs",
+          "instance": "backend:8080",
+          "job": "dbmp-backend",
+          "status": "running"
+        },
+        "value": "0"
+      },
+      {
+        "labels": {
+          "__name__": "dbmp_jobs",
+          "instance": "backend:8080",
+          "job": "dbmp-backend",
+          "status": "succeeded"
+        },
+        "value": "1"
+      }
+    ],
+    "queueWaitCount": [
+      {
+        "labels": {
+          "__name__": "dbmp_queue_wait_seconds_count",
+          "instance": "backend:8080",
+          "job": "dbmp-backend",
+          "kind": "apply"
+        },
+        "value": "1"
+      },
+      {
+        "labels": {
+          "__name__": "dbmp_queue_wait_seconds_count",
+          "instance": "backend:8080",
+          "job": "dbmp-backend",
+          "kind": "batch"
+        },
+        "value": "0"
+      },
+      {
+        "labels": {
+          "__name__": "dbmp_queue_wait_seconds_count",
+          "instance": "backend:8080",
+          "job": "dbmp-backend",
+          "kind": "forward"
+        },
+        "value": "0"
+      },
+      {
+        "labels": {
+          "__name__": "dbmp_queue_wait_seconds_count",
+          "instance": "backend:8080",
+          "job": "dbmp-backend",
+          "kind": "retry"
+        },
+        "value": "0"
+      },
+      {
+        "labels": {
+          "__name__": "dbmp_queue_wait_seconds_count",
+          "instance": "backend:8080",
+          "job": "dbmp-backend",
+          "kind": "rollback"
+        },
+        "value": "0"
+      }
+    ],
+    "migrationDurationCount": [
+      {
+        "labels": {
+          "__name__": "dbmp_migration_duration_seconds_count",
+          "instance": "backend:8080",
+          "job": "dbmp-backend",
+          "status": "failed"
+        },
+        "value": "0"
+      },
+      {
+        "labels": {
+          "__name__": "dbmp_migration_duration_seconds_count",
+          "instance": "backend:8080",
+          "job": "dbmp-backend",
+          "status": "interrupted"
+        },
+        "value": "0"
+      },
+      {
+        "labels": {
+          "__name__": "dbmp_migration_duration_seconds_count",
+          "instance": "backend:8080",
+          "job": "dbmp-backend",
+          "status": "needs_reconciliation"
+        },
+        "value": "0"
+      },
+      {
+        "labels": {
+          "__name__": "dbmp_migration_duration_seconds_count",
+          "instance": "backend:8080",
+          "job": "dbmp-backend",
+          "status": "reconciled"
+        },
+        "value": "0"
+      },
+      {
+        "labels": {
+          "__name__": "dbmp_migration_duration_seconds_count",
+          "instance": "backend:8080",
+          "job": "dbmp-backend",
+          "status": "succeeded"
+        },
+        "value": "1"
+      }
+    ],
+    "poolConnections": [
+      {
+        "labels": {
+          "__name__": "dbmp_db_pool_connections",
+          "instance": "backend:8080",
+          "job": "dbmp-backend",
+          "state": "acquired"
+        },
+        "value": "0"
+      },
+      {
+        "labels": {
+          "__name__": "dbmp_db_pool_connections",
+          "instance": "backend:8080",
+          "job": "dbmp-backend",
+          "state": "constructing"
+        },
+        "value": "0"
+      },
+      {
+        "labels": {
+          "__name__": "dbmp_db_pool_connections",
+          "instance": "backend:8080",
+          "job": "dbmp-backend",
+          "state": "idle"
+        },
+        "value": "3"
+      }
+    ]
+  },
+  "grafanaDashboard": {
+    "uid": "dbmp-overview",
+    "panels": [
+      "Ringkasan",
+      "Platform DB terbaca",
+      "Job queue per status",
+      "Migration selesai (1 jam)",
+      "Migration gagal (1 jam)",
+      "Durasi migration",
+      "Durasi migration p50 / p95",
+      "Migration selesai per status",
+      "Pool koneksi platform DB",
+      "Koneksi aktif / idle",
+      "Waktu tunggu koneksi (per detik)",
+      "Acquire yang harus menunggu",
+      "Proses backend",
+      "Memori",
+      "Goroutine",
+      "Queue dan batch",
+      "Waktu tunggu queue p50 / p95",
+      "Batch dan row diproses (15 menit)"
+    ]
+  },
+  "sampleLogs": [
+    {
+      "service": "dbmp-worker",
+      "time": "2026-11-26T13:58:37.565823968Z",
+      "level": "INFO",
+      "msg": "migration job finished",
+      "event": "migration_job_finished",
+      "job_id": "bc62a80c-25ec-4250-9127-863acb0e6f14",
+      "execution_id": "93a1f9da-f151-4b6b-a9a4-94a036a3b2c0",
+      "status": "succeeded",
+      "trace_id": "1c7cd0e6280bcb4e181bb89345954647",
+      "span_id": "dc61a083474cc811"
+    },
+    {
+      "service": "dbmp-backend",
+      "time": "2026-11-26T13:58:36.634606343Z",
+      "level": "INFO",
+      "msg": "migration job enqueued",
+      "event": "migration_job_enqueued",
+      "job_id": "bc62a80c-25ec-4250-9127-863acb0e6f14",
+      "trace_id": "1c7cd0e6280bcb4e181bb89345954647",
+      "span_id": "77d85a26966c703d"
+    },
+    {
+      "service": "dbmp-worker",
+      "time": "2026-11-26T13:58:37.562187468Z",
+      "level": "INFO",
+      "msg": "target SQL completed",
+      "event": "database_query_completed",
+      "job_id": "bc62a80c-25ec-4250-9127-863acb0e6f14",
+      "execution_id": "93a1f9da-f151-4b6b-a9a4-94a036a3b2c0",
+      "status": "succeeded",
+      "query": "CREATE TABLE telemetry_smoke_4bd9d8ea (id BIGINT PRIMARY KEY)",
+      "duration_ms": 4,
+      "rows_affected": 0,
+      "trace_id": "1c7cd0e6280bcb4e181bb89345954647",
+      "span_id": "7300903d2e68d100"
+    }
+  ],
+  "actualMetricSamples": {
+    "dbmp_jobs{status=\"succeeded\"}": "1",
+    "dbmp_queue_wait_seconds_count{kind=\"apply\"}": "1",
+    "dbmp_migration_duration_seconds_count{status=\"succeeded\"}": "1",
+    "dbmp_db_pool_connections{state=\"acquired\"}": "0",
+    "dbmp_db_pool_connections{state=\"idle\"}": "3",
+    "dbmp_db_pool_wait_seconds_total": "0.004006541",
+    "dbmp_db_pool_empty_acquires_total": "1"
+  }
+}

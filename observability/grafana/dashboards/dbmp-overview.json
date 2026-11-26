@@ -86,9 +86,9 @@
     },
     {
       "id": 3,
-      "title": "Migration per status",
+      "title": "Job queue per status",
       "type": "bargauge",
-      "description": "Jumlah migration saat ini per status. Setelah queue Person C tersedia, panel ini diganti jumlah job per status.",
+      "description": "Jumlah job antrean saat ini per status.",
       "datasource": {
         "type": "prometheus",
         "uid": "dbmp-prometheus"
@@ -106,7 +106,7 @@
             "type": "prometheus",
             "uid": "dbmp-prometheus"
           },
-          "expr": "dbmp_migrations",
+          "expr": "dbmp_jobs",
           "legendFormat": "{{status}}",
           "instant": true
         }
@@ -531,6 +531,105 @@
           },
           "expr": "go_goroutines",
           "legendFormat": "goroutine"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 16,
+      "type": "row",
+      "title": "Queue dan batch",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 17,
+      "title": "Waktu tunggu queue p50 / p95",
+      "type": "timeseries",
+      "description": "Waktu dari job dibuat sampai worker mulai memprosesnya.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dbmp-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 37,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dbmp-prometheus"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(dbmp_queue_wait_seconds_bucket[15m])))",
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dbmp-prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(dbmp_queue_wait_seconds_bucket[15m])))",
+          "legendFormat": "p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 18,
+      "title": "Batch dan row diproses (15 menit)",
+      "type": "timeseries",
+      "description": "Jumlah batch dan row berdasarkan hasil yang tercatat di execution history.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dbmp-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 37,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dbmp-prometheus"
+          },
+          "expr": "sum by (outcome) (increase(dbmp_batches_processed_total[15m]))",
+          "legendFormat": "batch {{outcome}}"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dbmp-prometheus"
+          },
+          "expr": "sum by (outcome) (increase(dbmp_rows_processed_total[15m]))",
+          "legendFormat": "row {{outcome}}"
         }
       ],
       "fieldConfig": {
