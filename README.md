@@ -27,6 +27,7 @@ Cuplikan tampilan aplikasi DB Manager.
 ├── backend/
 │   ├── cmd/
 │   │   ├── api/                    # HTTP API server
+│   │   ├── worker/                 # Persistent migration queue worker
 │   │   ├── bootstrap-admin/        # Membuat platform admin pertama
 │   │   └── migrate/                # Menjalankan migration platform
 │   ├── internal/
@@ -90,7 +91,7 @@ disimpan pada database platform dan dijalankan ke target yang dipilih.
 ## Quick Start dengan Docker
 
 Docker Compose menjalankan seluruh stack: platform database, target database,
-migration internal, backend, dan frontend.
+migration internal, backend API, migration worker, dan frontend.
 
 ### 1. Siapkan environment
 
@@ -137,7 +138,8 @@ Urutan startup dikelola melalui healthcheck dan dependency:
 
 ```text
 platform-db ──healthy──> migrate ──completed──> backend ──healthy──> frontend
-target-db   ──healthy────────────────────────> backend
+                    └────────────────────────> worker
+target-db / mysql-target ────────────────────> backend dan worker
 ```
 
 ### 3. Buat admin pertama
@@ -345,8 +347,11 @@ Setiap managed database memiliki urutan migration linear dengan status:
 | `running` | Sedang dijalankan pada target database |
 | `succeeded` | Seluruh SQL berhasil diterapkan; jaminan transaksi bergantung pada engine dan jenis SQL |
 | `failed` | SQL transaksional gagal dan perubahan di-rollback |
+| `partial` | Batch tertentu sudah commit sebelum eksekusi berhenti; migration belum aktif dan dapat dilanjutkan atau di-rollback setelah approval |
+| `partially_reverted` | Sebagian batch `down` sudah commit; migration tetap aktif sampai rollback selesai |
+| `rolled_back` | Seluruh perubahan migration dibatalkan melalui Down SQL |
 | `interrupted` | Hasil tidak pasti dan membutuhkan rekonsiliasi manual |
-| `needs_reconciliation` | DDL MySQL gagal; periksa kondisi target sebelum migration berikutnya |
+| `needs_reconciliation` | DDL non-transaksional gagal atau hasil eksekusi/checkpoint tidak pasti; periksa target sebelum migration berikutnya |
 | `reconciled` | Kondisi target sudah diperiksa dan dicatat; ini bukan status sukses migration |
 
 Backend melarang transaction control statement seperti `BEGIN`, `COMMIT`, dan
@@ -375,9 +380,41 @@ mengubah tabel). Berikan privilege dengan cakupan sesempit mungkin. Kegagalan
 privilege dari target tetap dicatat sebagai kegagalan migration; DDL MySQL
 memerlukan pemeriksaan kondisi schema sebelum status rekonsiliasi dicatat.
 
-Saat backend start, entry `running` yang tertinggal dari proses sebelumnya
-diubah menjadi `interrupted`. Implementasi Milestone 1 mengasumsikan satu
-instance backend aktif.
+Eksekusi berjalan lewat job queue persisten. API mengembalikan `202 Accepted`
+untuk enqueue apply/retry/rollback/forward dan menyediakan endpoint status job.
+Worker terpisah mengambil job dengan lease, memegang advisory lock selama
+eksekusi, dan memeriksa ulang grant serta approval. Job sebelum attempt dapat
+diambil ulang setelah worker restart; attempt dengan hasil target yang tidak
+pasti ditahan untuk rekonsiliasi, tidak dijalankan ulang otomatis. Satu managed
+database diproses berurutan, sedangkan database berbeda dapat diproses paralel.
+Jika lease worker batch kedaluwarsa, worker pengganti memeriksa checkpoint target
+sebelum mengubah status. Checkpoint konsisten menutup attempt sebagai `partial`
+atau `partially_reverted` agar operator dapat meminta retry/rollback baru dengan
+approval; bukti yang hilang atau tidak konsisten tetap memerlukan rekonsiliasi.
+Tidak ada SQL yang dijalankan ulang otomatis oleh recovery.
+
+Benchmark batch wajib memakai database PostgreSQL khusus pengujian. Siapkan
+migration batch berstatus draft dengan SQL `UPDATE <TableName> SET value=value+1
+WHERE id>$1 AND id<=$2`, selector `SELECT id FROM <TableName> WHERE id>$1 ORDER
+BY id LIMIT $2`, dan Down SQL yang membalik perubahan; setujui revisinya sebelum
+run. `scripts/benchmark-batch-migration.ps1` membuat fixture, mengukur UPDATE
+non-batch sampai melewati satu detik, mereset nilai pada fixture yang sama,
+menjalankan migration melalui API/queue/worker, memeriksa job serta batch, lalu
+menyimpan JSON hasil tanpa credential. Jalankan hanya setelah mengisi environment
+API/session/target dan cocokkan `-TableName` serta `-BatchSize` dengan definition
+yang sudah disetujui. Verifikasi koneksi `psql` sama dengan target pada
+`DatabaseId`, lalu berikan `-ConfirmTestDatabase` dan
+`-ConfirmManagedTargetMatchesConnection`; script akan membuat dan menghapus tabel
+fixture.
+
+Hasil aktual 26 November 2026 pada PostgreSQL Compose lokal: fixture yang sama
+berisi 2.000.000 row; baseline UPDATE non-batch 3.469,6 ms; migration aplikasi
+berhasil dengan batch 10.000 row sebanyak 200 batch dan 2.000.000 row terverifikasi
+dalam 5.710 ms. Job terminal tercapai dalam 5.773 ms. Rincian ID dan hasil yang
+tidak memuat credential tersimpan di
+[`scripts/evidence/batch-benchmark-local-2026-11-26.json`](scripts/evidence/batch-benchmark-local-2026-11-26.json).
+Angka ini hasil satu run pada environment lokal tersebut, bukan jaminan performa
+di environment lain.
 
 ## Approval Migration (Milestone 2)
 
@@ -403,6 +440,12 @@ revisi yang sama:
 |---|---|
 | `GET /api/v1/databases/{databaseId}/migrations/{migrationId}/approvals?action=apply` | Status review, group wajib, dan keputusan leader |
 | `POST /api/v1/databases/{databaseId}/migrations/{migrationId}/approvals` | Leader memberi keputusan `{action, revision, decision, note}` |
+| `POST /api/v1/databases/{databaseId}/migrations/{migrationId}/execute` | Enqueue apply, balas `202` dengan `jobId` dan `Location` |
+| `POST /api/v1/databases/{databaseId}/migrations/{migrationId}/retry` | Enqueue retry |
+| `POST /api/v1/databases/{databaseId}/migrations/{migrationId}/rollback` | Enqueue rollback |
+| `POST /api/v1/databases/{databaseId}/migrations/{migrationId}/forward` | Enqueue forward |
+| `GET /api/v1/databases/{databaseId}/migration-jobs/{jobId}` | Baca status job dan progres batch |
+| `GET /api/v1/databases/{databaseId}/migration-history?limit=100&offset=0&hideRollback=false` | Riwayat execution berhalaman; filter pasangan rollback sukses dilakukan sebelum pagination |
 
 | Kode error | Arti |
 |---|---|
@@ -425,6 +468,87 @@ semua leader menyetujui.
 - [Observability: metrik Prometheus dan dashboard Grafana](observability/README.md):
   `docker compose --profile observability up -d`, lalu buka Grafana di
   http://localhost:3000.
+- [Stress test k6 untuk queue migration](scripts/k6/migration-queue.js):
+  membaca database dan mengirim job secara bersamaan, lalu polling job sampai
+  status terminal. Setiap iterasi membutuhkan migration unik yang sudah
+  disetujui pada manifest [`scripts/k6/cases.example.json`](scripts/k6/cases.example.json).
+  Untuk beberapa migration berurutan pada database yang sama, isi
+  `predecessorMigrationId` pada case berikutnya; script menunggu migration itu
+  berstatus `succeeded` sebelum enqueue, sehingga VU paralel tidak mengirim versi
+  yang salah urut. Dependency polling ikut dihitung sebagai request API.
+
+  Salin contoh manifest, ganti ID dengan migration approved yang aman untuk
+  dijalankan, dan siapkan sesi lokal serta CSRF token. Jalankan:
+
+  ```bash
+  export DBMP_API_BASE_URL=http://localhost:8080
+  export DBMP_ORIGIN=http://localhost:5173
+  export DBMP_SESSION_COOKIE='nilai-cookie-session'
+  export DBMP_CSRF_TOKEN='nilai-csrf-token'
+  export DBMP_CASES_FILE=/path/to/approved-cases.json
+  k6 run scripts/k6/migration-queue.js
+  ```
+
+  Stage beban: baseline 1 VU, naik ke 10 lalu 30 VU, kemudian turun ke 10 dan
+  0 VU. Threshold awal: p95 API < 1000 ms, error API < 2%, p95 queue wait < 5 s,
+  dan p95 waktu eksekusi < 60 s. Atur `K6_P95_API_MS` dan `K6_API_ERROR_RATE`
+  mengikuti baseline hasil ukur tim. Ringkasan k6 menampilkan p50/p95 API,
+  request per second, error rate, queue wait, durasi job, serta jumlah/rate job
+  yang selesai. Respons enqueue `202` dihitung sebagai job diterima, bukan
+  keberhasilan migration; `job_execution_error_rate` dihitung dari status
+  terminal selain `succeeded`. Setiap kasus manifest hanya dipakai sekali; jika
+  jumlah iterasi melebihi jumlah kasus, iterasi berikutnya hanya menjalankan
+  request baca dan menaikkan `migration_case_manifest_exhausted`; threshold akan
+  menggagalkan run supaya hasilnya tidak dianggap stress test queue yang valid.
+  Siapkan migration unik yang cukup untuk seluruh iterasi; file contoh tiga kasus
+  hanya menunjukkan format manifest dan tidak cukup untuk ramp 30 VU. Custom
+  metrics memiliki label `stage` (`baseline_1_vu`, `ramp_to_10_vu`, `peak_30_vu`,
+  `ramp_down_to_10_vu`, `ramp_to_0_vu`, `drain`); throughput per stage dihitung
+  dari jumlah `api_requests` atau `migration_jobs_completed` dibagi durasi stage.
+  Latensi API dikelompokkan saat request terjadi; hasil job dikelompokkan menurut
+  stage enqueue. Masa drain menunggu hingga batas polling job agar VU tidak
+  dihentikan sebelum memantau hasilnya. Konfigurasi ramp dan threshold mengikuti
+  [dokumentasi scenario k6](https://grafana.com/docs/k6/latest/using-k6/scenarios/)
+  dan [threshold k6](https://grafana.com/docs/k6/latest/using-k6/thresholds/).
+
+  Hasil run aktual 26 November 2026 pada Compose lokal yang terisolasi
+  (PostgreSQL, 30 database target): k6 `0.56.0`, maksimum 30 VU, 9 menit
+  ramp, 9.990 kasus approved unik tersedia, 3.468 iterasi terpakai. Semua
+  3.468 job diterima dan berakhir `succeeded`; 10.404/10.404 checks lulus,
+  API error `0%`, dan manifest tidak habis. Secara keseluruhan API p50/p95
+  `2,487/6,993 ms`, throughput `25,687 request/s`, queue wait p95 `94 ms`,
+  dan durasi job p95 `22 ms`. Seluruh threshold k6 lulus. Rincian machine-
+  readable tanpa secret ada di
+  [`scripts/evidence/k6-stress-local-2026-11-26.json`](scripts/evidence/k6-stress-local-2026-11-26.json).
+
+  Tabel berikut mengelompokkan request menurut stage saat request terjadi,
+  penerimaan job menurut stage enqueue, dan completion menurut waktu status
+  terminal terpantau. Latensi queue/job dikelompokkan menurut stage enqueue.
+  Tidak ada angka VU normal yang berlaku umum: pilih sesuai jumlah operator
+  yang diperkirakan aktif bersamaan. Untuk aplikasi internal kelompok kecil,
+  1 VU masuk akal bila biasanya hanya satu operator mengelola database; bila
+  ketiga anggota memang sering bekerja bersamaan, gunakan 3 VU sebagai normal.
+  Pedoman k6 juga menyarankan mencocokkan VU dengan concurrency yang diamati
+  atau diperkirakan, bukan angka arbitrer ([panduan load profile k6](https://grafana.com/docs/learning-hub/k6-performance-testing/03-establishing-a-baseline/17-designing-load-profile/)).
+  Kelompok menetapkan 1 VU sebagai beban normal pada 27 November 2026; hasil
+  run ini memakai baseline yang disepakati tersebut.
+  Stage `10 → 30` adalah ramp tiga menit yang mencapai 30 VU di ujung stage;
+  bukan hold tiga menit pada 30 VU.
+
+  | Stage | Beban VU | API p50/p95 (ms) | Request/s | Error API | Queue p95 (ms) | Job p95 (ms) | Diterima / selesai terpantau | Selesai/s | Analisis |
+  |---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+  | Baseline (60 dtk) | 1 | 2,553 / 7,321 | 1,983 | 0% | 91 | 28 | 30 / 29 | 0,483 | Baseline stabil; seluruh latensi jauh di bawah threshold. |
+  | Ramp (120 dtk) | 1 → 10 | 2,513 / 5,892 | 10,000 | 0% | 88 | 21 | 302 / 294 | 2,450 | Beban meningkat tanpa lonjakan error atau antrean. |
+  | Ramp ke puncak (180 dtk) | 10 → 30 | 2,286 / 5,679 | 38,867 | 0% | 89 | 19 | 1.754 / 1.734 | 9,633 | Mencapai maksimum 30 VU di akhir stage; sistem tetap di bawah threshold. |
+  | Ramp turun (120 dtk) | 30 → 10 | 2,830 / 8,321 | 40,750 | 0% | 99 | 23 | 1.218 / 1.236 | 10,300 | Ada completion job dari stage sebelumnya; p95 queue/job tetap rendah. |
+  | Ramp ke nol (60 dtk) | 10 → 0 | 2,646 / 8,180 | 11,100 | 0% | 95 | 24 | 164 / 174 | 2,900 | Error tetap nol saat beban diturunkan; antrean tidak menumpuk. |
+  | Drain (ekor graceful ramp-down) | 0 | 2,690 / 2,690* | — | 0% | — | — | 0 / 1 | — | Satu polling terminal terakhir; semua job akhirnya terpantau selesai. |
+
+  `Diterima / selesai terpantau` memakai dua waktu berbeda, sehingga angka
+  antartahap dapat berbeda: job yang diterima di satu stage dapat selesai pada
+  stage berikutnya. Drain hanya berisi satu request, sehingga p95 satu sampel
+  (`*`) dan throughput stage drain tidak representatif. Total akhir tetap
+  3.468 diterima dan 3.468 selesai; tidak ada job yang tertinggal.
 
 ## Command Makefile
 
