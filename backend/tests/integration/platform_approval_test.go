@@ -145,8 +145,13 @@ func TestApprovalThroughProductionHTTPStack(t *testing.T) {
 	if final.code != http.StatusCreated || objectField(final.json, "review")["status"] != "approved" {
 		t.Fatalf("analyst approval rev 2 = %d %s", final.code, final.body)
 	}
-	if response := execute(); response.code != http.StatusOK || response.json["status"] != "succeeded" {
-		t.Fatalf("approved execution = %d %s", response.code, response.body)
+	harness.startWorker()
+	enqueued := harness.do(http.MethodPost, base+"/"+migrationID+"/execute", nil, &dev, true)
+	if enqueued.Code != http.StatusAccepted {
+		t.Fatalf("approved execution enqueue = %d %s", enqueued.Code, enqueued.Body.String())
+	}
+	if job := harness.waitForJob(enqueued.Header().Get("Location"), dev); job["status"] != "succeeded" {
+		t.Fatalf("approved execution job = %v", job)
 	}
 	if !tableExists() {
 		t.Fatal("approved migration did not create the target table")
@@ -169,12 +174,16 @@ func TestApprovalThroughProductionHTTPStack(t *testing.T) {
 // approveApply: semua leader yang diberikan menyetujui revisi TERKINI migration
 // (dipakai test migration lama yang fokus ke eksekusi, bukan ke approval).
 func (h *platformHarness) approveApply(base, migrationID string, leaders ...platformLogin) {
+	h.approveMigrationAction(base, migrationID, "apply", leaders...)
+}
+
+func (h *platformHarness) approveMigrationAction(base, migrationID, action string, leaders ...platformLogin) {
 	h.t.Helper()
-	path := base + "/" + migrationID + "/approvals"
+	path := base + "/" + migrationID + "/approvals?action=" + action
 	review := objectField(h.call(http.MethodGet, path, nil, leaders[0], http.StatusOK), "review")
 	revision, _ := review["revision"].(float64)
 	for _, leader := range leaders {
-		h.call(http.MethodPost, path, map[string]any{"action": "apply", "revision": int(revision), "decision": "approved"},
+		h.call(http.MethodPost, base+"/"+migrationID+"/approvals", map[string]any{"action": action, "revision": int(revision), "decision": "approved"},
 			leader, http.StatusCreated)
 	}
 }

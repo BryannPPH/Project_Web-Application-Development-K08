@@ -380,10 +380,22 @@ func (s *Service) ExecuteAction(ctx context.Context, principal auth.Principal, d
 	}
 	if plan.Entry.ExecutionMode == ExecutionModeBatch && result.Status != StatusSucceeded {
 		recordCtx, recordCancel := context.WithTimeout(context.WithoutCancel(executionCtx), 5*time.Second)
-		if err := repository.AppendExecutionEvent(recordCtx, attempt.ID, string(result.Status), EventBatchFailed,
-			result.PublicError, nil, nil, nil, nil, s.clock.Now()); err != nil {
+		var recordErr error
+		if result.BatchFailure != nil {
+			if recorder, ok := s.repository.(BatchFailureRecorder); ok {
+				recordErr = recorder.RecordBatchFailure(recordCtx, attempt.ID, string(result.Status), *result.BatchFailure,
+					result.PublicError, s.clock.Now())
+			} else {
+				recordErr = repository.AppendExecutionEvent(recordCtx, attempt.ID, string(result.Status), EventBatchFailed,
+					result.PublicError, nil, nil, nil, nil, s.clock.Now())
+			}
+		} else {
+			recordErr = repository.AppendExecutionEvent(recordCtx, attempt.ID, string(result.Status), EventBatchFailed,
+				result.PublicError, nil, nil, nil, nil, s.clock.Now())
+		}
+		if recordErr != nil {
 			s.logger.ErrorContext(ctx, "record failed batch in platform history", "event", "migration_batch_failure_record_failed",
-				"execution_id", attempt.ID, "error", safeError(err))
+				"execution_id", attempt.ID, "error", safeError(recordErr))
 		}
 		recordCancel()
 	}

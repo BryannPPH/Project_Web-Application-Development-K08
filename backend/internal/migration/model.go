@@ -141,10 +141,19 @@ type BatchCommitEvent struct {
 	QuerySQL     string
 }
 
+type BatchFailureEvent struct {
+	QuerySQL        string
+	QueryParameters []int64
+	BatchNumber     *int64
+	CursorStart     *int64
+	CursorEnd       *int64
+}
+
 type HistoryOptions struct {
-	Limit       int
-	Offset      int
-	ExecutionID string
+	Limit        int
+	Offset       int
+	ExecutionID  string
+	HideRollback bool
 }
 
 type HistoryPage struct {
@@ -160,6 +169,12 @@ type BatchProgress struct {
 	CommittedRows    int64  `json:"committedRows"`
 	LastCursor       int64  `json:"lastCursor"`
 	Status           string `json:"status"`
+}
+
+// BatchCheckpointState describes target-side commits used to recover an expired worker lease.
+type BatchCheckpointState struct {
+	UpBatches   int64
+	DownBatches int64
 }
 
 type ListOptions struct {

@@ -378,12 +378,43 @@ func (w *Worker) recoverExpiredExecution(ctx context.Context, expired Job) {
 	status := jobStatusForExecutionStatus(attempt.Status)
 	if attempt.Status == string(StatusRunning) {
 		message := "worker lease expired while the target outcome was unknown; inspect the target and reconcile before retry"
-		if _, err := w.attempts.FinishExecution(ctx, attempt, StatusNeedsReconciliation, &message, w.clock.Now()); err != nil {
-			w.logger.ErrorContext(ctx, "mark expired execution for reconciliation", "event", "migration_job_recovery_failed",
+		recoveredStatus := StatusNeedsReconciliation
+		if current.ExecutionMode == ExecutionModeBatch {
+			if inspector, ok := w.service.executor.(BatchCheckpointInspector); ok {
+				entry, entryErr := w.service.repository.Get(ctx, current.DatabaseID, current.MigrationID)
+				if entryErr != nil {
+					w.logger.WarnContext(ctx, "could not load migration for checkpoint recovery",
+						"event", "migration_batch_recovery_inspection_failed", "job_id", current.ID,
+						"execution_id", attempt.ID, "error", safeError(entryErr))
+				} else if entry.ExecutionMode != ExecutionModeBatch {
+					w.logger.WarnContext(ctx, "batch job refers to a non-batch migration",
+						"event", "migration_batch_recovery_inspection_failed", "job_id", current.ID,
+						"execution_id", attempt.ID)
+				} else if checkpoints, inspectErr := inspector.InspectBatchCheckpoints(ctx, current.DatabaseID, attempt); inspectErr == nil {
+					recoveredStatus, message = recoverBatchAttempt(current.Action, checkpoints)
+				} else {
+					w.logger.WarnContext(ctx, "could not inspect target batch checkpoints",
+						"event", "migration_batch_recovery_inspection_failed", "job_id", current.ID,
+						"execution_id", attempt.ID, "error", safeError(inspectErr))
+				}
+			} else {
+				w.logger.WarnContext(ctx, "batch executor does not support checkpoint inspection",
+					"event", "migration_batch_recovery_inspection_failed", "job_id", current.ID,
+					"execution_id", attempt.ID)
+			}
+		}
+		var recoveryMessage *string
+		if recoveredStatus != StatusSucceeded {
+			recoveryMessage = &message
+		}
+		if _, err := w.attempts.FinishExecution(ctx, attempt, recoveredStatus, recoveryMessage, w.clock.Now()); err != nil {
+			w.logger.ErrorContext(ctx, "record recovered migration attempt", "event", "migration_job_recovery_failed",
 				"job_id", current.ID, "execution_id", attempt.ID, "error", err.Error())
 			return
 		}
-		status = JobNeedsReconciliation
+		status = jobStatusForExecutionStatus(string(recoveredStatus))
+		attempt.Status = string(recoveredStatus)
+		attempt.ErrorMessage = recoveryMessage
 	}
 	if !status.Terminal() {
 		status = JobNeedsReconciliation
@@ -397,6 +428,14 @@ func (w *Worker) recoverExpiredExecution(ctx context.Context, expired Job) {
 			value := "worker stopped during execution; inspect the target before retry"
 			message = &value
 		}
+	} else if status == JobPartial || status == JobPartiallyReverted {
+		value := "BATCH_RECOVERED_FROM_CHECKPOINT"
+		code = &value
+		message = attempt.ErrorMessage
+	} else if status == JobFailed && attempt.Status == string(StatusFailed) {
+		value := "BATCH_STOPPED_BEFORE_COMMIT"
+		code = &value
+		message = attempt.ErrorMessage
 	}
 	if err := w.jobs.Finish(ctx, current, status, code, message, w.clock.Now()); err != nil {
 		w.logger.ErrorContext(ctx, "finalize expired migration job", "event", "migration_job_recovery_failed",
@@ -407,15 +446,55 @@ func (w *Worker) recoverExpiredExecution(ctx context.Context, expired Job) {
 		"job_id", current.ID, "execution_id", attempt.ID, "status", status)
 }
 
+func recoverBatchAttempt(action ExecutionAction, checkpoints BatchCheckpointState) (Status, string) {
+	if checkpoints.UpBatches == 0 {
+		if action == ActionApply || action == ActionRetry {
+			return StatusFailed, "worker stopped before any batch committed; the migration may be retried after approval"
+		}
+		return StatusNeedsReconciliation, "batch recovery found no committed source checkpoint; inspect target checkpoint storage before retry"
+	}
+	if checkpoints.DownBatches > checkpoints.UpBatches {
+		return StatusNeedsReconciliation, "batch recovery found inconsistent rollback checkpoints; inspect the target before continuing"
+	}
+	switch action {
+	case ActionApply, ActionRetry:
+		if checkpoints.DownBatches != 0 {
+			return StatusNeedsReconciliation, "apply recovery found rollback checkpoints; inspect the target before continuing"
+		}
+		return StatusPartial, "worker stopped after committed batches; review the target, then approve resume or rollback"
+	case ActionRollback:
+		if checkpoints.DownBatches == checkpoints.UpBatches {
+			return StatusSucceeded, ""
+		}
+		if checkpoints.DownBatches > 0 {
+			return StatusPartiallyReverted, "worker stopped during rollback; committed down batches are preserved and rollback can resume after approval"
+		}
+		return StatusFailed, "worker stopped before a rollback batch committed; the migration remains active"
+	default:
+		return StatusNeedsReconciliation, "worker stopped during this batch action; inspect the target before continuing"
+	}
+}
+
 func (w *Worker) retryDelay(retryCount int) time.Duration {
 	delay := w.config.RetryBaseDelay
-	for index := 0; index < retryCount && delay < w.config.RetryMaxDelay/2; index++ {
+	for index := 0; index < retryCount; index++ {
+		if delay >= w.config.RetryMaxDelay/2 {
+			delay = w.config.RetryMaxDelay
+			break
+		}
 		delay *= 2
 	}
 	if delay > w.config.RetryMaxDelay {
 		delay = w.config.RetryMaxDelay
 	}
-	return delay + time.Duration(rand.Int64N(int64(delay/4)+1))
+	jitter := delay / 4
+	if remaining := w.config.RetryMaxDelay - delay; jitter > remaining {
+		jitter = remaining
+	}
+	if jitter <= 0 {
+		return delay
+	}
+	return delay + time.Duration(rand.Int64N(int64(jitter)+1))
 }
 
 func (w *Worker) wait(ctx context.Context) {

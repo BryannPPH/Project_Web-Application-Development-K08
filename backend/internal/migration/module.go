@@ -19,8 +19,22 @@ func NewModule(
 	logger *slog.Logger,
 	config ServiceConfig,
 ) (*Handler, error) {
+	handler, _, err := NewModuleWithWorker(ctx, platformDatabase, authorizer, approvals, targets, logger, config, DefaultWorkerConfig())
+	return handler, err
+}
+
+func NewModuleWithWorker(
+	ctx context.Context,
+	platformDatabase *pgxpool.Pool,
+	authorizer Authorizer,
+	approvals ApprovalGate,
+	targets targetdb.Provider,
+	logger *slog.Logger,
+	config ServiceConfig,
+	workerConfig WorkerConfig,
+) (*Handler, *Worker, error) {
 	if ctx == nil || platformDatabase == nil || authorizer == nil || approvals == nil || targets == nil {
-		return nil, errors.New("migration module dependencies are required")
+		return nil, nil, errors.New("migration module dependencies are required")
 	}
 	if logger == nil {
 		logger = slog.Default()
@@ -37,11 +51,16 @@ func NewModule(
 		config,
 	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	queue, err := NewQueueService(NewPGJobRepository(platformDatabase), repository, authorizer, approvals, RealClock{}, logger)
+	jobs := NewPGJobRepository(platformDatabase)
+	queue, err := NewQueueService(jobs, repository, authorizer, approvals, RealClock{}, logger)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return newHandlerWithJobs(service, queue, logger, service.maxSQLBytes), nil
+	worker, err := NewWorker(jobs, service, workerConfig, logger)
+	if err != nil {
+		return nil, nil, err
+	}
+	return newHandlerWithJobs(service, queue, logger, service.maxSQLBytes), worker, nil
 }

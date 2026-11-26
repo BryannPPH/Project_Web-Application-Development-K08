@@ -64,6 +64,16 @@ type BatchExecutor interface {
 	BatchProgress(context.Context, string, ExecutionAttempt) (BatchProgress, error)
 }
 
+// BatchCheckpointInspector is optional so executors without durable batch checkpoints
+// keep the conservative needs-reconciliation recovery path.
+type BatchCheckpointInspector interface {
+	InspectBatchCheckpoints(context.Context, string, ExecutionAttempt) (BatchCheckpointState, error)
+}
+
+type BatchFailureRecorder interface {
+	RecordBatchFailure(context.Context, string, string, BatchFailureEvent, *string, time.Time) error
+}
+
 // ApprovalGate memastikan semua leader group ber-akses sudah menyetujui revisi
 // yang akan dijalankan. Implementasi: approval.Service.RequireApproved.
 type ApprovalGate interface {
@@ -82,6 +92,7 @@ type ExecutionResult struct {
 	Status        Status
 	PublicError   *string
 	InternalError error
+	BatchFailure  *BatchFailureEvent
 }
 
 type Executor interface {

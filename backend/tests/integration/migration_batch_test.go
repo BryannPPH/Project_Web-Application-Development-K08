@@ -1,11 +1,12 @@
 package integration_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -130,9 +131,11 @@ func TestBatchMigrationPartialFailureResumeAndReverseRollback(t *testing.T) {
 		t.Fatalf("create failing trigger: %v", err)
 	}
 
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
 	service, err := migration.NewService(migration.NewPGRepository(platform), allowMigrationAccess{}, migration.NewPGAdvisoryLocker(platform),
-		migration.NewPGExecutor(integrationTargetProvider{url: targetURL}), approveAll{}, migration.RealClock{},
-		slog.New(slog.NewTextHandler(io.Discard, nil)), migration.ServiceConfig{ExecutionTimeout: 30 * time.Second})
+		migration.NewPGExecutorWithLogger(integrationTargetProvider{url: targetURL}, logger), approveAll{}, migration.RealClock{},
+		logger, migration.ServiceConfig{ExecutionTimeout: 30 * time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,6 +160,28 @@ func TestBatchMigrationPartialFailureResumeAndReverseRollback(t *testing.T) {
 	progress, err := service.GetBatchProgress(ctx, principal, databaseID, *partial.LatestExecutionID)
 	if err != nil || progress.CommittedBatches != 2 || progress.CommittedRows != 6 || progress.LastCursor != 6 || progress.Status != "partial" {
 		t.Fatalf("partial progress = %#v, error %v", progress, err)
+	}
+	failedAttempt, err := service.GetExecution(ctx, principal, databaseID, *partial.LatestExecutionID)
+	if err != nil || len(failedAttempt.Events) == 0 {
+		t.Fatalf("load failed batch history = %#v, error %v", failedAttempt, err)
+	}
+	var failure *migration.ExecutionEvent
+	for index := range failedAttempt.Events {
+		if failedAttempt.Events[index].Event == migration.EventBatchFailed {
+			failure = &failedAttempt.Events[index]
+		}
+	}
+	if failure == nil || failure.QuerySQL != up || failure.BatchNumber == nil ||
+		*failure.BatchNumber != 3 || failure.CursorStart == nil || *failure.CursorStart != 6 ||
+		failure.CursorEnd == nil || *failure.CursorEnd != 7 || len(failure.QueryParameters) != 2 ||
+		failure.QueryParameters[0] != 6 || failure.QueryParameters[1] != 7 {
+		t.Fatalf("failed batch event missing SQL/range details: %#v", failure)
+	}
+	for _, field := range []string{"event=migration_batch_failed", `query="UPDATE ` + table,
+		`parameters="[6 7]"`, "batch_number=3", "cursor_start=6", "cursor_end=7"} {
+		if !strings.Contains(logs.String(), field) {
+			t.Fatalf("failed batch log is missing %q: %s", field, logs.String())
+		}
 	}
 	var committedRows, doubleApplied int
 	if err := target.QueryRow(ctx, `SELECT count(*) FILTER (WHERE value=10),count(*) FILTER (WHERE value<>0 AND value<>10) FROM `+table).Scan(&committedRows, &doubleApplied); err != nil {
@@ -194,5 +219,69 @@ func TestBatchMigrationPartialFailureResumeAndReverseRollback(t *testing.T) {
 	}
 	if err := target.QueryRow(ctx, `SELECT count(*) FROM `+table+` WHERE value<>0`).Scan(&committedRows); err != nil || committedRows != 0 {
 		t.Fatalf("rows remaining after reverse batch rollback = %d, error %v", committedRows, err)
+	}
+	forwarded, err := service.Forward(ctx, principal, databaseID, entry.ID)
+	if err != nil || forwarded.Status != migration.StatusSucceeded || !forwarded.IsActive {
+		t.Fatalf("forward original batch migration = %#v, error %v", forwarded, err)
+	}
+
+	if _, err := target.Exec(ctx, `CREATE FUNCTION `+function+`() RETURNS trigger LANGUAGE plpgsql AS $body$
+		BEGIN IF NEW.id=7 THEN RAISE EXCEPTION 'fixture batch failure'; END IF; RETURN NEW; END
+		$body$`); err != nil {
+		t.Fatalf("create second partial batch function: %v", err)
+	}
+	if _, err := target.Exec(ctx, `CREATE TRIGGER `+trigger+` BEFORE UPDATE ON `+table+` FOR EACH ROW EXECUTE FUNCTION `+function+`() `); err != nil {
+		t.Fatalf("create second partial batch trigger: %v", err)
+	}
+	partialEntry, err := service.CreateDraftWithDefinition(ctx, principal, databaseID, migration.Definition{
+		Name: "rollback directly from partial", SQL: up, DownSQL: &down,
+		ExecutionMode: migration.ExecutionModeBatch, BatchSelectSQL: &selector,
+		BatchSize: &batchSize, BatchCursorStart: 0,
+	})
+	if err != nil {
+		t.Fatalf("create partial cancellation migration: %v", err)
+	}
+	partialApply, err := service.Execute(ctx, principal, databaseID, partialEntry.ID)
+	if err != nil || partialApply.Status != migration.StatusPartial {
+		t.Fatalf("prepare partial cancellation = %#v, error %v", partialApply, err)
+	}
+	if _, err := target.Exec(ctx, `DROP TRIGGER `+trigger+` ON `+table); err != nil {
+		t.Fatalf("remove second partial batch trigger: %v", err)
+	}
+	if _, err := target.Exec(ctx, `DROP FUNCTION `+function+`() `); err != nil {
+		t.Fatalf("remove second partial batch function: %v", err)
+	}
+	if _, err := target.Exec(ctx, `CREATE FUNCTION `+function+`() RETURNS trigger LANGUAGE plpgsql AS $body$
+		BEGIN IF NEW.id=2 THEN RAISE EXCEPTION 'fixture rollback failure'; END IF; RETURN NEW; END
+		$body$`); err != nil {
+		t.Fatalf("create rollback failure function: %v", err)
+	}
+	if _, err := target.Exec(ctx, `CREATE TRIGGER `+trigger+` BEFORE UPDATE ON `+table+` FOR EACH ROW EXECUTE FUNCTION `+function+`() `); err != nil {
+		t.Fatalf("create rollback failure trigger: %v", err)
+	}
+	partialRollback, err := service.Rollback(ctx, principal, databaseID, partialEntry.ID)
+	if err != nil || partialRollback.Status != migration.StatusPartiallyReverted || !partialRollback.IsActive {
+		t.Fatalf("rollback from partial apply = %#v, error %v", partialRollback, err)
+	}
+	rollbackProgress, err := service.GetBatchProgress(ctx, principal, databaseID, *partialRollback.LatestExecutionID)
+	if err != nil || rollbackProgress.CommittedBatches != 1 || rollbackProgress.CommittedRows != 3 {
+		t.Fatalf("partial rollback progress = %#v, error %v", rollbackProgress, err)
+	}
+	if _, err := target.Exec(ctx, `DROP TRIGGER `+trigger+` ON `+table); err != nil {
+		t.Fatalf("remove rollback failure trigger: %v", err)
+	}
+	if _, err := target.Exec(ctx, `DROP FUNCTION `+function+`() `); err != nil {
+		t.Fatalf("remove rollback failure function: %v", err)
+	}
+	rolledBack, err := service.Rollback(ctx, principal, databaseID, partialEntry.ID)
+	if err != nil || rolledBack.Status != migration.StatusRolledBack || rolledBack.IsActive {
+		t.Fatalf("resume rollback from partial apply = %#v, error %v", rolledBack, err)
+	}
+	var restoredRows int
+	if err := target.QueryRow(ctx, `SELECT count(*) FROM `+table+` WHERE value=10`).Scan(&restoredRows); err != nil || restoredRows != 7 {
+		t.Fatalf("rows preserved from earlier forward migration = %d, error %v", restoredRows, err)
+	}
+	if err := target.QueryRow(ctx, `SELECT count(*) FROM `+table+` WHERE value<>10`).Scan(&committedRows); err != nil || committedRows != 0 {
+		t.Fatalf("rows remaining after resumed partial rollback = %d, error %v", committedRows, err)
 	}
 }

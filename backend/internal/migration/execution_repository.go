@@ -47,24 +47,42 @@ func (r *PGRepository) PlanExecution(ctx context.Context, databaseID, migrationI
 		plan.RelatedExecutionID = stringPtr(latest.ID)
 		plan.CheckpointRootID = latest.CheckpointRootID
 	case ActionRollback:
-		if !entry.IsActive || (entry.Status != StatusSucceeded && entry.Status != StatusPartiallyReverted) {
+		partialBatch := entry.Status == StatusPartial && entry.ExecutionMode == ExecutionModeBatch && !entry.IsActive
+		if !partialBatch && (!entry.IsActive || (entry.Status != StatusSucceeded && entry.Status != StatusPartiallyReverted)) {
 			return ExecutionPlan{}, ErrConflict
 		}
-		var laterActive bool
+		var laterBlocking bool
 		if err := r.pool.QueryRow(ctx, `SELECT EXISTS (
-			SELECT 1 FROM migration_entries WHERE database_id=$1::uuid AND is_active AND version>$2
-		)`, databaseID, entry.Version).Scan(&laterActive); err != nil {
+			SELECT 1 FROM migration_entries WHERE database_id=$1::uuid AND version>$2
+			AND (is_active OR status IN ('running','partial','partially_reverted','needs_reconciliation','interrupted'))
+		)`, databaseID, entry.Version).Scan(&laterBlocking); err != nil {
 			return ExecutionPlan{}, mapRepositoryError(err)
 		}
-		if laterActive {
+		if laterBlocking {
 			return ExecutionPlan{}, ErrWrongOrder
 		}
 		if entry.DownSQL == nil || entry.IrreversibleReason != nil {
 			return ExecutionPlan{}, ErrIrreversible
 		}
-		applied, err := r.latestSuccessfulApply(ctx, migrationID)
-		if err != nil {
-			return ExecutionPlan{}, err
+		var applied ExecutionAttempt
+		if partialBatch {
+			if !latestOK || latest.Status != string(StatusPartial) ||
+				(latest.Action != ActionApply && latest.Action != ActionRetry) {
+				return ExecutionPlan{}, ErrConflict
+			}
+			applied = latest
+		} else if entry.Status == StatusPartiallyReverted && latestOK &&
+			latest.Action == ActionRollback && latest.RelatedExecutionID != nil {
+			applied, err = r.GetHistory(ctx, databaseID, *latest.RelatedExecutionID)
+			if err != nil || (applied.Status != string(StatusSucceeded) && applied.Status != string(StatusPartial)) ||
+				(applied.Action != ActionApply && applied.Action != ActionRetry && applied.Action != ActionForward) {
+				return ExecutionPlan{}, ErrConflict
+			}
+		} else {
+			applied, err = r.latestSuccessfulApply(ctx, migrationID)
+			if err != nil {
+				return ExecutionPlan{}, err
+			}
 		}
 		plan.SQLSnapshot = *entry.DownSQL
 		plan.RelatedExecutionID = stringPtr(applied.ID)
@@ -79,13 +97,14 @@ func (r *PGRepository) PlanExecution(ctx context.Context, databaseID, migrationI
 		if !latestOK || latest.Action != ActionRollback || latest.Status != string(StatusSucceeded) {
 			return ExecutionPlan{}, ErrConflict
 		}
-		var laterActive bool
+		var laterBlocking bool
 		if err := r.pool.QueryRow(ctx, `SELECT EXISTS (
-			SELECT 1 FROM migration_entries WHERE database_id=$1::uuid AND is_active AND version>$2
-		)`, databaseID, entry.Version).Scan(&laterActive); err != nil {
+			SELECT 1 FROM migration_entries WHERE database_id=$1::uuid AND version>$2
+			AND (is_active OR status IN ('running','partial','partially_reverted','needs_reconciliation','interrupted'))
+		)`, databaseID, entry.Version).Scan(&laterBlocking); err != nil {
 			return ExecutionPlan{}, mapRepositoryError(err)
 		}
-		if laterActive {
+		if laterBlocking {
 			return ExecutionPlan{}, ErrWrongOrder
 		}
 		plan.SQLSnapshot = entry.SQL
@@ -191,6 +210,19 @@ func (r *PGRepository) RecordBatchEvent(ctx context.Context, executionID string,
 		(execution_id,status,event,occurred_at,query_sql,query_parameters,rows_affected,batch_number,cursor_start,cursor_end)
 		VALUES ($1::uuid,'running',$2,$3,$4,$5::jsonb,$6,$7,$8,$9)`,
 		executionID, event, now, batch.QuerySQL, parameters, batch.RowsAffected, batch.BatchNumber, batch.CursorStart, batch.CursorEnd)
+	return mapRepositoryError(err)
+}
+
+func (r *PGRepository) RecordBatchFailure(ctx context.Context, executionID, status string, failure BatchFailureEvent, message *string, now time.Time) error {
+	parameters, err := json.Marshal(failure.QueryParameters)
+	if err != nil {
+		return fmt.Errorf("encode failed batch SQL parameters: %w", err)
+	}
+	_, err = r.pool.Exec(ctx, `INSERT INTO migration_execution_events
+		(execution_id,status,event,occurred_at,error_message,query_sql,query_parameters,batch_number,cursor_start,cursor_end)
+		VALUES ($1::uuid,$2,'batch_failed',$3,$4,$5,$6::jsonb,$7,$8,$9)`,
+		executionID, status, now, message, failure.QuerySQL, parameters,
+		failure.BatchNumber, failure.CursorStart, failure.CursorEnd)
 	return mapRepositoryError(err)
 }
 
@@ -300,6 +332,24 @@ func (r *PGRepository) ListHistory(ctx context.Context, databaseID string, optio
 		where += ` AND a.id=$2::uuid`
 		args = append(args, options.ExecutionID)
 	}
+	if options.HideRollback {
+		where += ` AND NOT (
+			(latest.status='succeeded' AND a.action IN ('apply','retry','forward') AND EXISTS (
+				SELECT 1 FROM migration_execution_attempts rollback
+				JOIN LATERAL (SELECT e.status FROM migration_execution_events e
+					WHERE e.execution_id=rollback.id ORDER BY e.id DESC LIMIT 1) rollback_latest ON TRUE
+				WHERE rollback.database_id=a.database_id AND rollback.action='rollback'
+					AND rollback.related_execution_id=a.id AND rollback_latest.status='succeeded'
+			))
+			OR (latest.status='succeeded' AND a.action='rollback' AND EXISTS (
+				SELECT 1 FROM migration_execution_attempts cancelled
+				JOIN LATERAL (SELECT e.status FROM migration_execution_events e
+					WHERE e.execution_id=cancelled.id ORDER BY e.id DESC LIMIT 1) cancelled_latest ON TRUE
+				WHERE cancelled.database_id=a.database_id AND cancelled.action IN ('apply','retry','forward')
+					AND cancelled.id=a.related_execution_id AND cancelled_latest.status='succeeded'
+			))
+		)`
+	}
 	limitArg, offsetArg := len(args)+1, len(args)+2
 	args = append(args, options.Limit, options.Offset)
 	rows, err := r.pool.Query(ctx, attemptSelect+`WHERE `+where+
@@ -320,7 +370,10 @@ func (r *PGRepository) ListHistory(ctx context.Context, databaseID string, optio
 		return HistoryPage{}, mapRepositoryError(err)
 	}
 	countArgs := args[:len(args)-2]
-	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM migration_execution_attempts a WHERE `+where, countArgs...).Scan(&page.Total); err != nil {
+	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM migration_execution_attempts a
+		LEFT JOIN LATERAL (SELECT e.status FROM migration_execution_events e
+			WHERE e.execution_id=a.id ORDER BY e.id DESC LIMIT 1) latest ON TRUE
+		WHERE `+where, countArgs...).Scan(&page.Total); err != nil {
 		return HistoryPage{}, mapRepositoryError(err)
 	}
 	for index := range page.Items {

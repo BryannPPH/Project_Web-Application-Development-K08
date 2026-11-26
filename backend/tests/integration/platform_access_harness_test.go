@@ -20,6 +20,7 @@ import (
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/auth"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/database"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/httpapi"
+	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/migration"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/platformfeature"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/session"
 )
@@ -27,12 +28,16 @@ import (
 const platformTestPassword = "integration-password-123"
 
 type platformHarness struct {
-	t        *testing.T
-	database *pgxpool.Pool
-	handler  http.Handler
-	logs     *bytes.Buffer
-	prefix   string
-	users    map[string]string // username -> id
+	t                       *testing.T
+	database                *pgxpool.Pool
+	handler                 http.Handler
+	logs                    *bytes.Buffer
+	prefix                  string
+	users                   map[string]string // username -> id
+	worker                  *migration.Worker
+	workerCancel            context.CancelFunc
+	workerDone              chan error
+	workerCleanupRegistered bool
 }
 
 type platformLogin struct {
@@ -91,12 +96,17 @@ func newPlatformHarness(t *testing.T) *platformHarness {
 	if err != nil {
 		t.Fatalf("create credential cipher: %v", err)
 	}
-	featureFactory := platformfeature.FeatureFactory(ctx, platformfeature.Options{
+	options := platformfeature.Options{
 		CredentialCipher:     cipher,
 		TargetConnectTimeout: 3 * time.Second,
 		ViewerQueryTimeout:   10 * time.Second,
-	})
-	registrar, err := featureFactory(app.FeatureDependencies{
+		MigrationWorker: migration.WorkerConfig{
+			Concurrency: 1, PollInterval: 50 * time.Millisecond, LeaseDuration: 3 * time.Second,
+			HeartbeatInterval: time.Second, RecoveryLockTimeout: 300 * time.Millisecond,
+			MaxRetries: 1, RetryBaseDelay: 20 * time.Millisecond, RetryMaxDelay: 20 * time.Millisecond,
+		},
+	}
+	registrar, worker, err := platformfeature.Build(ctx, options, app.FeatureDependencies{
 		Database:       pool,
 		Logger:         logger,
 		PasswordHasher: passwords,
@@ -105,6 +115,7 @@ func newPlatformHarness(t *testing.T) *platformHarness {
 	if err != nil {
 		t.Fatalf("build platform access feature: %v", err)
 	}
+	harness.worker = worker
 	harness.handler = httpapi.NewHandler(httpapi.Dependencies{
 		Logger:                  logger,
 		Database:                pool,
@@ -115,6 +126,55 @@ func newPlatformHarness(t *testing.T) *platformHarness {
 		RegisterProtectedRoutes: registrar,
 	})
 	return harness
+}
+
+func (h *platformHarness) startWorker() {
+	h.t.Helper()
+	if h.workerCancel != nil {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	h.workerDone = make(chan error, 1)
+	h.workerCancel = cancel
+	go func() { h.workerDone <- h.worker.Run(ctx) }()
+	if !h.workerCleanupRegistered {
+		h.workerCleanupRegistered = true
+		h.t.Cleanup(h.stopWorker)
+	}
+}
+
+func (h *platformHarness) stopWorker() {
+	h.t.Helper()
+	if h.workerCancel == nil {
+		return
+	}
+	h.workerCancel()
+	select {
+	case err := <-h.workerDone:
+		if err != nil {
+			h.t.Errorf("stop migration worker: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		h.t.Error("migration worker did not stop")
+	}
+	h.workerCancel = nil
+	h.workerDone = nil
+}
+
+func (h *platformHarness) waitForJob(path string, login platformLogin) map[string]any {
+	h.t.Helper()
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		job := h.call(http.MethodGet, path, nil, login, http.StatusOK)
+		status, _ := job["status"].(string)
+		switch status {
+		case "succeeded", "failed", "partial", "partially_reverted", "needs_reconciliation":
+			return job
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	h.t.Fatalf("migration job did not reach a terminal state: %s", path)
+	return nil
 }
 
 func (h *platformHarness) name(suffix string) string {
@@ -164,6 +224,10 @@ func (h *platformHarness) login(suffix string) platformLogin {
 
 // do mengirim request. withCSRF=false mensimulasikan mutation tanpa token CSRF.
 func (h *platformHarness) do(method, path string, body any, login *platformLogin, withCSRF bool) *httptest.ResponseRecorder {
+	return h.doWithHeaders(method, path, body, login, withCSRF, nil)
+}
+
+func (h *platformHarness) doWithHeaders(method, path string, body any, login *platformLogin, withCSRF bool, headers map[string]string) *httptest.ResponseRecorder {
 	h.t.Helper()
 	var reader io.Reader
 	if body != nil {
@@ -182,6 +246,9 @@ func (h *platformHarness) do(method, path string, body any, login *platformLogin
 		if withCSRF {
 			request.Header.Set("X-CSRF-Token", login.csrfToken)
 		}
+	}
+	for name, value := range headers {
+		request.Header.Set(name, value)
 	}
 	recorder := httptest.NewRecorder()
 	h.handler.ServeHTTP(recorder, request)
@@ -252,6 +319,11 @@ func (h *platformHarness) cleanup() {
 			JOIN migration_entries m ON m.id=a.migration_id
 			JOIN managed_databases d ON d.id=m.database_id WHERE d.name LIKE $1)`, like); err != nil {
 		h.t.Errorf("cleanup migration execution events: %v", err)
+		return
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM migration_jobs
+		WHERE database_id IN (SELECT id FROM managed_databases WHERE name LIKE $1)`, like); err != nil {
+		h.t.Errorf("cleanup migration jobs: %v", err)
 		return
 	}
 	statements := []string{

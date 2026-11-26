@@ -23,6 +23,7 @@ type Options struct {
 	TargetConnectTimeout time.Duration
 	ViewerQueryTimeout   time.Duration
 	Migration            migration.ServiceConfig
+	MigrationWorker      migration.WorkerConfig
 	StartupTimeout       time.Duration
 }
 
@@ -30,65 +31,78 @@ type Options struct {
 // target provider yang sama dapat dipakai oleh viewer serta migration.
 func FeatureFactory(startupContext context.Context, options Options) app.FeatureFactory {
 	return func(dependencies app.FeatureDependencies) (app.ProtectedRouteRegistrar, error) {
-		if startupContext == nil {
-			return nil, errors.New("platform feature requires a startup context")
-		}
-
-		platformRegistrar, components, err := platformaccess.Build(platformaccess.Options{
-			CredentialCipher:     options.CredentialCipher,
-			TargetConnectTimeout: options.TargetConnectTimeout,
-			ViewerQueryTimeout:   options.ViewerQueryTimeout,
-		}, dependencies)
-		if err != nil {
-			return nil, fmt.Errorf("configure platform access: %w", err)
-		}
-
-		startupTimeout := options.StartupTimeout
-		if startupTimeout <= 0 {
-			startupTimeout = defaultStartupTimeout
-		}
-		ctx, cancel := context.WithTimeout(startupContext, startupTimeout)
-		defer cancel()
-
-		// Approval dibuat sebelum migration karena menjadi gerbang eksekusinya.
-		approvals, err := approval.NewService(approval.NewPGRepository(dependencies.Database), components.Authz, nil)
-		if err != nil {
-			return nil, fmt.Errorf("configure approval: %w", err)
-		}
-		approvalHandler := approval.NewHandler(approvals, dependencies.Logger)
-
-		migrationHandler, err := migration.NewModule(
-			ctx,
-			dependencies.Database,
-			components.Authz,
-			approvals,
-			components.TargetProvider,
-			dependencies.Logger,
-			options.Migration,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("configure migration: %w", err)
-		}
-
-		// Bonus: analisis execution plan dan schema diff memakai authz serta
-		// target provider yang sama dengan viewer dan migration.
-		explainService, err := migration.NewExplainService(components.Authz, components.TargetProvider, options.Migration)
-		if err != nil {
-			return nil, fmt.Errorf("configure migration explain: %w", err)
-		}
-		explainHandler := migration.NewExplainHandler(explainService, dependencies.Logger, options.Migration.MaxSQLBytes)
-		diffService, err := schemadiff.NewService(components.Authz, components.TargetProvider)
-		if err != nil {
-			return nil, fmt.Errorf("configure schema diff: %w", err)
-		}
-		diffHandler := schemadiff.NewHandler(diffService, dependencies.Logger)
-
-		return func(mux *http.ServeMux, security *httpapi.AuthMiddleware) {
-			platformRegistrar(mux, security)
-			migrationHandler.RegisterRoutes(mux, security)
-			approvalHandler.RegisterRoutes(mux, security)
-			explainHandler.RegisterRoutes(mux, security)
-			diffHandler.RegisterRoutes(mux, security)
-		}, nil
+		registrar, _, err := Build(startupContext, options, dependencies)
+		return registrar, err
 	}
+}
+
+// Build creates the protected routes and a worker that shares their repositories
+// and authorization dependencies. The API and worker processes can start separately.
+func Build(
+	startupContext context.Context,
+	options Options,
+	dependencies app.FeatureDependencies,
+) (app.ProtectedRouteRegistrar, *migration.Worker, error) {
+	if startupContext == nil {
+		return nil, nil, errors.New("platform feature requires a startup context")
+	}
+
+	platformRegistrar, components, err := platformaccess.Build(platformaccess.Options{
+		CredentialCipher:     options.CredentialCipher,
+		TargetConnectTimeout: options.TargetConnectTimeout,
+		ViewerQueryTimeout:   options.ViewerQueryTimeout,
+	}, dependencies)
+	if err != nil {
+		return nil, nil, fmt.Errorf("configure platform access: %w", err)
+	}
+
+	startupTimeout := options.StartupTimeout
+	if startupTimeout <= 0 {
+		startupTimeout = defaultStartupTimeout
+	}
+	ctx, cancel := context.WithTimeout(startupContext, startupTimeout)
+	defer cancel()
+
+	approvals, err := approval.NewService(approval.NewPGRepository(dependencies.Database), components.Authz, nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("configure approval: %w", err)
+	}
+	approvalHandler := approval.NewHandler(approvals, dependencies.Logger)
+	workerConfig := options.MigrationWorker
+	if workerConfig.Concurrency == 0 {
+		workerConfig = migration.DefaultWorkerConfig()
+	}
+	migrationHandler, worker, err := migration.NewModuleWithWorker(
+		ctx,
+		dependencies.Database,
+		components.Authz,
+		approvals,
+		components.TargetProvider,
+		dependencies.Logger,
+		options.Migration,
+		workerConfig,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("configure migration: %w", err)
+	}
+
+	explainService, err := migration.NewExplainService(components.Authz, components.TargetProvider, options.Migration)
+	if err != nil {
+		return nil, nil, fmt.Errorf("configure migration explain: %w", err)
+	}
+	explainHandler := migration.NewExplainHandler(explainService, dependencies.Logger, options.Migration.MaxSQLBytes)
+	diffService, err := schemadiff.NewService(components.Authz, components.TargetProvider)
+	if err != nil {
+		return nil, nil, fmt.Errorf("configure schema diff: %w", err)
+	}
+	diffHandler := schemadiff.NewHandler(diffService, dependencies.Logger)
+
+	registrar := func(mux *http.ServeMux, security *httpapi.AuthMiddleware) {
+		platformRegistrar(mux, security)
+		migrationHandler.RegisterRoutes(mux, security)
+		approvalHandler.RegisterRoutes(mux, security)
+		explainHandler.RegisterRoutes(mux, security)
+		diffHandler.RegisterRoutes(mux, security)
+	}
+	return registrar, worker, nil
 }

@@ -227,8 +227,9 @@ func TestAdminManagesUsersGroupsDatabasesAndGrants(t *testing.T) {
 
 	// Database dengan riwayat migration tidak boleh dihapus.
 	if _, err := harness.database.Exec(ctx, `
-		INSERT INTO migration_entries (database_id, version, name, sql_text, created_by)
-		VALUES ($1, 1, 'init', 'SELECT 1', $2)`, databaseID, harness.users[harness.name("admin")]); err != nil {
+		INSERT INTO migration_entries (database_id, version, name, sql_text, irreversible_reason, created_by)
+		VALUES ($1, 1, 'init', 'SELECT 1', 'integration fixture without down SQL', $2)`,
+		databaseID, harness.users[harness.name("admin")]); err != nil {
 		t.Fatalf("insert migration history: %v", err)
 	}
 	if del := harness.do(http.MethodDelete, "/api/v1/admin/databases/"+databaseID, nil, &admin, true); del.Code != http.StatusConflict || errorCode(del) != "DATABASE_HAS_MIGRATIONS" {

@@ -264,6 +264,14 @@ func TestMigrationExecutionCommitAndRollback(t *testing.T) {
 	); err != nil {
 		t.Fatalf("initialize migration module recovery: %v", err)
 	}
+	stillRunning, err := repository.Get(ctx, databaseID, orphaned.ID)
+	if err != nil || stillRunning.Status != migration.StatusRunning {
+		t.Fatalf("API module startup changed a live migration lease: %#v, error %v", stillRunning, err)
+	}
+	if recoveredCount, err := repository.RecoverRunning(ctx, time.Now().Add(time.Second),
+		"migration execution was interrupted; manual reconciliation is required"); err != nil || recoveredCount != 1 {
+		t.Fatalf("explicit stale migration recovery count = %d, error %v; want 1", recoveredCount, err)
+	}
 	recovered, err := repository.Get(ctx, databaseID, orphaned.ID)
 	if err != nil || recovered.Status != migration.StatusInterrupted || recovered.ErrorMessage == nil {
 		t.Fatalf("recovered migration = %#v, error %v", recovered, err)
@@ -481,6 +489,52 @@ func TestMigrationHistoryRollbackForwardAndImmutableSQL(t *testing.T) {
 	if err != nil || filtered.Total != 1 || len(filtered.Items) != 1 || filtered.Items[0].ID != rollbackID {
 		t.Fatalf("execution ID filter = %#v, error %v", filtered, err)
 	}
+	allHistory, err := repository.ListHistory(ctx, databaseID, migration.HistoryOptions{Limit: 1})
+	if err != nil || allHistory.Total != 3 || len(allHistory.Items) != 1 || allHistory.Items[0].ID != forwardID {
+		t.Fatalf("first history page = %#v, error %v", allHistory, err)
+	}
+	hiddenHistory, err := repository.ListHistory(ctx, databaseID, migration.HistoryOptions{Limit: 1, HideRollback: true})
+	if err != nil || hiddenHistory.Total != 1 || len(hiddenHistory.Items) != 1 || hiddenHistory.Items[0].ID != forwardID {
+		t.Fatalf("server-side Hide rollback across pages = %#v, error %v", hiddenHistory, err)
+	}
+
+	laterTable := table + "_later"
+	laterUp, laterDown := fmt.Sprintf(`CREATE TABLE %s(id bigint PRIMARY KEY)`, laterTable), fmt.Sprintf(`DROP TABLE %s`, laterTable)
+	laterEntry, err := service.CreateDraftWithDefinition(ctx, principal, databaseID, migration.Definition{
+		Name: "later reversible table", SQL: laterUp, DownSQL: &laterDown, ExecutionMode: migration.ExecutionModeSingle,
+	})
+	if err != nil {
+		t.Fatalf("create later migration: %v", err)
+	}
+	if laterEntry, err = service.Execute(ctx, principal, databaseID, laterEntry.ID); err != nil || !laterEntry.IsActive {
+		t.Fatalf("apply later migration = %#v, error %v", laterEntry, err)
+	}
+	if _, err := service.Rollback(ctx, principal, databaseID, entry.ID); !errors.Is(err, migration.ErrWrongOrder) {
+		t.Fatalf("rollback of earlier migration error=%v, want order conflict", err)
+	}
+	if laterEntry, err = service.Rollback(ctx, principal, databaseID, laterEntry.ID); err != nil || laterEntry.Status != migration.StatusRolledBack {
+		t.Fatalf("rollback later migration = %#v, error %v", laterEntry, err)
+	}
+	rolledBackForward, err := service.Rollback(ctx, principal, databaseID, entry.ID)
+	if err != nil || rolledBackForward.Status != migration.StatusRolledBack || rolledBackForward.IsActive {
+		t.Fatalf("rollback forwarded migration = %#v, error %v", rolledBackForward, err)
+	}
+	allCyclesHistory, err := repository.ListHistory(ctx, databaseID, migration.HistoryOptions{Limit: 10})
+	if err != nil || allCyclesHistory.Total != 6 || len(allCyclesHistory.Items) != 6 {
+		t.Fatalf("history after repeated forward/rollback cycles = %#v, error %v", allCyclesHistory, err)
+	}
+	hiddenCyclesHistory, err := repository.ListHistory(ctx, databaseID, migration.HistoryOptions{Limit: 10, HideRollback: true})
+	if err != nil || hiddenCyclesHistory.Total != 0 || len(hiddenCyclesHistory.Items) != 0 {
+		t.Fatalf("Hide rollback after repeated forward/rollback cycles = %#v, error %v", hiddenCyclesHistory, err)
+	}
+	forwardedAgain, err := service.Forward(ctx, principal, databaseID, entry.ID)
+	if err != nil || forwardedAgain.Status != migration.StatusSucceeded || !forwardedAgain.IsActive {
+		t.Fatalf("forward migration after repeated rollback = %#v, error %v", forwardedAgain, err)
+	}
+	forwardedLater, err := service.Forward(ctx, principal, databaseID, laterEntry.ID)
+	if err != nil || forwardedLater.Status != migration.StatusSucceeded || !forwardedLater.IsActive {
+		t.Fatalf("forward later migration = %#v, error %v", forwardedLater, err)
+	}
 	if _, err := platform.Exec(ctx, `UPDATE migration_entries SET sql_text='SELECT 42' WHERE id=$1`, entry.ID); err == nil {
 		t.Fatal("executed migration definition was mutable")
 	}
@@ -499,9 +553,6 @@ func TestMigrationHistoryRollbackForwardAndImmutableSQL(t *testing.T) {
 	failedRollback, err := service.Rollback(ctx, principal, databaseID, next.ID)
 	if err != nil || failedRollback.Status != migration.StatusSucceeded || !failedRollback.IsActive {
 		t.Fatalf("failed rollback changed active position: entry=%#v error=%v", failedRollback, err)
-	}
-	if _, err := service.Rollback(ctx, principal, databaseID, entry.ID); !errors.Is(err, migration.ErrWrongOrder) {
-		t.Fatalf("rollback of earlier active migration error=%v, want order conflict", err)
 	}
 }
 

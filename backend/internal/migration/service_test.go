@@ -404,8 +404,10 @@ func TestValidateBatchDefinitionRequiresBoundedCursorSQL(t *testing.T) {
 
 func TestRedactSQLForLogMasksCredentialValues(t *testing.T) {
 	t.Parallel()
-	got := redactSQLForLog(`SELECT 'postgres://owner:secret@db/app', password='sensitive'`)
-	if strings.Contains(got, "secret") || strings.Contains(got, "sensitive") {
-		t.Fatalf("SQL log leaked a credential: %s", got)
+	got := redactSQLForLog(`SELECT 'postgres://owner:secret@db/app', password='sensitive', token='token-value', session='session-value', 'private text'`)
+	for _, secret := range []string{"secret", "sensitive", "token-value", "session-value", "private text"} {
+		if strings.Contains(got, secret) {
+			t.Fatalf("SQL log leaked a credential: %s", got)
+		}
 	}
 }

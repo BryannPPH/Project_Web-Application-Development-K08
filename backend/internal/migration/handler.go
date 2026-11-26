@@ -298,7 +298,18 @@ func (h *Handler) history(w http.ResponseWriter, r *http.Request) {
 		writeMigrationError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid execution identifier")
 		return
 	}
-	page, err := service.ListHistory(r.Context(), principal, databaseID, HistoryOptions{Limit: limit, Offset: offset, ExecutionID: executionID})
+	hideRollback := false
+	if value := strings.TrimSpace(r.URL.Query().Get("hideRollback")); value != "" {
+		parsed, err := strconv.ParseBool(value)
+		if err != nil {
+			writeMigrationError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid history filter")
+			return
+		}
+		hideRollback = parsed
+	}
+	page, err := service.ListHistory(r.Context(), principal, databaseID, HistoryOptions{
+		Limit: limit, Offset: offset, ExecutionID: executionID, HideRollback: hideRollback,
+	})
 	if err != nil {
 		h.writeServiceError(w, r, err)
 		return

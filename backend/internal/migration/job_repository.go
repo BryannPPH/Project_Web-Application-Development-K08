@@ -121,7 +121,7 @@ func (r *PGJobRepository) ClaimNext(ctx context.Context, workerID, leaseToken st
 				))
 				OR (earlier.status IN ('partial','partially_reverted') AND EXISTS (
 					SELECT 1 FROM migration_entries e WHERE e.id=earlier.migration_id
-					  AND ((e.status='partial' AND NOT (earlier.migration_id=j.migration_id AND j.action='retry'))
+					  AND ((e.status='partial' AND NOT (earlier.migration_id=j.migration_id AND j.action IN ('retry','rollback')))
 					    OR (e.status='partially_reverted' AND NOT (earlier.migration_id=j.migration_id AND j.action='rollback')))
 				))
 				OR (earlier.status='needs_reconciliation' AND EXISTS (
