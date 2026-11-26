@@ -1,40 +1,67 @@
 param(
     [string]$ConnectionString = $env:TARGET_DATABASE_URL,
+    [string]$ApiBaseUrl = $env:DBMP_API_BASE_URL,
+    [string]$DatabaseId = $env:DBMP_DATABASE_ID,
+    [string]$MigrationId = $env:DBMP_MIGRATION_ID,
+    [string]$SessionCookie = $env:DBMP_SESSION_COOKIE,
+    [string]$CsrfToken = $env:DBMP_CSRF_TOKEN,
+    [string]$Origin = $env:DBMP_ORIGIN,
+    [Parameter(Mandatory = $true)][string]$TableName,
     [int]$InitialRows = 2000000,
     [int]$BatchSize = 10000,
-    [int]$MaximumRows = 25000000
+    [int]$MaximumRows = 25000000,
+    [string]$EnvironmentLabel = 'dedicated test database',
+    [string]$EvidencePath = 'batch-benchmark-result.json',
+    [switch]$ConfirmTestDatabase,
+    [switch]$ConfirmManagedTargetMatchesConnection
 )
 
 $ErrorActionPreference = 'Stop'
 
-if ([string]::IsNullOrWhiteSpace($ConnectionString)) {
-    throw 'Pass -ConnectionString or set TARGET_DATABASE_URL.'
+if (-not $ConfirmTestDatabase) {
+    throw 'This script creates and drops a table. Use only a dedicated test database and pass -ConfirmTestDatabase.'
+}
+if (-not $ConfirmManagedTargetMatchesConnection) {
+    throw 'Verify the psql connection is the same target configured by DatabaseId, then pass -ConfirmManagedTargetMatchesConnection.'
+}
+foreach ($required in @{
+    TARGET_DATABASE_URL = $ConnectionString
+    DBMP_API_BASE_URL = $ApiBaseUrl
+    DBMP_DATABASE_ID = $DatabaseId
+    DBMP_MIGRATION_ID = $MigrationId
+    DBMP_SESSION_COOKIE = $SessionCookie
+    DBMP_CSRF_TOKEN = $CsrfToken
+    DBMP_ORIGIN = $Origin
+}) {
+    if ([string]::IsNullOrWhiteSpace($required.Value)) {
+        throw "Set $($required.Key) or pass its corresponding parameter."
+    }
+}
+if ($TableName -notmatch '^[A-Za-z_][A-Za-z0-9_]*$') {
+    throw 'TableName must be a simple PostgreSQL identifier.'
 }
 if ($InitialRows -lt 1 -or $BatchSize -lt 1 -or $MaximumRows -lt $InitialRows) {
     throw 'InitialRows and BatchSize must be positive, and MaximumRows must be at least InitialRows.'
 }
 
 $psqlCommand = Get-Command psql -ErrorAction Stop
-$tableName = 'dbmp_batch_bench_' + [Guid]::NewGuid().ToString('N').Substring(0, 16)
-$temporarySql = Join-Path ([System.IO.Path]::GetTempPath()) ($tableName + '.sql')
-$rowCount = $InitialRows
 $hadPgDatabase = Test-Path Env:PGDATABASE
 $previousPgDatabase = $env:PGDATABASE
 $env:PGDATABASE = $ConnectionString
+$tableCreated = $false
 
 function Invoke-Psql {
     param([string[]]$Arguments)
-    $output = & $psqlCommand.Source -w @Arguments
+    $output = & $psqlCommand.Source -w -X -v ON_ERROR_STOP=1 @Arguments
     if ($LASTEXITCODE -ne 0) {
-        throw 'psql failed. Check that the PostgreSQL target is reachable and credentials are valid.'
+        throw 'psql failed. Check that the dedicated PostgreSQL target is reachable and credentials are valid.'
     }
     return ($output -join "`n")
 }
 
 function Measure-Update {
-    param([long]$Rows)
-    $query = "EXPLAIN (ANALYZE, TIMING OFF, SUMMARY ON) UPDATE $tableName SET value=value+1"
-    $output = Invoke-Psql @('-X', '-v', 'ON_ERROR_STOP=1', '-A', '-t', '-c', $query)
+    $query = "EXPLAIN (ANALYZE, TIMING OFF, SUMMARY ON) UPDATE $TableName SET value=value+1"
+    $output = Invoke-Psql @('-A', '-t', '-c', $query)
     $matches = [regex]::Matches($output, 'Execution Time:\s*([0-9]+(?:\.[0-9]+)?)\s*ms')
     if ($matches.Count -eq 0) {
         throw 'Could not read UPDATE duration from EXPLAIN ANALYZE output.'
@@ -42,60 +69,124 @@ function Measure-Update {
     return [double]::Parse($matches[$matches.Count - 1].Groups[1].Value, [Globalization.CultureInfo]::InvariantCulture)
 }
 
-try {
-    [void](Invoke-Psql @('-X', '-v', 'ON_ERROR_STOP=1', '-c', "CREATE TABLE $tableName (id BIGINT PRIMARY KEY, value BIGINT NOT NULL)"))
-    [void](Invoke-Psql @('-X', '-v', 'ON_ERROR_STOP=1', '-c', "INSERT INTO $tableName (id,value) SELECT id,0 FROM generate_series(1,$rowCount) AS id"))
+function Invoke-Api {
+    param(
+        [string]$Uri,
+        [string]$Method = 'GET',
+        [hashtable]$Headers = @{}
+    )
+    return Invoke-RestMethod -Uri $Uri -Method $Method -Headers $Headers -TimeoutSec 30
+}
 
-    $nonBatchMilliseconds = Measure-Update $rowCount
+$evidence = $null
+try {
+    $apiRoot = $ApiBaseUrl.TrimEnd('/')
+    $headers = @{
+        Cookie = "dbmp_session=$SessionCookie"
+        'X-CSRF-Token' = $CsrfToken
+        Origin = $Origin
+    }
+    $migration = Invoke-Api -Uri "$apiRoot/api/v1/databases/$DatabaseId/migrations/$MigrationId" -Headers $headers
+    if ($migration.executionMode -ne 'batch' -or $migration.batchSize -ne $BatchSize -or
+        $migration.batchCursorStart -ne 0 -or
+        $migration.sql -notmatch [regex]::Escape($TableName) -or
+        $migration.batchSelectSql -notmatch [regex]::Escape($TableName)) {
+        throw 'Migration must be an approved batch definition for TableName and the requested BatchSize.'
+    }
+
+    [void](Invoke-Psql @('-c', "CREATE TABLE $TableName (id BIGINT PRIMARY KEY, value BIGINT NOT NULL)"))
+    $tableCreated = $true
+    $rowCount = $InitialRows
+    [void](Invoke-Psql @('-c', "INSERT INTO $TableName (id,value) SELECT id,0 FROM generate_series(1,$rowCount) AS id"))
+
+    $nonBatchMilliseconds = Measure-Update
+    [void](Invoke-Psql @('-c', "UPDATE $TableName SET value=0"))
     while ($nonBatchMilliseconds -le 1000 -and $rowCount -lt $MaximumRows) {
         $nextRowCount = [Math]::Min($rowCount + $InitialRows, $MaximumRows)
-        [void](Invoke-Psql @('-X', '-v', 'ON_ERROR_STOP=1', '-c', "INSERT INTO $tableName (id,value) SELECT id,0 FROM generate_series($($rowCount + 1),$nextRowCount) AS id"))
+        [void](Invoke-Psql @('-c', "INSERT INTO $TableName (id,value) SELECT id,0 FROM generate_series($($rowCount + 1),$nextRowCount) AS id"))
         $rowCount = $nextRowCount
-        $nonBatchMilliseconds = Measure-Update $rowCount
+        $nonBatchMilliseconds = Measure-Update
+        [void](Invoke-Psql @('-c', "UPDATE $TableName SET value=0"))
     }
     if ($nonBatchMilliseconds -le 1000) {
         throw "A full-table UPDATE stayed below one second at $rowCount rows. Raise -MaximumRows and rerun."
     }
 
-    $script = [System.Text.StringBuilder]::new()
-    [void]$script.AppendLine('\set ON_ERROR_STOP on')
-    $batchNumber = 0
-    for ($cursorStart = 0; $cursorStart -lt $rowCount; $cursorStart += $BatchSize) {
-        $batchNumber++
-        [void]$script.AppendLine('BEGIN;')
-        [void]$script.AppendLine("SELECT COALESCE(MAX(id),$cursorStart) AS cursor_end FROM (SELECT id FROM $tableName WHERE id > $cursorStart ORDER BY id LIMIT $BatchSize) selected \gset")
-        [void]$script.AppendLine("UPDATE $tableName SET value=value+1 WHERE id > $cursorStart AND id <= :cursor_end;")
-        [void]$script.AppendLine('COMMIT;')
+    $actionUri = "$apiRoot/api/v1/databases/$DatabaseId/migrations/$MigrationId/execute"
+    $headers['Idempotency-Key'] = [Guid]::NewGuid().ToString()
+    $applicationStopwatch = [Diagnostics.Stopwatch]::StartNew()
+    $responseHeaders = $null
+    $queued = Invoke-WebRequest -Uri $actionUri -Method Post -Headers $headers -ContentType 'application/json' -Body '' -ResponseHeadersVariable responseHeaders
+    if ($queued.StatusCode -ne 202) {
+        throw "Migration enqueue returned HTTP $($queued.StatusCode); expected 202 Accepted."
     }
-    [System.IO.File]::WriteAllText($temporarySql, $script.ToString(), [System.Text.UTF8Encoding]::new($false))
-    $batchStopwatch = [Diagnostics.Stopwatch]::StartNew()
-    [void](Invoke-Psql @('-X', '-f', $temporarySql))
-    $batchStopwatch.Stop()
-    $verifiedRows = [int](Invoke-Psql @('-X', '-A', '-t', '-c', "SELECT count(*) FROM $tableName WHERE value=2"))
-    if ($verifiedRows -ne $rowCount) {
-        throw "Batch UPDATE affected $verifiedRows of $rowCount rows."
+    $job = $queued.Content | ConvertFrom-Json
+    if ([string]::IsNullOrWhiteSpace($job.jobId)) {
+        throw 'Accepted response did not contain a jobId.'
+    }
+    $jobLocation = [string]$responseHeaders.Location
+    if ([string]::IsNullOrWhiteSpace($jobLocation)) {
+        throw 'Accepted response did not contain a Location header.'
+    }
+    $jobUri = [Uri]::new([Uri]$apiRoot, $jobLocation)
+
+    $deadline = [DateTime]::UtcNow.AddMinutes(15)
+    do {
+        Start-Sleep -Milliseconds 500
+        $job = Invoke-Api -Uri $jobUri.AbsoluteUri -Headers $headers
+        if ($job.status -in @('succeeded', 'failed', 'partial', 'partially_reverted', 'needs_reconciliation')) {
+            break
+        }
+    } while ([DateTime]::UtcNow -lt $deadline)
+    $applicationStopwatch.Stop()
+    if ($job.status -ne 'succeeded') {
+        throw "Batch migration job ended as '$($job.status)'. Inspect job $($job.jobId) before rerunning."
     }
 
-    [pscustomobject]@{
+    if ([string]::IsNullOrWhiteSpace($job.executionId)) {
+        throw 'Succeeded job did not contain an executionId.'
+    }
+    $progress = Invoke-Api -Uri "$apiRoot/api/v1/databases/$DatabaseId/migration-executions/$($job.executionId)/progress" -Headers $headers
+    $completedMigration = Invoke-Api -Uri "$apiRoot/api/v1/databases/$DatabaseId/migrations/$MigrationId" -Headers $headers
+    $verification = Invoke-Psql @('-A', '-t', '-F', '|', '-c', "SELECT count(*),count(*) FILTER (WHERE value=1),count(*) FILTER (WHERE value<>1) FROM $TableName")
+    $counts = $verification.Trim().Split('|') | ForEach-Object { [long]::Parse($_, [Globalization.CultureInfo]::InvariantCulture) }
+    if ($counts.Count -ne 3 -or $counts[0] -ne $rowCount -or $counts[1] -ne $rowCount -or $counts[2] -ne 0) {
+        throw "Application batch result did not match the baseline fixture: '$verification'."
+    }
+    $executionDurationMilliseconds = ([DateTime]::Parse($completedMigration.finishedAt).ToUniversalTime() -
+        [DateTime]::Parse($completedMigration.startedAt).ToUniversalTime()).TotalMilliseconds
+
+    $evidence = [pscustomobject]@{
+        environment = $EnvironmentLabel
+        measuredAtUtc = [DateTime]::UtcNow.ToString('o')
+        databaseId = $DatabaseId
+        migrationId = $MigrationId
+        jobId = $job.jobId
+        executionId = $job.executionId
+        jobStatus = $job.status
         targetRows = $rowCount
         batchSize = $BatchSize
-        batchCount = $batchNumber
+        committedBatches = $progress.committedBatches
+        committedRows = $progress.committedRows
         nonBatchUpdateMilliseconds = [Math]::Round($nonBatchMilliseconds, 3)
-        batchUpdateAndTransactionsMilliseconds = [Math]::Round($batchStopwatch.Elapsed.TotalMilliseconds, 3)
-        nonBatchAboveOneSecond = $true
-        datasetVerified = $true
-        measuredAtUtc = [DateTime]::UtcNow.ToString('o')
-    } | ConvertTo-Json -Depth 3
+        applicationExecutionMilliseconds = [Math]::Round($executionDurationMilliseconds, 3)
+        enqueueToTerminalMilliseconds = [Math]::Round($applicationStopwatch.Elapsed.TotalMilliseconds, 3)
+        nonBatchAboveOneSecond = ($nonBatchMilliseconds -gt 1000)
+        verifiedRows = $counts[1]
+        sameFixtureVerified = $true
+        targetValuesVerified = $true
+    }
+    $evidence | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $EvidencePath -Encoding utf8
+    $evidence | ConvertTo-Json -Depth 4
 }
 finally {
-    if (Test-Path -LiteralPath $temporarySql) {
-        Remove-Item -LiteralPath $temporarySql -Force
-    }
-    try {
-        [void](Invoke-Psql @('-X', '-v', 'ON_ERROR_STOP=1', '-c', "DROP TABLE IF EXISTS $tableName"))
-    }
-    catch {
-        Write-Warning 'Benchmark fixture cleanup failed; review the generated table name in this script run.'
+    if ($tableCreated) {
+        try {
+            [void](Invoke-Psql @('-c', "DROP TABLE IF EXISTS $TableName"))
+        }
+        catch {
+            Write-Warning "Benchmark fixture cleanup failed for table '$TableName'. Review the dedicated test database."
+        }
     }
     if ($hadPgDatabase) {
         $env:PGDATABASE = $previousPgDatabase

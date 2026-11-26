@@ -1,0 +1,22 @@
+{
+  "environment": "dedicated local Compose PostgreSQL target",
+  "method": "production API, queue, and worker integration harness",
+  "measuredAtUtc": "2026-11-26T13:24:40.804421Z",
+  "databaseId": "9d2b5b65-1f6d-4999-98a2-b8fd01369bf3",
+  "migrationId": "f77df94e-ec42-4fdd-a7b2-9a40861d8086",
+  "jobId": "3acbe4c5-81c6-4f9c-a8ce-d2a3b63cb73f",
+  "executionId": "bce04eaf-3bdb-437b-9f5f-816ab4bf8ae0",
+  "jobStatus": "succeeded",
+  "targetRows": 2000000,
+  "batchSize": 10000,
+  "committedBatches": 200,
+  "committedRows": 2000000,
+  "nonBatchUpdateMilliseconds": 3469.6,
+  "applicationExecutionMilliseconds": 5710,
+  "enqueueToTerminalMilliseconds": 5773,
+  "nonBatchAboveOneSecond": true,
+  "sameFixtureVerified": true,
+  "verifiedRows": 2000000,
+  "targetValuesVerified": true,
+  "fixtureCleanupCompleted": true
+}
