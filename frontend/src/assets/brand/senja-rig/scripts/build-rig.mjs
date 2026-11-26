@@ -111,9 +111,18 @@ copyFileSync(join(root, "senja-rig.svg"), join(hf, "assets", "senja-rig.svg"));
 
 // ---------- inline rig ----------
 
+function withoutSvgComments(svg) {
+  let sanitized = svg;
+  let previous;
+  do {
+    previous = sanitized;
+    sanitized = sanitized.replace(/<!--[\s\S]*?(?:-->|$)\s*/g, "");
+  } while (sanitized !== previous);
+  return sanitized;
+}
+
 const inlineRig = (prefix) =>
-  master
-    .replace(/<!--[\s\S]*?-->\s*/g, "")
+  withoutSvgComments(master)
     .replace(/\bid="([^"]+)"/g, `id="${prefix}-$1"`)
     .replace(/url\(#([^)]+)\)/g, `url(#${prefix}-$1)`)
     .replace(/ width="\d+" height="\d+"/, "")
@@ -294,8 +303,7 @@ function record(name) {
 }
 
 const clips = Object.fromEntries(Object.keys(ANIMS).map((n) => [n, record(n)]));
-const webSvg = master
-  .replace(/<!--[\s\S]*?-->\s*/g, "")
+const webSvg = withoutSvgComments(master)
   .replace(/\bid="([^"]+)"/g, 'id="__SENJA__-$1"')
   .replace(/url\(#([^)]+)\)/g, "url(#__SENJA__-$1)")
   .replace(/ width="\d+" height="\d+"/, "")
