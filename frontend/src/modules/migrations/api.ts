@@ -63,9 +63,18 @@ export function getBatchProgress(databaseId: string, executionId: string, signal
   )
 }
 
-export function listExecutionHistory(databaseId: string, signal?: AbortSignal) {
+export function listExecutionHistory(
+  databaseId: string,
+  options: { limit: number; offset: number; hideRollback: boolean },
+  signal?: AbortSignal,
+) {
+  const query = new URLSearchParams({
+    limit: String(options.limit),
+    offset: String(options.offset),
+    hideRollback: String(options.hideRollback),
+  })
   return apiRequest<ExecutionHistoryPage>(
-    `/databases/${encodeURIComponent(databaseId)}/migration-history?limit=100`,
+    `/databases/${encodeURIComponent(databaseId)}/migration-history?${query.toString()}`,
     { signal },
   )
 }

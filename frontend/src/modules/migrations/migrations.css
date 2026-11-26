@@ -758,6 +758,13 @@
   align-items: flex-end;
 }
 
+.migration-run__choices {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
 .migration-run__reason {
   max-width: 22rem;
   margin: 0;
@@ -774,6 +781,14 @@
   .migration-run__reason {
     max-width: none;
     text-align: left;
+  }
+
+  .migration-run__choices {
+    justify-content: stretch;
+  }
+
+  .migration-run__choices .button {
+    flex: 1 1 auto;
   }
 
   .approval-decision__actions .button {
@@ -914,8 +929,7 @@
 }
 
 .execution-history__head h2,
-.execution-history__lead,
-.execution-history__hidden {
+.execution-history__lead {
   margin: 0;
 }
 
@@ -931,4 +945,25 @@
   min-height: 2.5rem;
   cursor: pointer;
   font-size: 0.875rem;
+}
+
+.execution-history__pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.execution-history__pagination > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.execution-history__page-reset {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
 }

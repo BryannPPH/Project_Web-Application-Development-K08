@@ -92,6 +92,23 @@ describe('aksi migration per status', () => {
     expect(await screen.findByRole('button', { name: 'Coba ulang v2' })).toBeInTheDocument()
   })
 
+  it('partial batch dapat dilanjutkan atau di-rollback dengan approval yang sesuai', async () => {
+    renderDetail(
+      migrationEntry({
+        status: 'partial', version: 5, executionMode: 'batch', isActive: false,
+        downSql: 'UPDATE legacy_x SET value=value-1 WHERE id>$1 AND id<=$2',
+      }),
+      { apply: review('apply'), rollback: review('rollback') },
+    )
+
+    expect(await screen.findByRole('button', { name: 'Pilih: Rollback v5' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Pilih: Coba ulang v5' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Pilih: Rollback v5' }))
+
+    expect(await screen.findByRole('heading', { name: 'Review & approval rollback' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Rollback v5' })).toBeEnabled()
+  })
+
   it('konfirmasi rollback menyebut Down SQL, bukan teks draft', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
     renderDetail(migrationEntry({ status: 'succeeded', version: 4, isActive: true, downSql: 'DROP TABLE legacy_x;' }), {})
@@ -181,7 +198,11 @@ describe('ExecutionHistory: Hide rollback', () => {
   function renderHistory(items: ExecutionAttempt[]) {
     mockFetch((url) => {
       if (url.pathname === '/api/v1/databases/db-1/migration-history') {
-        return jsonResponse({ items, limit: 100, offset: 0, total: items.length })
+        const hideRollback = url.searchParams.get('hideRollback') === 'true'
+        const filtered = hideRollback ? items.filter((item) => item.executionId !== 'a1' && item.executionId !== 'r1') : items
+        const limit = Number(url.searchParams.get('limit') ?? 100)
+        const offset = Number(url.searchParams.get('offset') ?? 0)
+        return jsonResponse({ items: filtered.slice(offset, offset + limit), limit, offset, total: filtered.length })
       }
       return undefined
     })
@@ -201,13 +222,35 @@ describe('ExecutionHistory: Hide rollback', () => {
     await waitFor(() => expect(screen.getAllByRole('row')).toHaveLength(5))
     fireEvent.click(screen.getByRole('checkbox', { name: 'Hide rollback' }))
 
-    expect(screen.getAllByRole('row')).toHaveLength(3)
+    await waitFor(() => expect(screen.getAllByRole('row')).toHaveLength(3))
     expect(screen.getByText('Forward')).toBeInTheDocument()
     expect(screen.getByText('Gagal')).toBeInTheDocument()
     expect(screen.queryByText('Rollback')).not.toBeInTheDocument()
-    expect(screen.getByText('2 execution disembunyikan.')).toBeInTheDocument()
+    expect(screen.getByText('Menampilkan 1–2 dari 2 execution · halaman 1 dari 1')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Berikutnya' })).toBeDisabled()
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Hide rollback' }))
-    expect(screen.getAllByRole('row')).toHaveLength(5)
+    await waitFor(() => expect(screen.getAllByRole('row')).toHaveLength(5))
+  })
+
+  it('loads older attempts through server pagination', async () => {
+    const items: ExecutionAttempt[] = Array.from({ length: 101 }, (_, index) => ({
+      executionId: `e${index + 1}`,
+      migrationId: 'm1',
+      version: index + 1,
+      revision: 1,
+      action: 'apply',
+      actorUsername: 'operator',
+      requestedAt: '2026-11-20T09:00:00Z',
+      relatedExecutionId: null,
+      status: 'succeeded',
+      errorMessage: null,
+    }))
+    renderHistory(items)
+
+    expect(await screen.findByText('Menampilkan 1–100 dari 101 execution · halaman 1 dari 2')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Berikutnya' }))
+    expect(await screen.findByText('Menampilkan 101–101 dari 101 execution · halaman 2 dari 2')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Sebelumnya' })).toBeEnabled()
   })
 })

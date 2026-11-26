@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { nextAction } from '@/modules/migrations/actions'
+import { availableActions, nextAction } from '@/modules/migrations/actions'
 
 const reversible = { isActive: true, downSql: 'DROP TABLE x;', irreversibleReason: null }
 
@@ -25,5 +25,27 @@ describe('nextAction', () => {
 
   it.each(['running', 'interrupted', 'needs_reconciliation', 'reconciled'] as const)('%s tidak punya aksi', (status) => {
     expect(nextAction({ status, ...reversible })).toBeNull()
+  })
+})
+
+describe('availableActions', () => {
+  it('offers checkpoint resume and approved rollback for a reversible batch partial', () => {
+    const actions = availableActions({
+      status: 'partial',
+      executionMode: 'batch',
+      downSql: 'UPDATE t SET value=value-1 WHERE id>$1 AND id<=$2',
+      irreversibleReason: null,
+      isActive: false,
+    })
+
+    expect(actions.map((action) => [action.action, action.approval])).toEqual([
+      ['retry', 'apply'],
+      ['rollback', 'rollback'],
+    ])
+  })
+
+  it('does not offer rollback for irreversible or non-batch partial migrations', () => {
+    expect(availableActions({ status: 'partial', executionMode: 'single', downSql: 'x', irreversibleReason: null })).toHaveLength(1)
+    expect(availableActions({ status: 'partial', executionMode: 'batch', downSql: null, irreversibleReason: 'irreversible' })).toHaveLength(1)
   })
 })

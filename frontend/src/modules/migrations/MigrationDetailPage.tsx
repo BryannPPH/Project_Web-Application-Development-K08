@@ -9,7 +9,7 @@ import { StatusMessage } from '@/components/StatusMessage'
 import { ApiError } from '@/lib/api-client'
 import { useAccessibleDatabase } from '@/modules/databases/api'
 import { createMigration, enqueueMigrationAction, getMigration, reconcileMigration, updateMigration } from '@/modules/migrations/api'
-import { nextAction } from '@/modules/migrations/actions'
+import { availableActions } from '@/modules/migrations/actions'
 import { executionBlockedReason, useApprovalReview } from '@/modules/migrations/approval'
 import { ApprovalPanel } from '@/modules/migrations/ApprovalPanel'
 import { ExplainPanel } from '@/modules/migrations/ExplainPanel'
@@ -17,7 +17,7 @@ import { isTerminalJob, jobQueryKeys, useBatchProgress, useMigrationJob } from '
 import { BatchProgressPanel, JobStatusPanel } from '@/modules/migrations/JobStatusPanel'
 import { MigrationEditor } from '@/modules/migrations/MigrationEditor'
 import { displayTime, migrationQueryKeys } from '@/modules/migrations/query-helpers'
-import type { DraftInput, MigrationEntry } from '@/modules/migrations/types'
+import type { DraftInput, ExecutionAction, MigrationEntry } from '@/modules/migrations/types'
 import '@/modules/migrations/migrations.css'
 
 function ErrorMessage({ error }: { error: unknown }) {
@@ -44,8 +44,10 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
     queryFn: ({ signal }) => getMigration(databaseId, migrationId, signal),
     enabled: !create && databaseId !== '' && migrationId !== '',
   })
-  // Milestone 2 - Person A: aksi berikutnya menentukan approval mana yang harus lengkap.
-  const pending = !create && detail.data ? nextAction(detail.data) : null
+  // Status partial menawarkan resume dan rollback; approval mengikuti aksi yang dipilih.
+  const pendingOptions = !create && detail.data ? availableActions(detail.data) : []
+  const [selectedAction, setSelectedAction] = useState<ExecutionAction | null>(null)
+  const pending = pendingOptions.find((option) => option.action === selectedAction) ?? pendingOptions[0] ?? null
   const approval = useApprovalReview(databaseId, migrationId, pending ? pending.approval : null)
   const [jobId, setJobId] = useState<string | null>(null)
   const job = useMigrationJob(databaseId, jobId)
@@ -63,9 +65,8 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
     },
   })
   const execute = useMutation({
-    mutationFn: () => {
-      if (!pending) throw new Error('Tidak ada aksi yang tersedia untuk status ini.')
-      return enqueueMigrationAction(databaseId, migrationId, pending.action)
+    mutationFn: (action: ExecutionAction) => {
+      return enqueueMigrationAction(databaseId, migrationId, action)
     },
     // 202: job masuk antrean. Status akhir dipantau lewat polling, bukan dari response ini.
     onSuccess: (queued) => setJobId(queued.jobId),
@@ -105,13 +106,17 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
   // null = boleh dijalankan; selain itu = alasan tombol dikunci.
   const blockedReason = pending ? executionBlockedReason(approval.data) : null
 
-  function confirmExecution() {
-    if (!entry || !pending) return
-    const executionNote = transactionalDdl
-      ? 'Dijalankan dalam satu transaksi; jika gagal semua perubahan dibatalkan.'
-      : 'DML dijalankan dalam transaksi. DDL melakukan implicit commit; jika gagal, sebagian perubahan mungkin sudah diterapkan dan target perlu direkonsiliasi.'
-    const confirmed = window.confirm(`${pending.confirmTitle(entry.version, databaseName)}\n(${entry.name})\n\n${executionNote}\n${pending.confirmNote}`)
-    if (confirmed) execute.mutate()
+  function confirmExecution(action = pending) {
+    if (!entry || !action) return
+    const executionNote = entry.executionMode === 'batch'
+      ? action.action === 'rollback'
+        ? 'Down SQL dijalankan per batch dari yang terakhir. Jika gagal, batch down yang sudah commit tetap tercatat dan rollback dapat dilanjutkan setelah approval.'
+        : 'Setiap batch commit terpisah. Jika berhenti, batch yang sudah commit tetap di target dan dapat dilanjutkan atau di-rollback setelah approval.'
+      : transactionalDdl
+        ? 'Dijalankan dalam satu transaksi; jika gagal semua perubahan dibatalkan.'
+        : 'DML dijalankan dalam transaksi. DDL melakukan implicit commit; jika gagal, sebagian perubahan mungkin sudah diterapkan dan target perlu direkonsiliasi.'
+    const confirmed = window.confirm(`${action.confirmTitle(entry.version, databaseName)}\n(${entry.name})\n\n${executionNote}\n${action.confirmNote}`)
+    if (confirmed) execute.mutate(action.action)
   }
 
   return (
@@ -139,11 +144,27 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
         </div>
         {entry?.canEdit && pending ? (
           <div className="page-header__actions migration-run">
+            {pendingOptions.length > 1 ? (
+              <div aria-label="Pilih aksi migration" className="migration-run__choices" role="group">
+                {pendingOptions.map((option) => (
+                  <button
+                    aria-pressed={pending.action === option.action}
+                    className="button button--secondary"
+                    disabled={busy}
+                    key={option.action}
+                    onClick={() => setSelectedAction(option.action)}
+                    type="button"
+                  >
+                    Pilih: {option.label(entry.version)}
+                  </button>
+                ))}
+              </div>
+            ) : null}
             <button
               aria-describedby={blockedReason ? 'migration-run-reason' : undefined}
               className="button button--primary"
               disabled={busy || blockedReason !== null}
-              onClick={confirmExecution}
+              onClick={() => confirmExecution()}
               type="button"
             >
               <Icon className={execute.isPending ? 'spinner' : undefined} name={execute.isPending ? 'loader' : blockedReason ? 'lock' : 'play'} size={16} />

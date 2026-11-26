@@ -13,6 +13,8 @@ export const jobQueryKeys = {
   job: (databaseId: string, jobId: string) => ['migration-job', databaseId, jobId] as const,
   progress: (databaseId: string, executionId: string) => ['migration-progress', databaseId, executionId] as const,
   history: (databaseId: string) => ['migration-history', databaseId] as const,
+  historyPage: (databaseId: string, offset: number, hideRollback: boolean) =>
+    ['migration-history', databaseId, { offset, hideRollback }] as const,
 }
 
 /** Memantau job sampai status akhir tanpa menahan request execute. */
