@@ -1,7 +1,8 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
+import { SharedArray } from 'k6/data';
 import exec from 'k6/execution';
-import { Counter, Rate, SharedArray, Trend } from 'k6/metrics';
+import { Counter, Rate, Trend } from 'k6/metrics';
 
 const cases = new SharedArray('approved migration jobs', () => {
   const path = __ENV.DBMP_CASES_FILE;
@@ -85,6 +86,37 @@ function recordResponse(kind, response, accepted) {
   apiRequests.add(1, { kind, stage });
 }
 
+function waitForPredecessor(testCase, databasePath) {
+  if (!testCase.predecessorMigrationId) return true;
+
+  const predecessorURL = `${baseURL}${databasePath}/migrations/${encodeURIComponent(testCase.predecessorMigrationId)}`;
+  for (let poll = 0; poll < maxPolls; poll += 1) {
+    const response = http.get(predecessorURL, { headers, tags: { name: 'migration_predecessor_status' } });
+    let predecessor;
+    try {
+      predecessor = response.json();
+    } catch (_) {
+      predecessor = null;
+    }
+    const readable = response.status === 200 && predecessor;
+    recordResponse('dependency', response, Boolean(readable));
+    if (!readable) {
+      sleep(pollIntervalSeconds);
+      continue;
+    }
+    if (predecessor.status === 'succeeded') return true;
+    if (terminalStatuses.has(predecessor.status)) {
+      jobExecutionErrorRate.add(true, { stage: loadStage() });
+      check(predecessor, { 'predecessor migration succeeded': (value) => value.status === 'succeeded' });
+      return false;
+    }
+    sleep(pollIntervalSeconds);
+  }
+
+  jobExecutionErrorRate.add(true, { stage: loadStage() });
+  return false;
+}
+
 export default function () {
   if (!__ENV.DBMP_SESSION_COOKIE || !__ENV.DBMP_CSRF_TOKEN || !__ENV.DBMP_CASES_FILE) {
     exec.test.abort('Set DBMP_SESSION_COOKIE, DBMP_CSRF_TOKEN, and DBMP_CASES_FILE.');
@@ -97,7 +129,6 @@ export default function () {
 
   const caseIndex = exec.scenario.iterationInTest;
   const hasMigrationCase = caseIndex < cases.length;
-  const jobStage = loadStage();
   // Keep read traffic flowing if the unique migration manifest runs out, so the
   // full ramp still produces API measurements. A threshold marks that run invalid
   // as a queue stress result instead of silently treating reads as enqueue load.
@@ -118,6 +149,9 @@ export default function () {
     sleep(pollIntervalSeconds);
     return;
   }
+
+  if (!waitForPredecessor(testCase, databasePath)) return;
+  const jobStage = loadStage();
 
   const actionPath = {
     apply: 'execute',

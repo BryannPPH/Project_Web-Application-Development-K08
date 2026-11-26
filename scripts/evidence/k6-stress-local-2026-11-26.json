@@ -1,0 +1,159 @@
+{
+  "test": "migration-queue stress test",
+  "date": "2026-11-26",
+  "timezone": "Asia/Jakarta",
+  "startedAt": "2026-11-26T23:38:25.138+07:00",
+  "finishedAt": "2026-11-26T23:47:25.170+07:00",
+  "runner": {
+    "image": "grafana/k6:0.56.0",
+    "version": "0.56.0"
+  },
+  "source": {
+    "commit": "374e813",
+    "script": "scripts/k6/migration-queue.js",
+    "scriptSha256": "0d21ebef561d62b725d5157d04b82cb6509bb9c11725902becedff98e5c3e884"
+  },
+  "environment": {
+    "type": "isolated local Docker Compose test environment",
+    "targetEngine": "PostgreSQL",
+    "targetDatabaseLanes": 30,
+    "preflightJobsSucceeded": 30,
+    "approvedManifestCasesPrepared": 9990,
+    "approvedManifestCasesUsed": 3468
+  },
+  "scenario": {
+    "executor": "ramping-vus",
+    "maximumVus": 30,
+    "plannedDurationSeconds": 540,
+    "baselineLoadVus": 1,
+    "baselineAssumption": "one active operator; group-confirmed normal load",
+    "teamNormalLoadConfirmed": true,
+    "baselineConfirmedDate": "2026-11-27",
+    "stages": [
+      { "name": "baseline_1_vu", "durationSeconds": 60, "vus": "1" },
+      { "name": "ramp_to_10_vu", "durationSeconds": 120, "vus": "1 to 10" },
+      { "name": "peak_30_vu", "durationSeconds": 180, "vus": "10 to 30; ramp reaches 30 at stage end" },
+      { "name": "ramp_down_to_10_vu", "durationSeconds": 120, "vus": "30 to 10" },
+      { "name": "ramp_to_0_vu", "durationSeconds": 60, "vus": "10 to 0" },
+      { "name": "drain", "durationSeconds": null, "vus": "0; one final in-flight status poll" }
+    ],
+    "pollIntervalSeconds": 2,
+    "maximumPollsPerJob": 180
+  },
+  "result": {
+    "iterations": 3468,
+    "apiRequests": 13872,
+    "apiRequestsPerSecond": 25.686766,
+    "checks": { "passed": 10404, "failed": 0 },
+    "apiLatencyMs": { "p50": 2.487146, "p95": 6.993328 },
+    "enqueueApiLatencyMs": { "p95": 4.277455 },
+    "apiErrorRate": 0,
+    "httpRequestFailureRate": 0,
+    "jobsAccepted": 3468,
+    "jobsCompleted": 3468,
+    "terminalJobStatuses": { "succeeded": 3468 },
+    "jobExecutionErrorRate": 0,
+    "queueWaitMs": { "p95": 94 },
+    "jobDurationMs": { "p95": 22 },
+    "jobEndToEndMs": { "p95": 111 },
+    "manifestExhaustionCount": 0
+  },
+  "thresholds": [
+    { "metric": "api_latency_ms", "condition": "p(95) < 1000 ms", "actual": "6.993 ms", "result": "passed" },
+    { "metric": "api_latency_ms{kind:enqueue}", "condition": "p(95) < 1000 ms", "actual": "4.277 ms", "result": "passed" },
+    { "metric": "api_error_rate", "condition": "rate < 0.02", "actual": "0", "result": "passed" },
+    { "metric": "http_req_failed", "condition": "rate < 0.02", "actual": "0", "result": "passed" },
+    { "metric": "job_execution_error_rate", "condition": "rate < 0.05", "actual": "0", "result": "passed" },
+    { "metric": "queue_wait_ms", "condition": "p(95) < 5000 ms", "actual": "94 ms", "result": "passed" },
+    { "metric": "job_duration_ms", "condition": "p(95) < 60000 ms", "actual": "22 ms", "result": "passed" },
+    { "metric": "migration_case_manifest_exhausted", "condition": "count < 1", "actual": "0", "result": "passed" }
+  ],
+  "stages": [
+    {
+      "name": "baseline_1_vu",
+      "durationSeconds": 60,
+      "apiRequests": 119,
+      "apiRequestsPerSecond": 1.983,
+      "apiLatencyMs": { "p50": 2.553, "p95": 7.321 },
+      "apiErrorRate": 0,
+      "jobsAcceptedAtEnqueue": 30,
+      "jobsObservedTerminal": 29,
+      "jobsObservedTerminalPerSecond": 0.483,
+      "queueWaitMsP95ByEnqueueStage": 91,
+      "jobDurationMsP95ByEnqueueStage": 28
+    },
+    {
+      "name": "ramp_to_10_vu",
+      "durationSeconds": 120,
+      "apiRequests": 1200,
+      "apiRequestsPerSecond": 10,
+      "apiLatencyMs": { "p50": 2.513, "p95": 5.892 },
+      "apiErrorRate": 0,
+      "jobsAcceptedAtEnqueue": 302,
+      "jobsObservedTerminal": 294,
+      "jobsObservedTerminalPerSecond": 2.45,
+      "queueWaitMsP95ByEnqueueStage": 88,
+      "jobDurationMsP95ByEnqueueStage": 21
+    },
+    {
+      "name": "peak_30_vu",
+      "durationSeconds": 180,
+      "vus": "10 to 30, ramp",
+      "apiRequests": 6996,
+      "apiRequestsPerSecond": 38.867,
+      "apiLatencyMs": { "p50": 2.286, "p95": 5.679 },
+      "apiErrorRate": 0,
+      "jobsAcceptedAtEnqueue": 1754,
+      "jobsObservedTerminal": 1734,
+      "jobsObservedTerminalPerSecond": 9.633,
+      "queueWaitMsP95ByEnqueueStage": 89,
+      "jobDurationMsP95ByEnqueueStage": 19
+    },
+    {
+      "name": "ramp_down_to_10_vu",
+      "durationSeconds": 120,
+      "apiRequests": 4890,
+      "apiRequestsPerSecond": 40.75,
+      "apiLatencyMs": { "p50": 2.83, "p95": 8.321 },
+      "apiErrorRate": 0,
+      "jobsAcceptedAtEnqueue": 1218,
+      "jobsObservedTerminal": 1236,
+      "jobsObservedTerminalPerSecond": 10.3,
+      "queueWaitMsP95ByEnqueueStage": 99,
+      "jobDurationMsP95ByEnqueueStage": 23
+    },
+    {
+      "name": "ramp_to_0_vu",
+      "durationSeconds": 60,
+      "apiRequests": 666,
+      "apiRequestsPerSecond": 11.1,
+      "apiLatencyMs": { "p50": 2.646, "p95": 8.18 },
+      "apiErrorRate": 0,
+      "jobsAcceptedAtEnqueue": 164,
+      "jobsObservedTerminal": 174,
+      "jobsObservedTerminalPerSecond": 2.9,
+      "queueWaitMsP95ByEnqueueStage": 95,
+      "jobDurationMsP95ByEnqueueStage": 24
+    },
+    {
+      "name": "drain",
+      "durationSeconds": null,
+      "apiRequests": 1,
+      "apiLatencyMs": { "p50": 2.69, "p95": 2.69 },
+      "apiErrorRate": 0,
+      "jobsAcceptedAtEnqueue": 0,
+      "jobsObservedTerminal": 1,
+      "jobsObservedTerminalPerSecond": null,
+      "queueWaitMsP95ByEnqueueStage": null,
+      "jobDurationMsP95ByEnqueueStage": null,
+      "note": "One final status poll; no steady-state throughput or percentile conclusion."
+    }
+  ],
+  "notes": [
+    "Read API calls and approved migration enqueues ran concurrently against multiple PostgreSQL targets; predecessor links preserved order within each target lane.",
+    "Enqueue counts are attributed to enqueue stage. Terminal completions are attributed to the stage when their terminal status was observed, so per-stage accepted and completed counts can differ.",
+    "Queue wait and job duration percentiles are attributed to enqueue stage.",
+    "The ramp-down stage supplies recovery observations; drain contains one final poll only.",
+    "Evidence contains no session cookie, CSRF token, credential, target database ID, or raw request/response payload."
+  ]
+}
