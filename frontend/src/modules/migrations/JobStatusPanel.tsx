@@ -53,6 +53,11 @@ export function JobStatusPanel({ job, loading, error }: JobStatusPanelProps) {
   const tone = toneFor(job.status)
   const done = isTerminalJob(job.status)
   const hint = failureHint(job)
+  const meta = job.status === 'queued'
+    ? 'Menunggu worker · halaman ini boleh ditutup.'
+    : !done
+      ? 'SQL dijalankan di worker, bukan di halaman ini.'
+      : null
   return (
     <section aria-label="Status job" className={`job-status job-status--${tone}`} role="status">
       <Icon className={job.status === 'running' ? 'spinner' : undefined} name={statusIcon[job.status]} size={18} />
@@ -60,11 +65,7 @@ export function JobStatusPanel({ job, loading, error }: JobStatusPanelProps) {
         <strong>
           {actionLabel[job.action]}: {jobStatusLabel(job)}
         </strong>
-        <span className="job-status__meta">
-          Job diminta oleh {job.actor}
-          {job.status === 'queued' ? ' · menunggu worker, halaman ini boleh ditutup' : null}
-          {!done && job.status !== 'queued' ? ' · SQL dijalankan di worker, bukan di halaman ini' : null}
-        </span>
+        {meta ? <span className="job-status__meta">{meta}</span> : null}
         {hint ? <p>{hint}</p> : null}
         {job.errorMessage && (job.status === 'failed' || job.status === 'retrying' || job.status === 'needs_reconciliation') ? (
           <pre>{job.errorMessage}</pre>
