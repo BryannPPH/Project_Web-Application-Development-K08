@@ -1,10 +1,11 @@
 # Database Management Platform
 
 Database Management Platform (DBMP) adalah aplikasi web untuk mengelola akses dan
-perubahan pada database PostgreSQL maupun MySQL dari satu antarmuka. Aplikasi ini
-dibuat untuk Milestone 1 IF3110 Pengembangan Aplikasi Web, dengan fokus pada
-kontrol akses berbasis group, database viewer read-only, dan migration yang
-tercatat.
+perubahan pada database PostgreSQL dan MySQL. Milestone 1 IF3110 Pengembangan
+Aplikasi Web mencakup akses berbasis grup, viewer baca saja, dan riwayat
+migration. Milestone 2 menambahkan persetujuan leader untuk setiap revisi,
+antrean migration yang diproses worker, dan eksekusi batch dengan checkpoint
+untuk melanjutkan atau membatalkan perubahan.
 
 ## Preview Aplikasi
 
@@ -57,7 +58,7 @@ Cuplikan tampilan aplikasi DB Manager.
 │       └── styles/                 # Style global dan token tampilan
 ├── compose.yml                     # Seluruh service untuk development lokal
 ├── Makefile                        # Shortcut command development dan testing
-├── TESTING.md                      # Checklist pengujian manual dan otomatis
+├── testing.md                      # Panduan pengujian Milestone 2
 └── .env.example                    # Contoh konfigurasi lokal
 ```
 
@@ -392,6 +393,10 @@ sebelum mengubah status. Checkpoint konsisten menutup attempt sebagai `partial`
 atau `partially_reverted` agar operator dapat meminta retry/rollback baru dengan
 approval; bukti yang hilang atau tidak konsisten tetap memerlukan rekonsiliasi.
 Tidak ada SQL yang dijalankan ulang otomatis oleh recovery.
+Saat koneksi PostgreSQL platform milik worker berakhir, PostgreSQL melepas
+advisory lock sesi. Setelah lease kedaluwarsa, worker pengganti harus mengambil
+lock tersebut sebelum memeriksa attempt dan checkpoint.
+[Detail pemulihan worker](backend/internal/migration/README.md).
 
 Benchmark batch wajib memakai database PostgreSQL khusus pengujian. Siapkan
 migration batch berstatus draft dengan SQL `UPDATE <TableName> SET value=value+1
@@ -468,87 +473,75 @@ semua leader menyetujui.
 - [Observability: metrik Prometheus dan dashboard Grafana](observability/README.md):
   `docker compose --profile observability up -d`, lalu buka Grafana di
   http://localhost:3000.
-- [Stress test k6 untuk queue migration](scripts/k6/migration-queue.js):
-  membaca database dan mengirim job secara bersamaan, lalu polling job sampai
-  status terminal. Setiap iterasi membutuhkan migration unik yang sudah
-  disetujui pada manifest [`scripts/k6/cases.example.json`](scripts/k6/cases.example.json).
-  Untuk beberapa migration berurutan pada database yang sama, isi
-  `predecessorMigrationId` pada case berikutnya; script menunggu migration itu
-  berstatus `succeeded` sebelum enqueue, sehingga VU paralel tidak mengirim versi
-  yang salah urut. Dependency polling ikut dihitung sebagai request API.
 
-  Salin contoh manifest, ganti ID dengan migration approved yang aman untuk
-  dijalankan, dan siapkan sesi lokal serta CSRF token. Jalankan:
+### Stress test k6
 
-  ```bash
-  export DBMP_API_BASE_URL=http://localhost:8080
-  export DBMP_ORIGIN=http://localhost:5173
-  export DBMP_SESSION_COOKIE='nilai-cookie-session'
-  export DBMP_CSRF_TOKEN='nilai-csrf-token'
-  export DBMP_CASES_FILE=/path/to/approved-cases.json
-  k6 run scripts/k6/migration-queue.js
-  ```
+[Script k6](scripts/k6/migration-queue.js) mengirim request baca API dan job
+migration dengan beberapa virtual user (VU), lalu memantau setiap job hingga
+status terminal. Manifest berisi migration unik yang telah disetujui. Untuk
+migration pada database yang sama, `predecessorMigrationId` menjaga urutan:
+k6 dapat mengantrekan job berikutnya setelah migration sebelumnya mulai berjalan
+atau selesai. Database berbeda dapat diproses paralel. HTTP `202` menambah
+hitungan job diterima, dan status terminal mencatat hasil eksekusi.
 
-  Stage beban: baseline 1 VU, naik ke 10 lalu 30 VU, kemudian turun ke 10 dan
-  0 VU. Threshold awal: p95 API < 1000 ms, error API < 2%, p95 queue wait < 5 s,
-  dan p95 waktu eksekusi < 60 s. Atur `K6_P95_API_MS` dan `K6_API_ERROR_RATE`
-  mengikuti baseline hasil ukur tim. Ringkasan k6 menampilkan p50/p95 API,
-  request per second, error rate, queue wait, durasi job, serta jumlah/rate job
-  yang selesai. Respons enqueue `202` dihitung sebagai job diterima, bukan
-  keberhasilan migration; `job_execution_error_rate` dihitung dari status
-  terminal selain `succeeded`. Setiap kasus manifest hanya dipakai sekali; jika
-  jumlah iterasi melebihi jumlah kasus, iterasi berikutnya hanya menjalankan
-  request baca dan menaikkan `migration_case_manifest_exhausted`; threshold akan
-  menggagalkan run supaya hasilnya tidak dianggap stress test queue yang valid.
-  Siapkan migration unik yang cukup untuk seluruh iterasi; file contoh tiga kasus
-  hanya menunjukkan format manifest dan tidak cukup untuk ramp 30 VU. Custom
-  metrics memiliki label `stage` (`baseline_1_vu`, `ramp_to_10_vu`, `peak_30_vu`,
-  `ramp_down_to_10_vu`, `ramp_to_0_vu`, `drain`); throughput per stage dihitung
-  dari jumlah `api_requests` atau `migration_jobs_completed` dibagi durasi stage.
-  Latensi API dikelompokkan saat request terjadi; hasil job dikelompokkan menurut
-  stage enqueue. Masa drain menunggu hingga batas polling job agar VU tidak
-  dihentikan sebelum memantau hasilnya. Konfigurasi ramp dan threshold mengikuti
-  [dokumentasi scenario k6](https://grafana.com/docs/k6/latest/using-k6/scenarios/)
-  dan [threshold k6](https://grafana.com/docs/k6/latest/using-k6/thresholds/).
+Gunakan [runner Docker](scripts/k6/local-benchmark.py) pada project Compose tes
+`wbd-k08-m2test` dengan `.env.test` dan akun admin tes yang sudah dibootstrap.
+Runner membuat fixture PostgreSQL, meminta approval dari leader grup tes, lalu
+menjalankan k6 di Docker. Dari root repo, muat konfigurasi tes dan buat manifest.
 
-  Hasil run aktual 26 November 2026 pada Compose lokal yang terisolasi
-  (PostgreSQL, 30 database target): k6 `0.56.0`, maksimum 30 VU, 9 menit
-  ramp, 9.990 kasus approved unik tersedia, 3.468 iterasi terpakai. Semua
-  3.468 job diterima dan berakhir `succeeded`; 10.404/10.404 checks lulus,
-  API error `0%`, dan manifest tidak habis. Secara keseluruhan API p50/p95
-  `2,487/6,993 ms`, throughput `25,687 request/s`, queue wait p95 `94 ms`,
-  dan durasi job p95 `22 ms`. Seluruh threshold k6 lulus. Rincian machine-
-  readable tanpa secret ada di
-  [`scripts/evidence/k6-stress-local-2026-11-26.json`](scripts/evidence/k6-stress-local-2026-11-26.json).
+```bash
+docker compose --env-file .env.test -p wbd-k08-m2test up -d --wait
+set -a
+. ./.env.test
+set +a
+python3 scripts/k6/local-benchmark.py prepare
+```
 
-  Tabel berikut mengelompokkan request menurut stage saat request terjadi,
-  penerimaan job menurut stage enqueue, dan completion menurut waktu status
-  terminal terpantau. Latensi queue/job dikelompokkan menurut stage enqueue.
-  Tidak ada angka VU normal yang berlaku umum: pilih sesuai jumlah operator
-  yang diperkirakan aktif bersamaan. Untuk aplikasi internal kelompok kecil,
-  1 VU masuk akal bila biasanya hanya satu operator mengelola database; bila
-  ketiga anggota memang sering bekerja bersamaan, gunakan 3 VU sebagai normal.
-  Pedoman k6 juga menyarankan mencocokkan VU dengan concurrency yang diamati
-  atau diperkirakan, bukan angka arbitrer ([panduan load profile k6](https://grafana.com/docs/learning-hub/k6-performance-testing/03-establishing-a-baseline/17-designing-load-profile/)).
-  Kelompok menetapkan 1 VU sebagai beban normal pada 27 November 2026; hasil
-  run ini memakai baseline yang disepakati tersebut.
-  Stage `10 → 30` adalah ramp tiga menit yang mencapai 30 VU di ujung stage;
-  bukan hold tiga menit pada 30 VU.
+Salin folder dari baris **Manifest siap**, lalu jalankan
+`python3 scripts/k6/local-benchmark.py run tmp/k6/NAMA_FOLDER` dengan folder
+tersebut. Gunakan `prepare --smoke` untuk mencoba empat kasus terlebih dahulu.
+Runner menyimpan `run.json` dan `summary.json` di folder run.
 
-  | Stage | Beban VU | API p50/p95 (ms) | Request/s | Error API | Queue p95 (ms) | Job p95 (ms) | Diterima / selesai terpantau | Selesai/s | Analisis |
-  |---|---:|---:|---:|---:|---:|---:|---:|---:|---|
-  | Baseline (60 dtk) | 1 | 2,553 / 7,321 | 1,983 | 0% | 91 | 28 | 30 / 29 | 0,483 | Baseline stabil; seluruh latensi jauh di bawah threshold. |
-  | Ramp (120 dtk) | 1 → 10 | 2,513 / 5,892 | 10,000 | 0% | 88 | 21 | 302 / 294 | 2,450 | Beban meningkat tanpa lonjakan error atau antrean. |
-  | Ramp ke puncak (180 dtk) | 10 → 30 | 2,286 / 5,679 | 38,867 | 0% | 89 | 19 | 1.754 / 1.734 | 9,633 | Mencapai maksimum 30 VU di akhir stage; sistem tetap di bawah threshold. |
-  | Ramp turun (120 dtk) | 30 → 10 | 2,830 / 8,321 | 40,750 | 0% | 99 | 23 | 1.218 / 1.236 | 10,300 | Ada completion job dari stage sebelumnya; p95 queue/job tetap rendah. |
-  | Ramp ke nol (60 dtk) | 10 → 0 | 2,646 / 8,180 | 11,100 | 0% | 95 | 24 | 164 / 174 | 2,900 | Error tetap nol saat beban diturunkan; antrean tidak menumpuk. |
-  | Drain (ekor graceful ramp-down) | 0 | 2,690 / 2,690* | — | 0% | — | — | 0 / 1 | — | Satu polling terminal terakhir; semua job akhirnya terpantau selesai. |
+#### Hasil 27 November 2026
 
-  `Diterima / selesai terpantau` memakai dua waktu berbeda, sehingga angka
-  antartahap dapat berbeda: job yang diterima di satu stage dapat selesai pada
-  stage berikutnya. Drain hanya berisi satu request, sehingga p95 satu sampel
-  (`*`) dan throughput stage drain tidak representatif. Total akhir tetap
-  3.468 diterima dan 3.468 selesai; tidak ada job yang tertinggal.
+Tim menetapkan **1 VU** sebagai beban normal sebelum pengujian. Run berlangsung
+pukul **12.36–12.45 WIB** pada Compose lokal dengan k6 **0.56.0**, 30 database
+PostgreSQL tes, dan 9.990 migration approved yang tersedia. Beban naik secara
+bertahap hingga 30 VU, lalu turun ke 0. Pengujian mencatat 13.814 request,
+10.383 dari 10.383 pemeriksaan lulus, serta **3.461 job diterima dan 3.461
+berstatus `succeeded`**. Seluruh threshold lulus, manifest tidak habis, dan
+semua job terpantau sampai selesai.
+
+| Metrik | Hasil keseluruhan | Threshold |
+|---|---:|---:|
+| Latensi API p50 / p95 | 2,54 / 10,89 ms | p95 < 1.000 ms |
+| Latensi API enqueue p95 | 8,86 ms | < 1.000 ms |
+| Throughput API | 25,554 request/detik | — |
+| Error API / request HTTP gagal | 0% / 0% | masing-masing < 2% |
+| Waktu tunggu queue p95 | 946 ms | < 5.000 ms |
+| Durasi eksekusi job p95 | 66 ms | < 60.000 ms |
+| Throughput penyelesaian job | 6,402 job/detik | — |
+| Error eksekusi job | 0% | < 5% |
+| Iterasi tanpa kasus karena manifest habis | 0 | 0 |
+
+| Tahap | VU | API p50 / p95 (ms) | Request/detik | Error API | Queue p95 (ms) | Job p95 (ms) | Diterima / selesai | Job selesai/detik | Analisis |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| Baseline (60 dtk) | 1 | 4,64 / 17,35 | 1,483 | 0% | 733,3 | 80,20 | 30 / 29 | 0,483 | Pada beban normal, 29 dari 30 job sudah terpantau selesai sebelum tahap berikutnya. |
+| Ramp naik (120 dtk) | 1 → 10 | 2,16 / 5,74 | 10,000 | 0% | 923,0 | 69,95 | 302 / 294 | 2,450 | Throughput bertambah dan waktu tunggu queue naik sekitar 190 ms dari baseline. |
+| Ramp ke puncak (180 dtk) | 10 → 30 | 2,18 / 7,87 | 38,800 | 0% | 936,0 | 65,00 | 1.751 / 1.731 | 9,617 | Beban mencapai 30 VU di akhir tahap. Latensi API, waktu tunggu queue, dan durasi job tetap di bawah threshold. |
+| Ramp turun (120 dtk) | 30 → 10 | 2,97 / 12,89 | 40,783 | 0% | 954,3 | 56,00 | 1.219 / 1.237 | 10,308 | Jumlah job yang selesai melebihi jumlah yang diterima pada tahap ini. Selisih kumulatif job diterima dan selesai turun dari 29 menjadi 11. |
+| Ramp ke nol (60 dtk) | 10 → 0 | 5,51 / 21,79 | 10,767 | 0% | 953,8 | 111,20 | 159 / 169 | 2,817 | Throughput turun mengikuti beban. P95 API dan durasi job naik, tetap di bawah threshold, dan tinggal satu job yang perlu dipantau. |
+| Drain | 0 | 5,23 / 5,23 | — | 0% | — | — | 0 / 1 | — | Satu polling terakhir mengonfirmasi job terakhir selesai. |
+
+Request dan job selesai dihitung pada tahap ketika hasilnya terpantau.
+Job diterima, waktu tunggu queue, dan durasi eksekusi dikelompokkan menurut
+tahap enqueue. Throughput per tahap dihitung dari jumlah request atau job
+selesai dibagi durasi tahap. Drain hanya memiliki satu sampel request.
+
+Bukti tersimpan dalam [hasil per tahap](scripts/evidence/k6-stress-local-2026-11-27.json)
+dan [ringkasan k6](scripts/evidence/k6-stress-summary-2026-11-27.json).
+Hasil ini berasal dari working tree lokal berbasis commit `49c637e`. SHA-256
+script yang dijalankan tercatat di hasil per tahap.
 
 ## Command Makefile
 
