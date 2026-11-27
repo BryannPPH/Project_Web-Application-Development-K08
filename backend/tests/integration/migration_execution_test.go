@@ -509,6 +509,10 @@ func TestMigrationHistoryRollbackForwardAndImmutableSQL(t *testing.T) {
 	if laterEntry, err = service.Execute(ctx, principal, databaseID, laterEntry.ID); err != nil || !laterEntry.IsActive {
 		t.Fatalf("apply later migration = %#v, error %v", laterEntry, err)
 	}
+	earlier, err := service.Get(ctx, principal, databaseID, entry.ID)
+	if err != nil || earlier.RollbackBlockedByVersion == nil || *earlier.RollbackBlockedByVersion != laterEntry.Version {
+		t.Fatalf("migration detail omitted the blocking rollback version: %#v, %v", earlier, err)
+	}
 	if _, err := service.Rollback(ctx, principal, databaseID, entry.ID); !errors.Is(err, migration.ErrWrongOrder) {
 		t.Fatalf("rollback of earlier migration error=%v, want order conflict", err)
 	}

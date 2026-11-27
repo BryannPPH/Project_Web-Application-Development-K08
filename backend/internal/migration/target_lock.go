@@ -2,6 +2,7 @@ package migration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -56,11 +57,106 @@ func (e *PGExecutor) lockExecutionTarget(ctx context.Context, databaseID string)
 	return context.WithValue(ctx, lockedTargetKey{}, lockedTarget{databaseID, connection}), closeConnection, nil
 }
 
-// Target-side batch roots let aliases identify the same database without
-// relying on hostnames, ports, or the credentials used to connect.
-func checkUnresolvedTargetBatches(ctx context.Context, roots []string) error {
-	target, ok := ctx.Value(lockedTargetKey{}).(lockedTarget)
-	if !ok || len(roots) == 0 {
+type unresolvedTargetExecutions struct {
+	batchRoots            []string
+	singleIDs             []string
+	legacySingleDatabases []string
+}
+
+const targetJournal = "public.dbmp_migration_target_journal"
+
+// The intent is committed before user SQL. The outcome flag is written in the
+// same target transaction as user SQL, providing evidence after a crash.
+func recordTargetIntent(ctx context.Context, executionID string) error {
+	target := ctx.Value(lockedTargetKey{}).(lockedTarget)
+	present, err := targetJournalExists(ctx, target.connection)
+	if err != nil {
+		return err
+	}
+	if !present {
+		if _, err := target.connection.Exec(ctx, `CREATE TABLE public.dbmp_migration_target_journal (
+			execution_id UUID PRIMARY KEY,
+			committed BOOLEAN NOT NULL DEFAULT FALSE
+		);
+		GRANT SELECT (execution_id) ON public.dbmp_migration_target_journal TO PUBLIC`); err != nil {
+			return fmt.Errorf("initialize target migration journal: %w", err)
+		}
+	}
+	if _, err := target.connection.Exec(ctx, `INSERT INTO public.dbmp_migration_target_journal (execution_id) VALUES ($1::uuid)`, executionID); err != nil {
+		return fmt.Errorf("record target execution intent: %w", err)
+	}
+	return nil
+}
+
+func targetJournalExists(ctx context.Context, connection targetdb.Connection) (bool, error) {
+	var present bool
+	err := connection.QueryRow(ctx, "SELECT to_regclass($1) IS NOT NULL", targetJournal).Scan(&present)
+	return present, err
+}
+
+func markTargetCommitted(ctx context.Context, tx targetdb.Transaction, executionID string) error {
+	result, err := tx.Exec(ctx, `UPDATE public.dbmp_migration_target_journal SET committed=TRUE WHERE execution_id=$1::uuid`, executionID)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() != 1 {
+		return errors.New("target migration journal entry is missing")
+	}
+	return nil
+}
+
+func (e *PGExecutor) inspectSingleTargetCommit(ctx context.Context, databaseID, executionID string) (bool, bool, error) {
+	targetCtx, release, err := e.lockExecutionTarget(ctx, databaseID)
+	if err != nil {
+		return false, false, err
+	}
+	defer release()
+	target := targetCtx.Value(lockedTargetKey{}).(lockedTarget)
+	if target.connection.Engine() != targetdb.EnginePostgreSQL {
+		return false, false, nil
+	}
+	present, err := targetJournalExists(targetCtx, target.connection)
+	if err != nil || !present {
+		return false, false, err
+	}
+	var committed bool
+	err = target.connection.QueryRow(targetCtx, `SELECT committed FROM public.dbmp_migration_target_journal WHERE execution_id=$1::uuid`, executionID).Scan(&committed)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, false, nil
+	}
+	return err == nil, committed, err
+}
+
+func checkUnresolvedTarget(ctx context.Context, holds unresolvedTargetExecutions) error {
+	target := ctx.Value(lockedTargetKey{}).(lockedTarget)
+	if len(holds.singleIDs) > 0 {
+		present, err := targetJournalExists(ctx, target.connection)
+		if err != nil {
+			return err
+		}
+		if present {
+			blocked, err := targetJournalMatches(ctx, target.connection, targetJournal, "execution_id", holds.singleIDs)
+			if err != nil {
+				return err
+			}
+			if blocked {
+				return ErrTargetOutcomeUncertain
+			}
+		}
+	}
+	// Old executions lack target-side evidence. Hold matching database names
+	// conservatively until a reviewer reconciles those legacy attempts.
+	if len(holds.legacySingleDatabases) > 0 {
+		var blocked bool
+		err := target.connection.QueryRow(ctx, `SELECT current_database() = ANY($1::text[])`, holds.legacySingleDatabases).Scan(&blocked)
+		if err != nil {
+			return err
+		}
+		if blocked {
+			return ErrTargetOutcomeUncertain
+		}
+	}
+	if len(holds.batchRoots) == 0 {
 		return nil
 	}
 	tables, err := targetBatchTables(ctx, target.connection)
@@ -68,11 +164,7 @@ func checkUnresolvedTargetBatches(ctx context.Context, roots []string) error {
 		return err
 	}
 	for _, table := range tables {
-		var blocked bool
-		err := target.connection.QueryRow(ctx, `SELECT EXISTS (
-			SELECT 1 FROM `+table+` WHERE root_execution_id IN (
-				SELECT id::uuid FROM unnest($1::text[]) AS roots(id)
-			))`, roots).Scan(&blocked)
+		blocked, err := targetJournalMatches(ctx, target.connection, table, "root_execution_id", holds.batchRoots)
 		if err != nil {
 			return err
 		}
@@ -81,6 +173,16 @@ func checkUnresolvedTargetBatches(ctx context.Context, roots []string) error {
 		}
 	}
 	return nil
+}
+
+func targetJournalMatches(ctx context.Context, connection targetdb.Connection, table, column string, ids []string) (bool, error) {
+	var found bool
+	// Table and column names come from constants or quoted catalog identifiers.
+	err := connection.QueryRow(ctx, `SELECT EXISTS (
+		SELECT 1 FROM `+table+` WHERE `+pgx.Identifier{column}.Sanitize()+` IN (
+			SELECT id::uuid FROM unnest($1::text[]) AS execution_ids(id)
+		))`, ids).Scan(&found)
+	return found, err
 }
 
 func targetBatchTables(ctx context.Context, connection targetdb.Connection) ([]string, error) {
@@ -105,23 +207,33 @@ func targetBatchTables(ctx context.Context, connection targetdb.Connection) ([]s
 	return tables, rows.Err()
 }
 
-func (r *PGRepository) unresolvedBatchRoots(ctx context.Context, databaseID string) ([]string, error) {
-	rows, err := r.pool.Query(ctx, `SELECT a.checkpoint_root_id::text
+func (r *PGRepository) unresolvedTargetExecutions(ctx context.Context, databaseID string) (unresolvedTargetExecutions, error) {
+	var holds unresolvedTargetExecutions
+	rows, err := r.pool.Query(ctx, `SELECT e.execution_mode,a.id::text,a.checkpoint_root_id::text,a.target_journaled,d.database_name
 		FROM migration_entries e
 		JOIN migration_execution_attempts a ON a.id=e.last_execution_id
-		WHERE e.database_id<>$1::uuid AND e.execution_mode='batch'
+		JOIN managed_databases d ON d.id=e.database_id
+		WHERE e.database_id<>$1::uuid AND d.engine='postgresql'
 		  AND e.status IN ('running','partial','partially_reverted','interrupted','needs_reconciliation')`, databaseID)
 	if err != nil {
-		return nil, mapRepositoryError(err)
+		return holds, mapRepositoryError(err)
 	}
 	defer rows.Close()
-	var roots []string
 	for rows.Next() {
-		var root string
-		if err := rows.Scan(&root); err != nil {
-			return nil, mapRepositoryError(err)
+		var mode ExecutionMode
+		var executionID, rootID, name string
+		var journaled bool
+		if err := rows.Scan(&mode, &executionID, &rootID, &journaled, &name); err != nil {
+			return holds, mapRepositoryError(err)
 		}
-		roots = append(roots, root)
+		switch {
+		case mode == ExecutionModeBatch:
+			holds.batchRoots = append(holds.batchRoots, rootID)
+		case journaled:
+			holds.singleIDs = append(holds.singleIDs, executionID)
+		default:
+			holds.legacySingleDatabases = append(holds.legacySingleDatabases, name)
+		}
 	}
-	return roots, mapRepositoryError(rows.Err())
+	return holds, mapRepositoryError(rows.Err())
 }

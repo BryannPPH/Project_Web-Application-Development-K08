@@ -54,38 +54,39 @@ const (
 )
 
 type Entry struct {
-	ID                   string          `json:"id"`
-	DatabaseID           string          `json:"databaseId"`
-	Version              int64           `json:"version"`
-	Revision             int64           `json:"revision"`
-	Name                 string          `json:"name"`
-	SQL                  string          `json:"sql"`
-	DownSQL              *string         `json:"downSql"`
-	IrreversibleReason   *string         `json:"irreversibleReason"`
-	IsActive             bool            `json:"isActive"`
-	LatestExecutionID    *string         `json:"latestExecutionId"`
-	LatestJobID          *string         `json:"latestJobId,omitempty"`
-	PartialAction        ExecutionAction `json:"partialAction,omitempty"`
-	ExecutionMode        ExecutionMode   `json:"executionMode"`
-	BatchSelectSQL       *string         `json:"batchSelectSql"`
-	BatchSize            *int            `json:"batchSize"`
-	BatchCursorStart     int64           `json:"batchCursorStart"`
-	Status               Status          `json:"status"`
-	CreatedBy            string          `json:"createdBy"`
-	CreatedByUsername    string          `json:"createdByUsername"`
-	ExecutedBy           *string         `json:"executedBy"`
-	ExecutedByUsername   *string         `json:"executedByUsername"`
-	CreatedAt            time.Time       `json:"createdAt"`
-	StartedAt            *time.Time      `json:"startedAt"`
-	FinishedAt           *time.Time      `json:"finishedAt"`
-	ErrorMessage         *string         `json:"errorMessage"`
-	ReconciledFrom       *Status         `json:"reconciledFrom"`
-	ReconciledBy         *string         `json:"reconciledBy"`
-	ReconciledByUsername *string         `json:"reconciledByUsername"`
-	ReconciledAt         *time.Time      `json:"reconciledAt"`
-	ReconciliationNote   *string         `json:"reconciliationNote"`
-	CanEdit              bool            `json:"canEdit"`
-	CanReconcile         bool            `json:"canReconcile"`
+	RollbackBlockedByVersion *int64          `json:"rollbackBlockedByVersion,omitempty"`
+	ID                       string          `json:"id"`
+	DatabaseID               string          `json:"databaseId"`
+	Version                  int64           `json:"version"`
+	Revision                 int64           `json:"revision"`
+	Name                     string          `json:"name"`
+	SQL                      string          `json:"sql"`
+	DownSQL                  *string         `json:"downSql"`
+	IrreversibleReason       *string         `json:"irreversibleReason"`
+	IsActive                 bool            `json:"isActive"`
+	LatestExecutionID        *string         `json:"latestExecutionId"`
+	LatestJobID              *string         `json:"latestJobId,omitempty"`
+	PartialAction            ExecutionAction `json:"partialAction,omitempty"`
+	ExecutionMode            ExecutionMode   `json:"executionMode"`
+	BatchSelectSQL           *string         `json:"batchSelectSql"`
+	BatchSize                *int            `json:"batchSize"`
+	BatchCursorStart         int64           `json:"batchCursorStart"`
+	Status                   Status          `json:"status"`
+	CreatedBy                string          `json:"createdBy"`
+	CreatedByUsername        string          `json:"createdByUsername"`
+	ExecutedBy               *string         `json:"executedBy"`
+	ExecutedByUsername       *string         `json:"executedByUsername"`
+	CreatedAt                time.Time       `json:"createdAt"`
+	StartedAt                *time.Time      `json:"startedAt"`
+	FinishedAt               *time.Time      `json:"finishedAt"`
+	ErrorMessage             *string         `json:"errorMessage"`
+	ReconciledFrom           *Status         `json:"reconciledFrom"`
+	ReconciledBy             *string         `json:"reconciledBy"`
+	ReconciledByUsername     *string         `json:"reconciledByUsername"`
+	ReconciledAt             *time.Time      `json:"reconciledAt"`
+	ReconciliationNote       *string         `json:"reconciliationNote"`
+	CanEdit                  bool            `json:"canEdit"`
+	CanReconcile             bool            `json:"canReconcile"`
 
 	attemptStatus Status
 	attemptError  *string
@@ -126,6 +127,7 @@ type ExecutionAttempt struct {
 	Events             []ExecutionEvent `json:"events,omitempty"`
 
 	previousMigrationStatus Status
+	targetJournaled         bool
 }
 
 type ExecutionEvent struct {

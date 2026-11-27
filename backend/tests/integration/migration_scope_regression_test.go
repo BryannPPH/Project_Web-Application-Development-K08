@@ -112,7 +112,7 @@ func TestBatchScopeExcludesInsertedRowsAndRejectsUnsafeRollback(t *testing.T) {
 	assertValue(6, 1)
 }
 
-func TestUnresolvedBatchBlocksAliasAndRejectedJobsRemainInHistory(t *testing.T) {
+func TestUnresolvedTargetBlocksAliasesAndRejectedJobsRemainInHistory(t *testing.T) {
 	settings := loadTargetSettings(t)
 	harness := newPlatformHarness(t)
 	harness.createUser("scope_admin", auth.PlatformRoleAdmin)
@@ -222,5 +222,53 @@ func TestUnresolvedBatchBlocksAliasAndRejectedJobsRemainInHistory(t *testing.T) 
 			t.Fatalf("rejected job presented as SQL execution: %v", detail)
 		}
 		harness.call(http.MethodGet, first+"/migration-executions/"+id, nil, editor, http.StatusNotFound)
+	}
+
+	// A journaled single migration keeps a physical-target hold while its
+	// platform outcome needs reconciliation, even after a worker restart.
+	source, otherAlias := makeTarget("single_source", settings.host), makeTarget("single_alias", aliasHost)
+	editor = harness.login("scope_editor")
+	single := create(source, map[string]any{"name": "single commit", "sql": "UPDATE " + table + " SET value=3 WHERE id=3"})
+	singleJob := apply(source, single)
+	if singleJob["status"] != "succeeded" {
+		t.Fatalf("single migration did not commit: %v", singleJob)
+	}
+	executionID := singleJob["executionId"].(string)
+	var committed bool
+	if err := target.QueryRow(ctx, `SELECT committed FROM public.dbmp_migration_target_journal WHERE execution_id=$1::uuid`, executionID).
+		Scan(&committed); err != nil || !committed {
+		t.Fatalf("single migration must write commit evidence: committed=%t error=%v", committed, err)
+	}
+
+	// Model a lost commit acknowledgement by leaving the platform entry in
+	// reconciliation while keeping the target's durable proof.
+	harness.stopWorker()
+	singleDatabaseID := strings.TrimPrefix(source, "/api/v1/databases/")
+	repository := migration.NewPGRepository(harness.database)
+	attempt, err := repository.GetHistory(ctx, singleDatabaseID, executionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	message := "test fixture: commit acknowledgement lost"
+	if _, err := repository.FinishExecution(ctx, attempt, migration.StatusNeedsReconciliation, &message, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	harness.startWorker()
+	aliasSingle := create(otherAlias, map[string]any{"name": "blocked single alias", "sql": "UPDATE " + table + " SET value=4 WHERE id=3"})
+	job := apply(otherAlias, aliasSingle)
+	if job["status"] != "failed" || job["errorCode"] != "TARGET_OUTCOME_UNCERTAIN" || job["executionId"] != nil {
+		t.Fatalf("expected single alias to remain blocked by uncertain commit: %v", job)
+	}
+	if err := target.QueryRow(ctx, "SELECT value FROM "+table+" WHERE id=3").Scan(&value); err != nil || value != 3 {
+		t.Fatalf("blocked alias changed the target: value=%d error=%v", value, err)
+	}
+	reconciled := harness.call(http.MethodPost, source+"/migrations/"+single+"/reconcile", map[string]any{
+		"inspectedTarget": true, "note": "Verified the transaction in the target journal.",
+	}, editor, http.StatusOK)
+	if reconciled["status"] != "succeeded" || reconciled["isActive"] != true || reconciled["reconciledAt"] == nil {
+		t.Fatalf("reconciliation lost the proven commit or audit note: %v", reconciled)
+	}
+	if job := enqueue(otherAlias, aliasSingle, "execute"); job["status"] != "succeeded" {
+		t.Fatalf("reconciled single migration still blocks alias: %v", job)
 	}
 }

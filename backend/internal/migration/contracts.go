@@ -32,6 +32,8 @@ type DefinitionRepository interface {
 }
 
 type ExecutionPlan struct {
+	revalidate         func(context.Context) error
+	targetJournaled    bool
 	Entry              Entry
 	Action             ExecutionAction
 	ExecutionID        string

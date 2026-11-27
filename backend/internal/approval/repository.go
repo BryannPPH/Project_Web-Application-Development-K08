@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/platformdb"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -50,7 +52,7 @@ func (r *PGRepository) Target(ctx context.Context, databaseID, migrationID strin
 
 // RequiredGroups: semua group ber-grant ke database beserta leader aktifnya.
 func (r *PGRepository) RequiredGroups(ctx context.Context, databaseID string) ([]RequiredGroup, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := platformdb.TransactionReads(ctx, r.pool).Query(ctx, `
 		SELECT g.id::text, g.name, gda.access_level, u.id::text, u.username
 		FROM group_database_access gda
 		JOIN groups g ON g.id = gda.group_id
@@ -100,7 +102,7 @@ func (r *PGRepository) LatestDecisions(ctx context.Context, migrationID string, 
 	if superseding == nil {
 		superseding = []string{}
 	}
-	rows, err := r.pool.Query(ctx, `
+	rows, err := platformdb.TransactionReads(ctx, r.pool).Query(ctx, `
 		SELECT DISTINCT ON (a.approver_id)
 			a.approver_id::text, u.username, a.decision, a.note, a.decided_at
 		FROM migration_approvals a

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/platformdb"
+
 	"github.com/jackc/pgx/v5"
 )
 
@@ -67,7 +69,7 @@ func (r *PGRepository) AccessFacts(ctx context.Context, userID, databaseID strin
 
 	facts := AccessFacts{UserExists: true}
 	var rank int
-	err := r.database.QueryRow(ctx, query, userID, databaseID).Scan(
+	err := platformdb.TransactionReads(ctx, r.database).QueryRow(ctx, query, userID, databaseID).Scan(
 		&facts.UserActive,
 		&facts.DatabaseExists,
 		&facts.DatabaseActive,

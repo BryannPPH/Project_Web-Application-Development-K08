@@ -173,6 +173,15 @@ func (s *Service) Get(ctx context.Context, principal auth.Principal, databaseID,
 			entry.PartialAction = source.Action
 		}
 	}
+	if entry.DownSQL != nil && entry.IrreversibleReason == nil &&
+		((entry.IsActive && entry.Status == StatusSucceeded) || entry.Status == StatusPartial || entry.Status == StatusPartiallyReverted) {
+		if repository, ok := s.repository.(*PGRepository); ok {
+			entry.RollbackBlockedByVersion, err = repository.laterBlockingVersion(ctx, databaseID, entry.Version)
+			if err != nil {
+				return Entry{}, err
+			}
+		}
+	}
 	if err := s.authorizer.RequireDatabaseEdit(ctx, principal, databaseID); err != nil {
 		entry.ErrorMessage = sanitizeForViewer(entry.ErrorMessage)
 	} else {
@@ -211,16 +220,47 @@ func (s *Service) Reconcile(ctx context.Context, principal auth.Principal, datab
 	if !needsReconciliation(entry.Status) {
 		return Entry{}, ErrConflict
 	}
-	creatorUsername, executorUsername := entry.CreatedByUsername, entry.ExecutedByUsername
-	entry, err = s.repository.Reconcile(ctx, databaseID, migrationID, principal.UserID, note, s.clock.Now())
+	now := s.clock.Now()
+	record := reconciliationRecord{actorID: principal.UserID, note: note}
+	reconciled, proven, err := s.reconcileTargetJournal(ctx, entry, now, record)
 	if err != nil {
 		return Entry{}, err
 	}
-	entry.CanEdit = true
-	entry.CreatedByUsername = creatorUsername
-	entry.ExecutedByUsername = executorUsername
-	entry.ReconciledByUsername = &principal.Username
-	return entry, nil
+	if !proven {
+		reconciled, err = s.repository.Reconcile(ctx, databaseID, migrationID, principal.UserID, note, now)
+		if err != nil {
+			return Entry{}, err
+		}
+	}
+	reconciled.CanEdit = true
+	reconciled.CreatedByUsername = entry.CreatedByUsername
+	reconciled.ExecutedByUsername = entry.ExecutedByUsername
+	reconciled.ReconciledByUsername = &principal.Username
+	return reconciled, nil
+}
+
+func (s *Service) reconcileTargetJournal(ctx context.Context, entry Entry, now time.Time, record reconciliationRecord) (Entry, bool, error) {
+	repository, hasLedger := s.repository.(*PGRepository)
+	executor, hasJournal := s.executor.(*PGExecutor)
+	if !hasLedger || !hasJournal || entry.ExecutionMode != ExecutionModeSingle || entry.LatestExecutionID == nil {
+		return Entry{}, false, nil
+	}
+	attempt, err := repository.getAttempt(ctx, entry.DatabaseID, *entry.LatestExecutionID)
+	if err != nil || !attempt.targetJournaled {
+		return Entry{}, false, err
+	}
+	found, committed, err := executor.inspectSingleTargetCommit(ctx, entry.DatabaseID, attempt.ID)
+	if err != nil || !found {
+		return Entry{}, false, err
+	}
+	status := StatusSucceeded
+	var message *string
+	if !committed {
+		status = StatusFailed
+		message = stringPtr("target journal confirms the transaction did not commit")
+	}
+	result, err := repository.finishExecution(ctx, attempt, status, message, now, &record)
+	return result, true, err
 }
 
 func needsReconciliation(status Status) bool {
@@ -319,20 +359,23 @@ func (s *Service) ExecuteAction(ctx context.Context, principal auth.Principal, d
 		return Entry{}, err
 	}
 	if executor, ok := s.executor.(*PGExecutor); ok {
+		targetLockStarted := time.Now()
 		targetCtx, unlockTarget, err := executor.lockExecutionTarget(ctx, databaseID)
 		if err != nil {
 			return Entry{}, err
 		}
 		defer unlockTarget()
 		ctx = targetCtx
-		if guard, ok := repository.(interface {
-			unresolvedBatchRoots(context.Context, string) ([]string, error)
-		}); ok && hasLockedPostgreSQLTarget(ctx) {
-			roots, err := guard.unresolvedBatchRoots(ctx, databaseID)
+		if hasLockedPostgreSQLTarget(ctx) {
+			lockWait += time.Since(targetLockStarted)
+			plan.LockWait = lockWait
+		}
+		if guard, ok := repository.(*PGRepository); ok && hasLockedPostgreSQLTarget(ctx) {
+			holds, err := guard.unresolvedTargetExecutions(ctx, databaseID)
 			if err != nil {
 				return Entry{}, err
 			}
-			if err := checkUnresolvedTargetBatches(ctx, roots); err != nil {
+			if err := checkUnresolvedTarget(ctx, holds); err != nil {
 				return Entry{}, err
 			}
 		}
@@ -359,6 +402,25 @@ func (s *Service) ExecuteAction(ctx context.Context, principal auth.Principal, d
 	plan.ActorUsername = principal.Username
 	if plan.CheckpointRootID == "" {
 		plan.CheckpointRootID = executionID
+	}
+	if plan.Entry.ExecutionMode == ExecutionModeSingle && hasLockedPostgreSQLTarget(ctx) {
+		if err := recordTargetIntent(ctx, plan.ExecutionID); err != nil {
+			return Entry{}, err
+		}
+		plan.targetJournaled = true
+	}
+	// Refresh policy after the physical lock. The production repository holds
+	// that policy stable until it commits the execution's running state.
+	revalidate := func(policyCtx context.Context) error {
+		if err := s.authorizer.RequireDatabaseEdit(policyCtx, principal, databaseID); err != nil {
+			return err
+		}
+		return s.approvals.RequireApproved(policyCtx, databaseID, migrationID, approvalAction, plan.Entry.Revision)
+	}
+	if _, ok := repository.(*PGRepository); ok {
+		plan.revalidate = revalidate
+	} else if err := revalidate(ctx); err != nil {
+		return Entry{}, err
 	}
 	attempt, err := repository.StartExecution(ctx, plan, principal.UserID, principal.Username, s.clock.Now())
 	if err != nil {

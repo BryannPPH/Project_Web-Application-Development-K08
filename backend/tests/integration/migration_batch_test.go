@@ -171,7 +171,7 @@ func TestBatchMigrationPartialFailureResumeAndReverseRollback(t *testing.T) {
 			failure = &failedAttempt.Events[index]
 		}
 	}
-	if failure == nil || failure.QuerySQL != up || failure.BatchNumber == nil ||
+	if failure == nil || failure.QuerySQL != up+"\nRETURNING \"id\"" || failure.BatchNumber == nil ||
 		*failure.BatchNumber != 3 || failure.CursorStart == nil || *failure.CursorStart != 6 ||
 		failure.CursorEnd == nil || *failure.CursorEnd != 7 || len(failure.QueryParameters) != 2 ||
 		failure.QueryParameters[0] != 6 || failure.QueryParameters[1] != 7 {

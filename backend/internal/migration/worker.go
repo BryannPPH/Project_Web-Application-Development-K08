@@ -128,21 +128,26 @@ func (w *Worker) runLoop(ctx context.Context, workerID string) {
 	}
 }
 
-func (w *Worker) process(ctx context.Context, workerID string, job Job) {
+func startJobSpan(ctx context.Context, name string, job Job) (context.Context, trace.Span, auth.Principal) {
 	parent := observability.ContextFromStored(ctx, valueOrEmpty(job.traceparent), valueOrEmpty(job.tracestate))
-	jobCtx, span := otel.Tracer("dbmp/migration-worker").Start(parent, "migration.job.process",
+	ctx, span := otel.Tracer("dbmp/migration-worker").Start(parent, name,
 		trace.WithAttributes(attribute.String("db.job.id", job.ID), attribute.String("db.namespace", job.DatabaseID),
 			attribute.String("db.migration.id", job.MigrationID), attribute.String("db.migration.action", string(job.Action))))
-	defer span.End()
 	if job.CorrelationID != nil {
-		jobCtx = requestmeta.WithRequestID(jobCtx, *job.CorrelationID)
+		ctx = requestmeta.WithRequestID(ctx, *job.CorrelationID)
 	}
 	principal := auth.Principal{UserID: job.ActorID, Username: job.ActorUsername, PlatformRole: auth.PlatformRoleUser}
-	jobCtx = auth.WithPrincipal(jobCtx, principal)
-	jobCtx = targetdb.WithActivity(jobCtx, targetdb.Activity{
-		JobID: job.ID, MigrationID: job.MigrationID, Action: string(job.Action),
+	ctx = auth.WithPrincipal(ctx, principal)
+	ctx = targetdb.WithActivity(ctx, targetdb.Activity{
+		JobID: job.ID, MigrationID: job.MigrationID, Action: string(job.Action), ExecutionID: valueOrEmpty(job.ExecutionID),
 		Attempt: job.RetryCount + 1, CorrelationID: valueOrEmpty(job.CorrelationID),
 	})
+	return ctx, span, principal
+}
+
+func (w *Worker) process(ctx context.Context, workerID string, job Job) {
+	jobCtx, span, principal := startJobSpan(ctx, "migration.job.process", job)
+	defer span.End()
 	w.logger.InfoContext(jobCtx, "migration job processing started", append([]any{
 		"event", "migration_job_started", "actor", job.ActorUsername, "actor_id", job.ActorID,
 		"worker_id", workerID,
@@ -349,9 +354,11 @@ func (w *Worker) recoverExpired(ctx context.Context) error {
 				return err
 			}
 			if requeued {
-				w.logger.WarnContext(ctx, "requeued job after worker lease expired before execution",
-					"event", "migration_job_requeued_after_restart", "job_id", job.ID,
-					"retry_count", job.RetryCount+1)
+				jobCtx, span, _ := startJobSpan(ctx, "migration.job.requeue", job)
+				w.logger.WarnContext(jobCtx, "requeued job after worker lease expired before execution", append([]any{
+					"event", "migration_job_requeued_after_restart", "job_id", job.ID, "retry_count", job.RetryCount + 1,
+				}, observability.TraceFields(jobCtx)...)...)
+				span.End()
 			}
 			continue
 		}
@@ -361,6 +368,8 @@ func (w *Worker) recoverExpired(ctx context.Context) error {
 }
 
 func (w *Worker) recoverExpiredExecution(ctx context.Context, expired Job) {
+	ctx, span, _ := startJobSpan(ctx, "migration.job.recover", expired)
+	defer span.End()
 	lockCtx, cancel := context.WithTimeout(ctx, w.config.RecoveryLockTimeout)
 	defer cancel()
 	lock, err := w.service.locker.Acquire(lockCtx, expired.DatabaseID)
@@ -379,7 +388,7 @@ func (w *Worker) recoverExpiredExecution(ctx context.Context, expired Job) {
 	}
 	attempt, err := w.attempts.GetHistory(ctx, expired.DatabaseID, *current.ExecutionID)
 	if err != nil {
-		w.logger.ErrorContext(ctx, "load expired migration execution", "event", "migration_job_recovery_failed",
+		recoveryLog(ctx, w.logger, slog.LevelError, "load expired migration execution", "event", "migration_job_recovery_failed",
 			"job_id", current.ID, "execution_id", valueOrEmpty(current.ExecutionID), "error", err.Error())
 		return
 	}
@@ -391,24 +400,41 @@ func (w *Worker) recoverExpiredExecution(ctx context.Context, expired Job) {
 			if inspector, ok := w.service.executor.(BatchCheckpointInspector); ok {
 				entry, entryErr := w.service.repository.Get(ctx, current.DatabaseID, current.MigrationID)
 				if entryErr != nil {
-					w.logger.WarnContext(ctx, "could not load migration for checkpoint recovery",
+					recoveryLog(ctx, w.logger, slog.LevelWarn, "could not load migration for checkpoint recovery",
 						"event", "migration_batch_recovery_inspection_failed", "job_id", current.ID,
 						"execution_id", attempt.ID, "error", safeError(entryErr))
 				} else if entry.ExecutionMode != ExecutionModeBatch {
-					w.logger.WarnContext(ctx, "batch job refers to a non-batch migration",
+					recoveryLog(ctx, w.logger, slog.LevelWarn, "batch job refers to a non-batch migration",
 						"event", "migration_batch_recovery_inspection_failed", "job_id", current.ID,
 						"execution_id", attempt.ID)
 				} else if checkpoints, inspectErr := inspector.InspectBatchCheckpoints(ctx, current.DatabaseID, attempt); inspectErr == nil {
 					recoveredStatus, message = recoverBatchAttempt(current.Action, checkpoints)
 				} else {
-					w.logger.WarnContext(ctx, "could not inspect target batch checkpoints",
+					recoveryLog(ctx, w.logger, slog.LevelWarn, "could not inspect target batch checkpoints",
 						"event", "migration_batch_recovery_inspection_failed", "job_id", current.ID,
 						"execution_id", attempt.ID, "error", safeError(inspectErr))
 				}
 			} else {
-				w.logger.WarnContext(ctx, "batch executor does not support checkpoint inspection",
+				recoveryLog(ctx, w.logger, slog.LevelWarn, "batch executor does not support checkpoint inspection",
 					"event", "migration_batch_recovery_inspection_failed", "job_id", current.ID,
 					"execution_id", attempt.ID)
+			}
+		}
+		if current.ExecutionMode == ExecutionModeSingle {
+			if executor, ok := w.service.executor.(*PGExecutor); ok {
+				inspectCtx, inspectCancel := context.WithTimeout(ctx, w.config.RecoveryLockTimeout)
+				found, committed, inspectErr := executor.inspectSingleTargetCommit(inspectCtx, current.DatabaseID, attempt.ID)
+				inspectCancel()
+				switch {
+				case inspectErr != nil:
+					recoveryLog(ctx, w.logger, slog.LevelWarn, "could not inspect target execution journal",
+						"event", "migration_journal_inspection_failed", "job_id", current.ID,
+						"execution_id", attempt.ID, "error", safeError(inspectErr))
+				case found && committed:
+					recoveredStatus = StatusSucceeded
+				case found:
+					recoveredStatus, message = StatusFailed, "target journal confirms the transaction did not commit"
+				}
 			}
 		}
 		var recoveryMessage *string
@@ -416,7 +442,7 @@ func (w *Worker) recoverExpiredExecution(ctx context.Context, expired Job) {
 			recoveryMessage = &message
 		}
 		if _, err := w.attempts.FinishExecution(ctx, attempt, recoveredStatus, recoveryMessage, w.clock.Now()); err != nil {
-			w.logger.ErrorContext(ctx, "record recovered migration attempt", "event", "migration_job_recovery_failed",
+			recoveryLog(ctx, w.logger, slog.LevelError, "record recovered migration attempt", "event", "migration_job_recovery_failed",
 				"job_id", current.ID, "execution_id", attempt.ID, "error", err.Error())
 			return
 		}
@@ -441,17 +467,24 @@ func (w *Worker) recoverExpiredExecution(ctx context.Context, expired Job) {
 		code = &value
 		message = attempt.ErrorMessage
 	} else if status == JobFailed && attempt.Status == string(StatusFailed) {
-		value := "BATCH_STOPPED_BEFORE_COMMIT"
+		value := "MIGRATION_STOPPED_BEFORE_COMMIT"
+		if current.ExecutionMode == ExecutionModeBatch {
+			value = "BATCH_STOPPED_BEFORE_COMMIT"
+		}
 		code = &value
 		message = attempt.ErrorMessage
 	}
 	if err := w.jobs.Finish(ctx, current, status, code, message, w.clock.Now()); err != nil {
-		w.logger.ErrorContext(ctx, "finalize expired migration job", "event", "migration_job_recovery_failed",
+		recoveryLog(ctx, w.logger, slog.LevelError, "finalize expired migration job", "event", "migration_job_recovery_failed",
 			"job_id", current.ID, "execution_id", attempt.ID, "error", err.Error())
 		return
 	}
-	w.logger.WarnContext(ctx, "recovered expired migration job", "event", "migration_job_recovered",
+	recoveryLog(ctx, w.logger, slog.LevelWarn, "recovered expired migration job", "event", "migration_job_recovered",
 		"job_id", current.ID, "execution_id", attempt.ID, "status", status)
+}
+
+func recoveryLog(ctx context.Context, logger *slog.Logger, level slog.Level, message string, fields ...any) {
+	logger.Log(ctx, level, message, append(fields, observability.TraceFields(ctx)...)...)
 }
 
 func recoverBatchAttempt(action ExecutionAction, checkpoints BatchCheckpointState) (Status, string) {
@@ -537,7 +570,7 @@ func isRetryableQueueError(err error) bool {
 	}
 	var pgError *pgconn.PgError
 	if errors.As(err, &pgError) {
-		return strings.HasPrefix(pgError.Code, "08") || pgError.Code == "53300" || pgError.Code == "40001"
+		return strings.HasPrefix(pgError.Code, "08") || pgError.Code == "53300" || pgError.Code == "40001" || pgError.Code == "40P01"
 	}
 	var networkError net.Error
 	return errors.As(err, &networkError) && (networkError.Timeout() || networkError.Temporary())
@@ -549,6 +582,8 @@ func publicJobError(err error) (string, string) {
 		return "TARGET_UNAVAILABLE", "target database is temporarily unavailable"
 	case errors.Is(err, ErrRevisionChanged):
 		return "MIGRATION_REVISION_CHANGED", "migration changed after this job was approved; approve and enqueue the current revision"
+	case errors.Is(err, ErrTargetOutcomeUncertain):
+		return "TARGET_OUTCOME_UNCERTAIN", "another migration on this target needs reconciliation before execution can continue"
 	case errors.Is(err, ErrTargetBatchBlocked):
 		return "TARGET_BATCH_BLOCKED", "an unresolved batch on another connection blocks this target; complete or recover that batch first"
 	case errors.Is(err, ErrWrongOrder):

@@ -411,3 +411,46 @@ func TestRedactSQLForLogMasksCredentialValues(t *testing.T) {
 		}
 	}
 }
+
+type revalidationRepository struct {
+	*fakeRepository
+	AttemptRepository
+}
+
+func (r revalidationRepository) PlanExecution(context.Context, string, string, ExecutionAction, string) (ExecutionPlan, error) {
+	return ExecutionPlan{Entry: r.entry, SQLSnapshot: r.entry.SQL}, nil
+}
+
+type revalidationGate struct {
+	calls int
+	err   error
+}
+
+func (g *revalidationGate) RequireApproved(context.Context, string, string, string, int64) error {
+	g.calls++
+	if g.calls > 1 {
+		return g.err
+	}
+	return nil
+}
+
+func TestExecutionRevalidatesApprovalBeforeRecordingAttempt(t *testing.T) {
+	denied := errors.New("approval changed")
+	gate := &revalidationGate{err: denied}
+	repository := revalidationRepository{fakeRepository: &fakeRepository{
+		entry: Entry{ID: "migration", DatabaseID: "db", Revision: 1, SQL: "SELECT 1"},
+	}}
+	executor := &fakeExecutor{}
+	lock := &fakeLock{}
+	service, err := NewService(repository, &fakeAuthorizer{}, &fakeLocker{lock: lock}, executor, gate,
+		fixedClock{}, slog.New(slog.NewTextHandler(io.Discard, nil)), ServiceConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Execute(context.Background(), auth.Principal{UserID: "editor"}, "db", "migration"); !errors.Is(err, denied) {
+		t.Fatalf("execute returned %v, want refreshed approval rejection", err)
+	}
+	if gate.calls != 2 || executor.calls != 0 || !lock.released {
+		t.Fatalf("revalidation did not stop execution: gate=%d executions=%d lock released=%t", gate.calls, executor.calls, lock.released)
+	}
+}

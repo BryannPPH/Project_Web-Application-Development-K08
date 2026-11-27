@@ -112,14 +112,14 @@ func scanBatchKey(rows targetdb.Rows) (int64, error) {
 	return key, nil
 }
 
-func executeScopedBatch(ctx context.Context, tx targetdb.Transaction, sql, cursorColumn string, start, end int64, expected []int64) (int64, error) {
+func executeScopedBatch(ctx context.Context, tx targetdb.Transaction, sql, cursorColumn string, start, end int64, expected []int64) (int64, string, error) {
 	statements, err := splitStatements(sql, targetdb.EnginePostgreSQL)
 	if err != nil || len(statements) != 1 {
-		return 0, ErrSQLPolicy
+		return 0, "", ErrSQLPolicy
 	}
 	words, err := topLevelStatementWords(statements[0])
 	if err != nil || len(words) != 1 || !batchStatement(words[0][0]) {
-		return 0, ErrSQLPolicy
+		return 0, "", ErrSQLPolicy
 	}
 	column := pgx.Identifier{cursorColumn}.Sanitize()
 	query := statements[0] + "\nRETURNING " + column
@@ -130,27 +130,27 @@ func executeScopedBatch(ctx context.Context, tx targetdb.Transaction, sql, curso
 	ctx = targetdb.WithSafeParameterIndexes(ctx, 0, 1)
 	rows, err := tx.Query(ctx, query, start, end)
 	if err != nil {
-		return 0, err
+		return 0, query, err
 	}
 	defer rows.Close()
 	actual := make([]int64, 0, len(expected))
 	scopeError := errors.New("affected rows differ from the original batch scope; no changes from this batch were committed")
 	for rows.Next() {
 		if len(actual) == len(expected) {
-			return 0, scopeError
+			return 0, query, scopeError
 		}
 		key, err := scanBatchKey(rows)
 		if err != nil {
-			return 0, err
+			return 0, query, err
 		}
 		actual = append(actual, key)
 	}
 	if err := rows.Err(); err != nil {
-		return 0, err
+		return 0, query, err
 	}
 	slices.Sort(actual)
 	if !slices.Equal(actual, expected) {
-		return 0, scopeError
+		return 0, query, scopeError
 	}
-	return int64(len(actual)), nil
+	return int64(len(actual)), query, nil
 }

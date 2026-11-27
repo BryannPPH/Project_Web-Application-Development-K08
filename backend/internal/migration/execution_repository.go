@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/platformdb"
+
 	"github.com/jackc/pgx/v5"
 )
 
@@ -58,14 +60,11 @@ func (r *PGRepository) PlanExecution(ctx context.Context, databaseID, migrationI
 		if !partialBatch && !resumeRollback && !(entry.IsActive && entry.Status == StatusSucceeded) {
 			return ExecutionPlan{}, ErrConflict
 		}
-		var laterBlocking bool
-		if err := r.pool.QueryRow(ctx, `SELECT EXISTS (
-			SELECT 1 FROM migration_entries WHERE database_id=$1::uuid AND version>$2
-			AND (is_active OR status IN ('running','partial','partially_reverted','needs_reconciliation','interrupted'))
-		)`, databaseID, entry.Version).Scan(&laterBlocking); err != nil {
-			return ExecutionPlan{}, mapRepositoryError(err)
+		laterBlocking, err := r.laterBlockingVersion(ctx, databaseID, entry.Version)
+		if err != nil {
+			return ExecutionPlan{}, err
 		}
-		if laterBlocking {
+		if laterBlocking != nil {
 			return ExecutionPlan{}, ErrWrongOrder
 		}
 		if entry.DownSQL == nil || entry.IrreversibleReason != nil {
@@ -115,14 +114,11 @@ func (r *PGRepository) PlanExecution(ctx context.Context, databaseID, migrationI
 				return ExecutionPlan{}, ErrConflict
 			}
 		}
-		var laterBlocking bool
-		if err := r.pool.QueryRow(ctx, `SELECT EXISTS (
-			SELECT 1 FROM migration_entries WHERE database_id=$1::uuid AND version>$2
-			AND (is_active OR status IN ('running','partial','partially_reverted','needs_reconciliation','interrupted'))
-		)`, databaseID, entry.Version).Scan(&laterBlocking); err != nil {
-			return ExecutionPlan{}, mapRepositoryError(err)
+		laterBlocking, err := r.laterBlockingVersion(ctx, databaseID, entry.Version)
+		if err != nil {
+			return ExecutionPlan{}, err
 		}
-		if laterBlocking {
+		if laterBlocking != nil {
 			return ExecutionPlan{}, ErrWrongOrder
 		}
 		plan.SQLSnapshot = entry.SQL
@@ -131,6 +127,15 @@ func (r *PGRepository) PlanExecution(ctx context.Context, databaseID, migrationI
 		return ExecutionPlan{}, ErrInvalidInput
 	}
 	return plan, nil
+}
+
+func (r *PGRepository) laterBlockingVersion(ctx context.Context, databaseID string, version int64) (*int64, error) {
+	var blocker *int64
+	err := r.pool.QueryRow(ctx, `SELECT max(version) FROM migration_entries
+		WHERE database_id=$1::uuid AND version>$2
+		AND (is_active OR status IN ('running','partial','partially_reverted','needs_reconciliation','interrupted'))`,
+		databaseID, version).Scan(&blocker)
+	return blocker, mapRepositoryError(err)
 }
 
 func partialSourceAttempt(ctx context.Context, repository AttemptRepository, entry Entry, attempt ExecutionAttempt) (ExecutionAttempt, error) {
@@ -173,14 +178,26 @@ func (r *PGRepository) StartExecution(ctx context.Context, plan ExecutionPlan, a
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
 
+	if plan.revalidate != nil {
+		// The short start transaction fixes the policy state until the attempt
+		// is durably marked running. Concurrent execution starts share these locks.
+		if _, err := tx.Exec(ctx, `LOCK TABLE groups, group_database_access, group_leaders,
+			group_members, managed_databases, migration_approvals, users IN SHARE MODE`); err != nil {
+			return ExecutionAttempt{}, fmt.Errorf("lock execution policy: %w", err)
+		}
+		if err := plan.revalidate(platformdb.WithTransactionReads(ctx, tx)); err != nil {
+			return ExecutionAttempt{}, err
+		}
+	}
+
 	var attempt ExecutionAttempt
 	err = tx.QueryRow(ctx, `INSERT INTO migration_execution_attempts
-		(id,database_id, migration_id, version, revision, action, actor_id, requested_at, sql_snapshot, related_execution_id, checkpoint_root_id, lock_wait_micros, previous_migration_status)
-		VALUES ($1::uuid,$2::uuid,$3::uuid,$4,$5,$6,$7::uuid,$8,$9,$10::uuid,$11::uuid,$12,$13)
+		(id,database_id, migration_id, version, revision, action, actor_id, requested_at, sql_snapshot, related_execution_id, checkpoint_root_id, lock_wait_micros, previous_migration_status, target_journaled)
+		VALUES ($1::uuid,$2::uuid,$3::uuid,$4,$5,$6,$7::uuid,$8,$9,$10::uuid,$11::uuid,$12,$13,$14)
 		RETURNING id::text, database_id::text, migration_id::text, version, revision, action,
 		actor_id::text, requested_at, sql_snapshot, related_execution_id::text, checkpoint_root_id::text`,
 		plan.ExecutionID, plan.Entry.DatabaseID, plan.Entry.ID, plan.Entry.Version, plan.Entry.Revision, plan.Action,
-		actorID, now, plan.SQLSnapshot, plan.RelatedExecutionID, plan.CheckpointRootID, plan.LockWait.Microseconds(), plan.Entry.Status).Scan(
+		actorID, now, plan.SQLSnapshot, plan.RelatedExecutionID, plan.CheckpointRootID, plan.LockWait.Microseconds(), plan.Entry.Status, plan.targetJournaled).Scan(
 		&attempt.ID, &attempt.DatabaseID, &attempt.MigrationID, &attempt.Version, &attempt.Revision,
 		&attempt.Action, &attempt.ActorID, &attempt.RequestedAt, &attempt.SQLSnapshot, &attempt.RelatedExecutionID,
 		&attempt.CheckpointRootID)
@@ -192,7 +209,8 @@ func (r *PGRepository) StartExecution(ctx context.Context, plan ExecutionPlan, a
 
 	var allowed bool
 	err = tx.QueryRow(ctx, `UPDATE migration_entries SET status='running', executed_by=$3::uuid,
-		started_at=$4, finished_at=NULL, error_message=NULL, last_execution_id=$6::uuid, updated_at=$4
+		started_at=$4, finished_at=NULL, error_message=NULL, last_execution_id=$6::uuid, updated_at=$4,
+		reconciled_from_status=NULL,reconciled_by=NULL,reconciled_at=NULL,reconciliation_note=NULL
 		WHERE database_id=$1::uuid AND id=$2::uuid AND revision=$5 AND status <> 'running'
 		RETURNING TRUE`, plan.Entry.DatabaseID, plan.Entry.ID, actorID, now, plan.Entry.Revision, attempt.ID).Scan(&allowed)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -263,6 +281,16 @@ func (r *PGRepository) RecordBatchFailure(ctx context.Context, executionID, stat
 }
 
 func (r *PGRepository) FinishExecution(ctx context.Context, attempt ExecutionAttempt, status Status, message *string, now time.Time) (Entry, error) {
+	return r.finishExecution(ctx, attempt, status, message, now, nil)
+}
+
+type reconciliationRecord struct {
+	actorID string
+	note    string
+}
+
+func (r *PGRepository) finishExecution(ctx context.Context, attempt ExecutionAttempt, status Status, message *string,
+	now time.Time, reconciliation *reconciliationRecord) (Entry, error) {
 	eventStatus, eventType := string(status), eventForStatus(status)
 	eventMessage := message
 	if status == StatusSucceeded {
@@ -276,8 +304,13 @@ func (r *PGRepository) FinishExecution(ctx context.Context, attempt ExecutionAtt
 
 	var migrationStatus Status
 	var active bool
-	if err := tx.QueryRow(ctx, `SELECT is_active FROM migration_entries WHERE id=$1::uuid FOR UPDATE`, attempt.MigrationID).Scan(&active); err != nil {
+	var previousStatus Status
+	if err := tx.QueryRow(ctx, `SELECT is_active,status FROM migration_entries WHERE id=$1::uuid FOR UPDATE`, attempt.MigrationID).
+		Scan(&active, &previousStatus); err != nil {
 		return Entry{}, mapRepositoryError(err)
+	}
+	if reconciliation != nil && !needsReconciliation(previousStatus) {
+		return Entry{}, ErrConflict
 	}
 	switch {
 	case status == StatusSucceeded && attempt.Action == ActionRollback:
@@ -327,6 +360,22 @@ func (r *PGRepository) FinishExecution(ctx context.Context, attempt ExecutionAtt
 	if err != nil {
 		return Entry{}, mapRepositoryError(err)
 	}
+	if reconciliation != nil {
+		if _, err := tx.Exec(ctx, `UPDATE migration_entries SET reconciled_from_status=$2,reconciled_by=$3::uuid,
+			reconciled_at=$4,reconciliation_note=$5 WHERE id=$1::uuid`,
+			attempt.MigrationID, previousStatus, reconciliation.actorID, now, reconciliation.note); err != nil {
+			return Entry{}, mapRepositoryError(err)
+		}
+		var code *string
+		if status == StatusFailed {
+			code = stringPtr("TARGET_TRANSACTION_NOT_COMMITTED")
+		}
+		if _, err := tx.Exec(ctx, `UPDATE migration_jobs SET status=$2,error_code=$3,error_message=$4,updated_at=$5
+			WHERE execution_id=$1::uuid AND status='needs_reconciliation'`,
+			attempt.ID, jobStatusForExecutionStatus(string(status)), code, eventMessage, now); err != nil {
+			return Entry{}, mapRepositoryError(err)
+		}
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return Entry{}, fmt.Errorf("commit migration execution finalization: %w", err)
 	}
@@ -356,7 +405,7 @@ func (r *PGRepository) latestSuccessfulApply(ctx context.Context, migrationID st
 const attemptSelect = `SELECT a.id::text AS id,a.database_id::text,a.migration_id::text,a.version,a.revision,
 	a.action,a.actor_id::text,u.username,a.requested_at,a.sql_snapshot,a.related_execution_id::text,
 	a.checkpoint_root_id::text,COALESCE(latest.status,'queued'),latest.error_message,COALESCE(a.previous_migration_status,''),m.name,
-	NULL::text AS rejected_job_id,NULL::text AS rejection_code
+	NULL::text AS rejected_job_id,NULL::text AS rejection_code,a.target_journaled
 	FROM migration_execution_attempts a
 	JOIN users u ON u.id=a.actor_id
 	JOIN migration_entries m ON m.id=a.migration_id
@@ -382,7 +431,7 @@ func (r *PGRepository) executionRoot(ctx context.Context, executionID string) (s
 // execution's lifecycle or locking a draft definition.
 const rejectedJobSelect = `SELECT j.id::text AS id,j.database_id::text,j.migration_id::text,m.version,j.requested_revision,
 	j.action,j.actor_id::text,j.actor_username,j.created_at AS requested_at,''::text,NULL::text,
-	''::text,j.status,j.error_message,''::text,m.name,j.id::text,j.error_code
+	''::text,j.status,j.error_message,''::text,m.name,j.id::text,j.error_code,FALSE
 	FROM migration_jobs j JOIN migration_entries m ON m.id=j.migration_id
 	WHERE j.database_id=$1::uuid AND j.status='failed' AND j.execution_id IS NULL`
 
@@ -436,6 +485,10 @@ func (r *PGRepository) ListHistory(ctx context.Context, databaseID string, optio
 	countArgs := args[:len(args)-2]
 	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM `+history+` history`, countArgs...).Scan(&page.Total); err != nil {
 		return HistoryPage{}, mapRepositoryError(err)
+	}
+	// History lists summaries. Detail and explicit execution filters still include the event ledger.
+	if options.ExecutionID == "" {
+		return page, nil
 	}
 	for index := range page.Items {
 		if page.Items[index].JobID != nil {
@@ -509,7 +562,7 @@ func scanAttempt(row rowScanner) (ExecutionAttempt, error) {
 	err := row.Scan(&attempt.ID, &attempt.DatabaseID, &attempt.MigrationID, &attempt.Version, &attempt.Revision,
 		&attempt.Action, &attempt.ActorID, &attempt.ActorUsername, &attempt.RequestedAt, &attempt.SQLSnapshot,
 		&attempt.RelatedExecutionID, &attempt.CheckpointRootID, &attempt.Status, &attempt.ErrorMessage,
-		&attempt.previousMigrationStatus, &attempt.MigrationName, &attempt.JobID, &attempt.ErrorCode)
+		&attempt.previousMigrationStatus, &attempt.MigrationName, &attempt.JobID, &attempt.ErrorCode, &attempt.targetJournaled)
 	if attempt.JobID != nil {
 		attempt.ID = ""
 	}

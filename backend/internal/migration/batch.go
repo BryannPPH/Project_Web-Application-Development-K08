@@ -104,13 +104,13 @@ func (e *PGExecutor) executeBatchUp(ctx context.Context, connection targetdb.Con
 			cancel()
 			return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "up", "could not start batch transaction", err)
 		}
-		rowsAffected, err := executeScopedBatch(selectCtx, tx, plan.SQLSnapshot, column, cursorStart, cursorEnd, keys)
+		rowsAffected, executedSQL, err := executeScopedBatch(selectCtx, tx, plan.SQLSnapshot, column, cursorStart, cursorEnd, keys)
 		if err != nil {
 			_ = tx.Rollback(context.WithoutCancel(ctx))
 			cancel()
 			batchNumber := batchNumber + 1
 			return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "up", "batch SQL failed", err,
-				BatchFailureEvent{QuerySQL: plan.SQLSnapshot, QueryParameters: []int64{cursorStart, cursorEnd},
+				BatchFailureEvent{QuerySQL: executedSQL, QueryParameters: []int64{cursorStart, cursorEnd},
 					BatchNumber: &batchNumber, CursorStart: &cursorStart, CursorEnd: &cursorEnd})
 		}
 		batchNumber++
@@ -121,7 +121,7 @@ func (e *PGExecutor) executeBatchUp(ctx context.Context, connection targetdb.Con
 			_ = tx.Rollback(context.WithoutCancel(ctx))
 			cancel()
 			return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "up", "could not save batch checkpoint", err,
-				BatchFailureEvent{QuerySQL: plan.SQLSnapshot, QueryParameters: []int64{cursorStart, cursorEnd},
+				BatchFailureEvent{QuerySQL: executedSQL, QueryParameters: []int64{cursorStart, cursorEnd},
 					BatchNumber: &batchNumber, CursorStart: &cursorStart, CursorEnd: &cursorEnd})
 		}
 		commitErr := tx.Commit(selectCtx)
@@ -132,13 +132,13 @@ func (e *PGExecutor) executeBatchUp(ctx context.Context, connection targetdb.Con
 				return ExecutionResult{Status: StatusInterrupted,
 					PublicError:   stringPtr("batch commit outcome is uncertain; inspect the target checkpoint before resuming"),
 					InternalError: errors.Join(commitErr, checkErr), BatchFailure: &BatchFailureEvent{
-						QuerySQL: plan.SQLSnapshot, QueryParameters: []int64{cursorStart, cursorEnd},
+						QuerySQL: executedSQL, QueryParameters: []int64{cursorStart, cursorEnd},
 						BatchNumber: &batchNumber, CursorStart: &cursorStart, CursorEnd: &cursorEnd,
 					}}
 			}
 			if !committed {
 				return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "up", "batch transaction did not commit", commitErr,
-					BatchFailureEvent{QuerySQL: plan.SQLSnapshot, QueryParameters: []int64{cursorStart, cursorEnd},
+					BatchFailureEvent{QuerySQL: executedSQL, QueryParameters: []int64{cursorStart, cursorEnd},
 						BatchNumber: &batchNumber, CursorStart: &cursorStart, CursorEnd: &cursorEnd})
 			}
 		}
@@ -146,13 +146,13 @@ func (e *PGExecutor) executeBatchUp(ctx context.Context, connection targetdb.Con
 			"database_id", databaseID, "migration_id", plan.Entry.ID, "execution_id", executionID,
 			"actor", plan.ActorUsername, "revision", plan.Entry.Revision,
 			"batch", batchNumber, "cursor_start", cursorStart, "cursor_end", cursorEnd,
-			"rows_affected", rowsAffected, "query", redactSQLForLog(plan.SQLSnapshot),
+			"rows_affected", rowsAffected, "query", redactSQLForLog(executedSQL),
 			"parameters", []int64{cursorStart, cursorEnd}}
 		logFields = append(logFields, batchActivityFields(batchCtx)...)
 		e.logger.InfoContext(batchCtx, "migration batch committed", logFields...)
 		if report != nil {
 			if err := report(BatchCommitEvent{Operation: "up", BatchNumber: batchNumber, CursorStart: cursorStart,
-				CursorEnd: cursorEnd, RowsAffected: rowsAffected, QuerySQL: plan.SQLSnapshot}); err != nil {
+				CursorEnd: cursorEnd, RowsAffected: rowsAffected, QuerySQL: executedSQL}); err != nil {
 				e.logger.ErrorContext(ctx, "record committed batch in platform history", "event", "migration_batch_history_record_failed",
 					"execution_id", executionID, "batch", batchNumber, "error", safeError(err))
 			}
@@ -206,11 +206,11 @@ func (e *PGExecutor) executeBatchRollback(ctx context.Context, connection target
 		if err != nil {
 			return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "down", "could not start rollback batch transaction", err)
 		}
-		rowsAffected, err := executeScopedBatch(batchCtx, tx, plan.SQLSnapshot, column, cursorStart, cursorEnd, keys)
+		rowsAffected, executedSQL, err := executeScopedBatch(batchCtx, tx, plan.SQLSnapshot, column, cursorStart, cursorEnd, keys)
 		if err != nil {
 			_ = tx.Rollback(context.WithoutCancel(ctx))
 			return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "down", "rollback batch SQL failed", err,
-				BatchFailureEvent{QuerySQL: plan.SQLSnapshot, QueryParameters: []int64{cursorStart, cursorEnd},
+				BatchFailureEvent{QuerySQL: executedSQL, QueryParameters: []int64{cursorStart, cursorEnd},
 					BatchNumber: &batchNumber, CursorStart: &cursorStart, CursorEnd: &cursorEnd})
 		}
 		if _, err := tx.Exec(batchCtx, `INSERT INTO dbmp_migration_batch_checkpoints
@@ -219,7 +219,7 @@ func (e *PGExecutor) executeBatchRollback(ctx context.Context, connection target
 			rootID, executionID, batchNumber, cursorStart, cursorEnd, rowsAffected, time.Now().UTC()); err != nil {
 			_ = tx.Rollback(context.WithoutCancel(ctx))
 			return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "down", "could not save rollback checkpoint", err,
-				BatchFailureEvent{QuerySQL: plan.SQLSnapshot, QueryParameters: []int64{cursorStart, cursorEnd},
+				BatchFailureEvent{QuerySQL: executedSQL, QueryParameters: []int64{cursorStart, cursorEnd},
 					BatchNumber: &batchNumber, CursorStart: &cursorStart, CursorEnd: &cursorEnd})
 		}
 		if err := tx.Commit(batchCtx); err != nil {
@@ -228,13 +228,13 @@ func (e *PGExecutor) executeBatchRollback(ctx context.Context, connection target
 				return ExecutionResult{Status: StatusInterrupted,
 					PublicError:   stringPtr("rollback batch commit outcome is uncertain"),
 					InternalError: errors.Join(err, checkErr), BatchFailure: &BatchFailureEvent{
-						QuerySQL: plan.SQLSnapshot, QueryParameters: []int64{cursorStart, cursorEnd},
+						QuerySQL: executedSQL, QueryParameters: []int64{cursorStart, cursorEnd},
 						BatchNumber: &batchNumber, CursorStart: &cursorStart, CursorEnd: &cursorEnd,
 					}}
 			}
 			if !committed {
 				return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "down", "rollback batch transaction did not commit", err,
-					BatchFailureEvent{QuerySQL: plan.SQLSnapshot, QueryParameters: []int64{cursorStart, cursorEnd},
+					BatchFailureEvent{QuerySQL: executedSQL, QueryParameters: []int64{cursorStart, cursorEnd},
 						BatchNumber: &batchNumber, CursorStart: &cursorStart, CursorEnd: &cursorEnd})
 			}
 		}
@@ -242,13 +242,13 @@ func (e *PGExecutor) executeBatchRollback(ctx context.Context, connection target
 			"database_id", databaseID, "migration_id", plan.Entry.ID, "execution_id", executionID,
 			"actor", plan.ActorUsername, "revision", plan.Entry.Revision,
 			"batch", batchNumber, "cursor_start", cursorStart, "cursor_end", cursorEnd,
-			"rows_affected", rowsAffected, "query", redactSQLForLog(plan.SQLSnapshot),
+			"rows_affected", rowsAffected, "query", redactSQLForLog(executedSQL),
 			"parameters", []int64{cursorStart, cursorEnd}}
 		logFields = append(logFields, batchActivityFields(batchCtx)...)
 		e.logger.InfoContext(batchCtx, "migration rollback batch committed", logFields...)
 		if report != nil {
 			if err := report(BatchCommitEvent{Operation: "down", BatchNumber: batchNumber, CursorStart: cursorStart,
-				CursorEnd: cursorEnd, RowsAffected: rowsAffected, QuerySQL: plan.SQLSnapshot}); err != nil {
+				CursorEnd: cursorEnd, RowsAffected: rowsAffected, QuerySQL: executedSQL}); err != nil {
 				e.logger.ErrorContext(ctx, "record reverted batch in platform history", "event", "migration_batch_history_record_failed",
 					"execution_id", executionID, "batch", batchNumber, "error", safeError(err))
 			}

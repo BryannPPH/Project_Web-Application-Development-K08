@@ -90,7 +90,12 @@ func (e *PGExecutor) Execute(ctx context.Context, databaseID, sqlText string) Ex
 		return ExecutionResult{Status: StatusFailed, PublicError: &message, InternalError: fmt.Errorf("begin target transaction: %w", err)}
 	}
 
-	if _, err := tx.ExecScript(ctx, sqlText); err != nil {
+	_, err = tx.ExecScript(ctx, sqlText)
+	executionID := targetdb.ActivityFromContext(ctx).ExecutionID
+	if err == nil && executionID != "" && hasLockedPostgreSQLTarget(ctx) {
+		err = markTargetCommitted(ctx, tx, executionID)
+	}
+	if err != nil {
 		public := sanitizeTargetError(err)
 		rollbackCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
