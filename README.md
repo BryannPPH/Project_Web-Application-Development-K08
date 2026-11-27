@@ -58,7 +58,6 @@ Cuplikan tampilan aplikasi DB Manager.
 │       └── styles/                 # Style global dan token tampilan
 ├── compose.yml                     # Seluruh service untuk development lokal
 ├── Makefile                        # Shortcut command development dan testing
-├── testing.md                      # Panduan pengujian Milestone 2
 └── .env.example                    # Contoh konfigurasi lokal
 ```
 
