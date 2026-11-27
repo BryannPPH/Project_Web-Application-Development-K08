@@ -2,8 +2,7 @@ name: wbd-k08
 
 x-backend-image: &backend-image
   image: wbd-k08-backend:local
-  build:
-    context: ./backend
+  pull_policy: never
 
 x-backend-environment: &backend-environment
   APP_ENV: ${APP_ENV:-development}
@@ -90,6 +89,9 @@ services:
 
   migrate:
     <<: *backend-image
+    # Build the shared image once. API, worker, and bootstrap all depend on migrate.
+    build:
+      context: ./backend
     command: ["/usr/local/bin/migrate", "up"]
     environment: *backend-environment
     depends_on:
