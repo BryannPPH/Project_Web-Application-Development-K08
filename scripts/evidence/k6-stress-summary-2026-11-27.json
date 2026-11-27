@@ -1,0 +1,203 @@
+{
+    "metrics": {
+        "http_req_duration": {
+            "avg": 3.9424915645721623,
+            "med": 2.535104,
+            "p(95)": 10.887496049999994,
+            "max": 156.88875
+        },
+        "api_latency_ms{kind:enqueue}": {
+            "avg": 3.4667547584513123,
+            "med": 2.41425,
+            "p(95)": 8.86475,
+            "max": 77.236291,
+            "thresholds": {
+                "p(95)<1000": false
+            }
+        },
+        "migration_jobs_accepted": {
+            "count": 3461,
+            "rate": 6.402495764497758
+        },
+        "data_sent": {
+            "count": 5100857,
+            "rate": 9436.063374114054
+        },
+        "iterations": {
+            "rate": 6.402495764497758,
+            "count": 3461
+        },
+        "http_req_duration{expected_response:true}": {
+            "avg": 3.9424915645721623,
+            "med": 2.535104,
+            "p(95)": 10.887496049999994,
+            "max": 156.88875
+        },
+        "job_duration_ms": {
+            "p(95)": 66,
+            "max": 273,
+            "avg": 26.91563132042762,
+            "med": 20,
+            "thresholds": {
+                "p(95)<60000": false
+            }
+        },
+        "api_latency_ms": {
+            "avg": 3.9424915645721623,
+            "med": 2.535104,
+            "p(95)": 10.887496049999994,
+            "max": 156.88875,
+            "thresholds": {
+                "p(95)<1000": false
+            }
+        },
+        "data_received": {
+            "count": 14105838,
+            "rate": 26094.356558708903
+        },
+        "iteration_duration": {
+            "avg": 2019.5623760002884,
+            "med": 2014.964251,
+            "p(95)": 2045.349501,
+            "max": 2213.920584
+        },
+        "api_requests": {
+            "count": 13814,
+            "rate": 25.554486128509687
+        },
+        "http_req_receiving": {
+            "p(95)": 0.19866635000000002,
+            "max": 9.639333,
+            "avg": 0.07600934660489364,
+            "med": 0.041917
+        },
+        "job_end_to_end_ms": {
+            "avg": 511.9959549263219,
+            "med": 517,
+            "p(95)": 980,
+            "max": 1262
+        },
+        "http_req_waiting": {
+            "med": 2.448521,
+            "p(95)": 10.589181349999995,
+            "max": 156.731584,
+            "avg": 3.818305295642099
+        },
+        "checks": {
+            "passes": 10383,
+            "fails": 0,
+            "value": 1
+        },
+        "queue_wait_ms": {
+            "avg": 485.08032360589425,
+            "med": 491,
+            "p(95)": 946,
+            "max": 1152,
+            "thresholds": {
+                "p(95)<5000": false
+            }
+        },
+        "http_req_sending": {
+            "avg": 0.048176922325177125,
+            "med": 0.012625,
+            "p(95)": 0.121667,
+            "max": 22.7615
+        },
+        "api_error_rate": {
+            "passes": 0,
+            "fails": 13814,
+            "thresholds": {
+                "rate<0.02": false
+            },
+            "value": 0
+        },
+        "http_req_tls_handshaking": {
+            "avg": 0,
+            "med": 0,
+            "p(95)": 0,
+            "max": 0
+        },
+        "http_reqs": {
+            "count": 13814,
+            "rate": 25.554486128509687
+        },
+        "vus": {
+            "min": 1,
+            "max": 30,
+            "value": 1
+        },
+        "http_req_failed": {
+            "fails": 13814,
+            "passes": 0,
+            "thresholds": {
+                "rate<0.02": false
+            },
+            "value": 0
+        },
+        "migration_case_manifest_exhausted": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count<1": false
+            }
+        },
+        "vus_max": {
+            "min": 30,
+            "max": 30,
+            "value": 30
+        },
+        "migration_jobs_completed": {
+            "count": 3461,
+            "rate": 6.402495764497758
+        },
+        "http_req_blocked": {
+            "avg": 0.022956933690458856,
+            "med": 0.003042,
+            "p(95)": 0.055583350000000004,
+            "max": 19.215458
+        },
+        "http_req_connecting": {
+            "avg": 0.0018761793832343997,
+            "med": 0,
+            "p(95)": 0,
+            "max": 4.167541
+        },
+        "job_execution_error_rate": {
+            "fails": 3461,
+            "passes": 0,
+            "thresholds": {
+                "rate<0.05": false
+            },
+            "value": 0
+        }
+    },
+    "root_group": {
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {},
+        "checks": {
+                "migration list is readable": {
+                    "name": "migration list is readable",
+                    "path": "::migration list is readable",
+                    "id": "0d9f5b9aa7e16a70ca8133c40db14e5d",
+                    "passes": 3461,
+                    "fails": 0
+                },
+                "migration job accepted (202)": {
+                    "name": "migration job accepted (202)",
+                    "path": "::migration job accepted (202)",
+                    "id": "f3bcf235b841141cc4fc0585614f9bc0",
+                    "passes": 3461,
+                    "fails": 0
+                },
+                "migration execution succeeded": {
+                    "name": "migration execution succeeded",
+                    "path": "::migration execution succeeded",
+                    "id": "df7ff043407c2d87cc7c0b0ff32d50bb",
+                    "passes": 3461,
+                    "fails": 0
+                }
+            }
+    }
+}

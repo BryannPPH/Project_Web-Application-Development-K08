@@ -26,8 +26,10 @@ const origin = __ENV.DBMP_ORIGIN || 'http://localhost:5173';
 const pollIntervalSeconds = Number(__ENV.DBMP_POLL_INTERVAL_SECONDS || 2);
 const maxPolls = Number(__ENV.DBMP_MAX_POLLS || 180);
 const gracefulRampDownSeconds = maxPolls * pollIntervalSeconds + 10;
+const smoke = __ENV.DBMP_K6_SMOKE === '1';
 
 function loadStage() {
+  if (smoke) return 'smoke';
   const elapsed = exec.instance.currentTestRunDuration;
   if (elapsed < 60000) return 'baseline_1_vu';
   if (elapsed < 180000) return 'ramp_to_10_vu';
@@ -39,7 +41,12 @@ function loadStage() {
 
 export const options = {
   scenarios: {
-    queue_ramp: {
+    migration_queue: smoke ? {
+      executor: 'shared-iterations',
+      vus: 2,
+      iterations: cases.length,
+      maxDuration: '1m',
+    } : {
       executor: 'ramping-vus',
       startVUs: 1,
       stages: [
@@ -52,6 +59,7 @@ export const options = {
       gracefulRampDown: `${gracefulRampDownSeconds}s`,
     },
   },
+  summaryTrendStats: ['avg', 'med', 'p(95)', 'max'],
   thresholds: {
     api_latency_ms: [`p(95)<${__ENV.K6_P95_API_MS || 1000}`],
     'api_latency_ms{kind:enqueue}': [`p(95)<${__ENV.K6_P95_API_MS || 1000}`],
@@ -104,7 +112,9 @@ function waitForPredecessor(testCase, databasePath) {
       sleep(pollIntervalSeconds);
       continue;
     }
-    if (predecessor.status === 'succeeded') return true;
+    // Once the predecessor is running, the next job can queue behind it.
+    // The worker claims jobs in arrival order on the same database.
+    if (predecessor.status === 'running' || predecessor.status === 'succeeded') return true;
     if (terminalStatuses.has(predecessor.status)) {
       jobExecutionErrorRate.add(true, { stage: loadStage() });
       check(predecessor, { 'predecessor migration succeeded': (value) => value.status === 'succeeded' });
@@ -204,7 +214,7 @@ export default function () {
       continue;
     }
 
-    jobsCompleted.add(1, { status: job.status, stage: jobStage });
+    jobsCompleted.add(1, { status: job.status, stage: loadStage() });
     const succeeded = job.status === 'succeeded';
     jobExecutionErrorRate.add(!succeeded, { stage: jobStage });
     if (job.createdAt && job.startedAt) {
