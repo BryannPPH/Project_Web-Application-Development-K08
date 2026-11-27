@@ -200,6 +200,17 @@ function MigrationDetail({ create }: { create: boolean }) {
       {jobId ? <JobStatusPanel error={job.isError ? job.error : null} job={job.data} loading={job.isPending} /> : null}
       {batchProgress.data ? <BatchProgressPanel action={job.data?.action} progress={batchProgress.data} /> : null}
       {entry ? <MigrationResult entry={entry} failedAction={job.data?.status === 'failed' ? job.data.action : undefined} transactionalDdl={transactionalDdl} /> : null}
+      {entry?.reconciledAt && entry.status !== 'reconciled' ? (
+        <StatusMessage tone="info">
+          Hasil transaksi dikonfirmasi melalui jurnal target pada {displayTime(entry.reconciledAt)}.
+          {entry.reconciliationNote ? ` ${entry.reconciliationNote}` : ''}
+        </StatusMessage>
+      ) : null}
+      {entry?.rollbackBlockedByVersion != null ? (
+        <StatusMessage tone="info">
+          Rollback v{entry.version} tertahan oleh v{entry.rollbackBlockedByVersion}. Selesaikan atau rollback versi tersebut lebih dulu.
+        </StatusMessage>
+      ) : null}
       {entry && !pending && entry.isActive !== false && (entry.status === 'succeeded' || entry.status === 'partially_reverted') && entry.downSql == null ? (
         <StatusMessage tone="info">
           Migration ini tidak punya Down SQL, jadi tidak dapat di-rollback.

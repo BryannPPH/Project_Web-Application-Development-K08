@@ -60,7 +60,7 @@ const resumeForward: PendingAction = {
  * menentukan tombol dan approval mana yang ditampilkan.
  */
 type ActionState = Pick<MigrationEntry, 'status'> &
-  Partial<Pick<MigrationEntry, 'isActive' | 'downSql' | 'irreversibleReason' | 'executionMode' | 'partialAction'>>
+  Partial<Pick<MigrationEntry, 'isActive' | 'downSql' | 'irreversibleReason' | 'executionMode' | 'partialAction' | 'rollbackBlockedByVersion'>>
 
 export function nextAction(entry: ActionState): PendingAction | null {
   return availableActions(entry)[0] ?? null
@@ -69,6 +69,7 @@ export function nextAction(entry: ActionState): PendingAction | null {
 export function availableActions(
   entry: ActionState,
 ): PendingAction[] {
+  const reversible = entry.downSql != null && entry.irreversibleReason == null && entry.rollbackBlockedByVersion == null
   switch (entry.status) {
     case 'draft':
       return [apply]
@@ -76,15 +77,15 @@ export function availableActions(
       return [retry]
     case 'partial': {
       const resume = entry.partialAction === 'forward' ? resumeForward : retry
-      return entry.executionMode === 'batch' && entry.downSql != null && entry.irreversibleReason == null
+      return entry.executionMode === 'batch' && reversible
         ? [resume, rollback]
         : [resume]
     }
     case 'succeeded':
       // Tanpa down SQL (atau ditandai irreversible) rollback memang ditolak backend.
-      return entry.isActive !== false && entry.downSql != null && entry.irreversibleReason == null ? [rollback] : []
+      return entry.isActive !== false && reversible ? [rollback] : []
     case 'partially_reverted':
-      return entry.downSql != null && entry.irreversibleReason == null ? [rollback] : []
+      return reversible ? [rollback] : []
     case 'rolled_back':
       return [forward]
     default:

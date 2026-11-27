@@ -36,6 +36,7 @@ export interface MigrationEntry {
   canReconcile: boolean
   /** Milestone 2 (Person B). Opsional supaya payload lama tetap valid. */
   isActive?: boolean
+  rollbackBlockedByVersion?: number
   executionMode?: ExecutionMode
   latestExecutionId?: string | null
   latestJobId?: string | null

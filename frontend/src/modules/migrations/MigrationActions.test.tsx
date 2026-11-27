@@ -316,3 +316,13 @@ it('menampilkan detail job yang ditolak sebelum SQL tanpa membuat snapshot palsu
   expect(screen.getByText('an earlier migration blocks this job')).toBeInTheDocument()
   expect(screen.queryByRole('heading', { name: 'Snapshot Up SQL' })).not.toBeInTheDocument()
 })
+
+it('menunjukkan versi pemblokir dan menyembunyikan rollback untuk versi aktif yang lebih lama', async () => {
+  renderDetail(migrationEntry({
+    status: 'succeeded', version: 4, isActive: true, downSql: 'DROP TABLE widgets',
+    rollbackBlockedByVersion: 6,
+  }), {})
+
+  expect(await screen.findByText(/Rollback v4 tertahan oleh v6/)).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Rollback v4' })).not.toBeInTheDocument()
+})
