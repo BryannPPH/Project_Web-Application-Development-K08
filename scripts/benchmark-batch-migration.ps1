@@ -24,7 +24,7 @@ if (-not $ConfirmTestDatabase) {
 if (-not $ConfirmManagedTargetMatchesConnection) {
     throw 'Verify the psql connection is the same target configured by DatabaseId, then pass -ConfirmManagedTargetMatchesConnection.'
 }
-foreach ($required in @{
+$requiredEnvironment = @{
     TARGET_DATABASE_URL = $ConnectionString
     DBMP_API_BASE_URL = $ApiBaseUrl
     DBMP_DATABASE_ID = $DatabaseId
@@ -32,7 +32,8 @@ foreach ($required in @{
     DBMP_SESSION_COOKIE = $SessionCookie
     DBMP_CSRF_TOKEN = $CsrfToken
     DBMP_ORIGIN = $Origin
-}) {
+}
+foreach ($required in $requiredEnvironment.GetEnumerator()) {
     if ([string]::IsNullOrWhiteSpace($required.Value)) {
         throw "Set $($required.Key) or pass its corresponding parameter."
     }
@@ -45,14 +46,11 @@ if ($InitialRows -lt 1 -or $BatchSize -lt 1 -or $MaximumRows -lt $InitialRows) {
 }
 
 $psqlCommand = Get-Command psql -ErrorAction Stop
-$hadPgDatabase = Test-Path Env:PGDATABASE
-$previousPgDatabase = $env:PGDATABASE
-$env:PGDATABASE = $ConnectionString
 $tableCreated = $false
 
 function Invoke-Psql {
     param([string[]]$Arguments)
-    $output = & $psqlCommand.Source -w -X -v ON_ERROR_STOP=1 @Arguments
+    $output = & $psqlCommand.Source -w -X -v ON_ERROR_STOP=1 -d $ConnectionString @Arguments
     if ($LASTEXITCODE -ne 0) {
         throw 'psql failed. Check that the dedicated PostgreSQL target is reachable and credentials are valid.'
     }
@@ -76,6 +74,24 @@ function Invoke-Api {
         [hashtable]$Headers = @{}
     )
     return Invoke-RestMethod -Uri $Uri -Method $Method -Headers $Headers -TimeoutSec 30
+}
+
+function ConvertTo-UtcDateTime {
+    param([Parameter(Mandatory = $true)][object]$Value)
+
+    if ($Value -is [DateTimeOffset]) {
+        return $Value.UtcDateTime
+    }
+    if ($Value -is [DateTime]) {
+        return $Value.ToUniversalTime()
+    }
+
+    $parsed = [DateTimeOffset]::MinValue
+    $styles = [Globalization.DateTimeStyles]::AssumeUniversal -bor [Globalization.DateTimeStyles]::AdjustToUniversal
+    if ([DateTimeOffset]::TryParse([string]$Value, [Globalization.CultureInfo]::InvariantCulture, $styles, [ref]$parsed)) {
+        return $parsed.UtcDateTime
+    }
+    throw "Could not parse API timestamp '$Value'."
 }
 
 $evidence = $null
@@ -115,8 +131,7 @@ try {
     $actionUri = "$apiRoot/api/v1/databases/$DatabaseId/migrations/$MigrationId/execute"
     $headers['Idempotency-Key'] = [Guid]::NewGuid().ToString()
     $applicationStopwatch = [Diagnostics.Stopwatch]::StartNew()
-    $responseHeaders = $null
-    $queued = Invoke-WebRequest -Uri $actionUri -Method Post -Headers $headers -ContentType 'application/json' -Body '' -ResponseHeadersVariable responseHeaders
+    $queued = Invoke-WebRequest -Uri $actionUri -Method Post -Headers $headers -ContentType 'application/json' -Body ''
     if ($queued.StatusCode -ne 202) {
         throw "Migration enqueue returned HTTP $($queued.StatusCode); expected 202 Accepted."
     }
@@ -124,7 +139,11 @@ try {
     if ([string]::IsNullOrWhiteSpace($job.jobId)) {
         throw 'Accepted response did not contain a jobId.'
     }
-    $jobLocation = [string]$responseHeaders.Location
+    $jobLocationHeader = $queued.Headers['Location']
+    if ($jobLocationHeader -is [System.Array]) {
+        $jobLocationHeader = $jobLocationHeader[0]
+    }
+    $jobLocation = [string]$jobLocationHeader
     if ([string]::IsNullOrWhiteSpace($jobLocation)) {
         throw 'Accepted response did not contain a Location header.'
     }
@@ -153,8 +172,9 @@ try {
     if ($counts.Count -ne 3 -or $counts[0] -ne $rowCount -or $counts[1] -ne $rowCount -or $counts[2] -ne 0) {
         throw "Application batch result did not match the baseline fixture: '$verification'."
     }
-    $executionDurationMilliseconds = ([DateTime]::Parse($completedMigration.finishedAt).ToUniversalTime() -
-        [DateTime]::Parse($completedMigration.startedAt).ToUniversalTime()).TotalMilliseconds
+    $finishedAtUtc = ConvertTo-UtcDateTime $completedMigration.finishedAt
+    $startedAtUtc = ConvertTo-UtcDateTime $completedMigration.startedAt
+    $executionDurationMilliseconds = ($finishedAtUtc - $startedAtUtc).TotalMilliseconds
 
     $evidence = [pscustomobject]@{
         environment = $EnvironmentLabel
@@ -187,11 +207,5 @@ finally {
         catch {
             Write-Warning "Benchmark fixture cleanup failed for table '$TableName'. Review the dedicated test database."
         }
-    }
-    if ($hadPgDatabase) {
-        $env:PGDATABASE = $previousPgDatabase
-    }
-    else {
-        Remove-Item Env:PGDATABASE -ErrorAction SilentlyContinue
     }
 }
