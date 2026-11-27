@@ -348,7 +348,7 @@ Setiap managed database memiliki urutan migration linear dengan status:
 | `succeeded` | Seluruh SQL berhasil diterapkan; jaminan transaksi bergantung pada engine dan jenis SQL |
 | `failed` | SQL transaksional gagal dan perubahan di-rollback |
 | `partial` | Batch tertentu sudah commit sebelum eksekusi berhenti; migration belum aktif dan dapat dilanjutkan atau di-rollback setelah approval |
-| `partially_reverted` | Sebagian batch `down` sudah commit; migration tetap aktif sampai rollback selesai |
+| `partially_reverted` | Sebagian batch `down` sudah commit; posisi aktif sebelum rollback tetap dipertahankan |
 | `rolled_back` | Seluruh perubahan migration dibatalkan melalui Down SQL |
 | `interrupted` | Hasil tidak pasti dan membutuhkan rekonsiliasi manual |
 | `needs_reconciliation` | DDL non-transaksional gagal atau hasil eksekusi/checkpoint tidak pasti; periksa target sebelum migration berikutnya |
@@ -395,6 +395,8 @@ Tidak ada SQL yang dijalankan ulang otomatis oleh recovery.
 Saat koneksi PostgreSQL platform milik worker berakhir, PostgreSQL melepas
 advisory lock sesi. Setelah lease kedaluwarsa, worker pengganti harus mengambil
 lock tersebut sebelum memeriksa attempt dan checkpoint.
+Untuk target PostgreSQL, sesi SQL juga memegang lock pada database fisik.
+Beberapa managed connection ke target yang sama memakai lock itu bersama.
 [Detail pemulihan worker](backend/internal/migration/README.md).
 
 Benchmark batch wajib memakai database PostgreSQL khusus pengujian. Siapkan
@@ -419,6 +421,17 @@ tidak memuat credential tersimpan di
 [`scripts/evidence/batch-benchmark-local-2026-11-26.json`](scripts/evidence/batch-benchmark-local-2026-11-26.json).
 Angka ini hasil satu run pada environment lokal tersebut, bukan jaminan performa
 di environment lain.
+
+Verifikasi akhir memakai script benchmark repo melalui API dan worker. Pada dataset
+2.000.000 baris, UPDATE tanpa batch memakan **8,96 detik**. Migration batch
+berstatus `succeeded` dalam **14,51 detik** dan memverifikasi seluruh baris
+dalam 200 batch. [Bukti benchmark akhir](scripts/evidence/batch-benchmark-milestone2-final-2026-11-27.json).
+
+Worker memeriksa ulang akses edit dan approval seluruh leader setelah memperoleh
+lock target. Untuk PostgreSQL non-batch, bukti commit disimpan atomik dengan
+perubahan target. Koneksi lain ke target yang sama tertahan selama outcome
+masih belum pasti. Di SPA, detail versi yang belum boleh di-rollback menunjukkan
+versi yang menghalangi. [Detail pemulihan dan hak akses jurnal](backend/internal/migration/README.md#queue-dan-worker).
 
 ## Approval Migration (Milestone 2)
 
@@ -541,6 +554,36 @@ Bukti tersimpan dalam [hasil per tahap](scripts/evidence/k6-stress-local-2026-11
 dan [ringkasan k6](scripts/evidence/k6-stress-summary-2026-11-27.json).
 Hasil ini berasal dari working tree lokal berbasis commit `49c637e`. SHA-256
 script yang dijalankan tercatat di hasil per tahap.
+
+
+#### Verifikasi ulang akhir Milestone 2
+
+Run kedua pada 27 November 2026, pukul **18.48–18.57 WIB**, memakai 30 database
+PostgreSQL tes dan baseline 1 VU. Seluruh **3.403 job diterima dan selesai
+`succeeded`**. API mencatat 13.609 request pada 25,20 request/detik, p50/p95 API
+**2,98/13,09 ms**, error rate **0%**, p95 antrean **944 ms**, dan p95 durasi job
+**66 ms**. Throughput penyelesaian mencapai **6,30 job/detik**. Seluruh threshold
+lulus (`p95 API < 1.000 ms`, error API `< 2%`).
+
+| Tahap | VU | p50/p95 API (ms) | Request/detik | Error API | Queue p95 (ms) | Job p95 (ms) | Diterima / selesai | Job/detik | Analisis |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| Baseline | 1 | 5,21 / 11,67 | 1,48 | 0% | 849,00 | 68,55 | 30 / 29 | 0,48 | Beban normal menghasilkan sekitar 1,48 request/detik. |
+| Ramp naik | 1 → 10 | 3,34 / 19,35 | 9,90 | 0% | 925,00 | 183,00 | 299 / 291 | 2,42 | Throughput API naik dan waktu tunggu queue bertambah. |
+| Ramp ke puncak | 10 → 30 | 2,71 / 8,39 | 38,84 | 0% | 933,00 | 38,00 | 1753 / 1733 | 9,63 | P95 API dan queue tetap di bawah threshold pada puncak. |
+| Ramp turun | 30 → 10 | 3,34 / 29,44 | 38,97 | 0% | 978,00 | 98,45 | 1158 / 1176 | 9,80 | Job selesai lebih banyak daripada job baru yang diterima pada tahap ini. |
+| Ramp ke nol | 10 → 0 | 3,18 / 9,71 | 11,05 | 0% | 943,90 | 42,00 | 163 / 173 | 2,88 | Selisih kumulatif tinggal satu job pada akhir tahap. |
+| Drain | 0 | 5,82 / 5,82 | — | 0% | — | — | 0 / 1 | — | Polling terakhir mengonfirmasi job terakhir selesai. |
+
+Stress test penuh selesai pada build yang sudah memuat revalidasi approval,
+jurnal target, dan perlindungan lintas koneksi. Sesudah skema rekonsiliasi
+akhir diterapkan, smoke test menjalankan empat job tambahan dengan hasil sukses.
+
+[Bukti per tahap](scripts/evidence/k6-stress-milestone2-final-2026-11-27.json) dan [ringkasan k6](scripts/evidence/k6-summary-milestone2-final-2026-11-27.json).
+
+[Ringkasan verifikasi akhir Milestone 2](scripts/evidence/milestone2-final-verification-2026-11-27.json)
+mencakup tes backend, SPA desktop/mobile, benchmark, k6, dan observability.
+[Bukti dan triase CodeQL akhir](.github/codeql-evidence/milestone2-final-triage-2026-11-27.json)
+dapat dibaca bersama hasil SARIF.
 
 ## Command Makefile
 
