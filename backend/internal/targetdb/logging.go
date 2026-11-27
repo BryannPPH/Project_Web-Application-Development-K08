@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log/slog"
 	"reflect"
-	"regexp"
 	"sync"
 	"time"
 
@@ -89,30 +88,33 @@ type loggingConnection struct {
 }
 
 func (c *loggingConnection) Query(ctx context.Context, query string, args ...any) (Rows, error) {
-	ctx, span, started := startQuery(ctx, c.logger, c.databaseID, "query", query, args)
+	statement := redactSQLStatement(query, c.Connection.Engine())
+	ctx, span, started := startQuery(ctx, c.logger, c.databaseID, "query", statement, args)
 	rows, err := c.Connection.Query(ctx, query, args...)
 	if err != nil {
-		finishQuery(ctx, c.logger, c.databaseID, "query", query, args, started, 0, err, span)
+		finishQuery(ctx, c.logger, c.databaseID, "query", statement, args, started, 0, err, span)
 		return nil, err
 	}
 	return &loggingRows{Rows: rows, ctx: ctx, databaseID: c.databaseID, logger: c.logger,
-		query: query, args: args, started: started, span: span}, nil
+		statement: statement, args: args, started: started, span: span}, nil
 }
 
 func (c *loggingConnection) QueryRow(ctx context.Context, query string, args ...any) Row {
-	ctx, span, started := startQuery(ctx, c.logger, c.databaseID, "query_row", query, args)
+	statement := redactSQLStatement(query, c.Connection.Engine())
+	ctx, span, started := startQuery(ctx, c.logger, c.databaseID, "query_row", statement, args)
 	return &loggingRow{Row: c.Connection.QueryRow(ctx, query, args...), ctx: ctx, databaseID: c.databaseID,
-		logger: c.logger, query: query, args: args, started: started, span: span}
+		logger: c.logger, statement: statement, args: args, started: started, span: span}
 }
 
 func (c *loggingConnection) Exec(ctx context.Context, query string, args ...any) (CommandResult, error) {
-	ctx, span, started := startQuery(ctx, c.logger, c.databaseID, "exec", query, args)
+	statement := redactSQLStatement(query, c.Connection.Engine())
+	ctx, span, started := startQuery(ctx, c.logger, c.databaseID, "exec", statement, args)
 	result, err := c.Connection.Exec(ctx, query, args...)
 	var affected int64
 	if result != nil {
 		affected = result.RowsAffected()
 	}
-	finishQuery(ctx, c.logger, c.databaseID, "exec", query, args, started, affected, err, span)
+	finishQuery(ctx, c.logger, c.databaseID, "exec", statement, args, started, affected, err, span)
 	return result, err
 }
 
@@ -156,13 +158,14 @@ func (tx *loggingTransaction) Exec(ctx context.Context, query string, args ...an
 }
 
 func (tx *loggingTransaction) ExecScript(ctx context.Context, query string) (CommandResult, error) {
-	ctx, span, started := startQuery(ctx, tx.logger, tx.databaseID, "exec_script", query, nil)
+	statement := redactSQLStatement(query, tx.engine)
+	ctx, span, started := startQuery(ctx, tx.logger, tx.databaseID, "exec_script", statement, nil)
 	result, err := tx.Transaction.ExecScript(ctx, query)
 	var affected int64
 	if result != nil {
 		affected = result.RowsAffected()
 	}
-	finishQuery(ctx, tx.logger, tx.databaseID, "exec_script", query, nil, started, affected, err, span)
+	finishQuery(ctx, tx.logger, tx.databaseID, "exec_script", statement, nil, started, affected, err, span)
 	return result, err
 }
 
@@ -206,7 +209,7 @@ type loggingRows struct {
 	ctx        context.Context
 	databaseID string
 	logger     *slog.Logger
-	query      string
+	statement  string
 	args       []any
 	started    time.Time
 	span       trace.Span
@@ -246,7 +249,7 @@ func (r *loggingRows) Err() error {
 
 func (r *loggingRows) finish(err error) {
 	r.once.Do(func() {
-		finishQuery(r.ctx, r.logger, r.databaseID, "query", r.query, r.args, r.started, r.count, err, r.span)
+		finishQuery(r.ctx, r.logger, r.databaseID, "query", r.statement, r.args, r.started, r.count, err, r.span)
 	})
 }
 
@@ -255,7 +258,7 @@ type loggingRow struct {
 	ctx        context.Context
 	databaseID string
 	logger     *slog.Logger
-	query      string
+	statement  string
 	args       []any
 	started    time.Time
 	span       trace.Span
@@ -268,31 +271,31 @@ func (r *loggingRow) Scan(dest ...any) error {
 		rows = 0
 	}
 	if errors.Is(err, pgx.ErrNoRows) {
-		finishQuery(r.ctx, r.logger, r.databaseID, "query_row", r.query, r.args, r.started, rows, nil, r.span)
+		finishQuery(r.ctx, r.logger, r.databaseID, "query_row", r.statement, r.args, r.started, rows, nil, r.span)
 	} else {
-		finishQuery(r.ctx, r.logger, r.databaseID, "query_row", r.query, r.args, r.started, rows, err, r.span)
+		finishQuery(r.ctx, r.logger, r.databaseID, "query_row", r.statement, r.args, r.started, rows, err, r.span)
 	}
 	return err
 }
 
-func startQuery(ctx context.Context, logger *slog.Logger, databaseID, operation, query string, args []any) (context.Context, trace.Span, time.Time) {
-	statement := redactStatement(query)
+func startQuery(ctx context.Context, logger *slog.Logger, databaseID, operation, statement string, args []any) (context.Context, trace.Span, time.Time) {
 	ctx, span := otel.Tracer("dbmp/targetdb").Start(ctx, "db.query",
 		trace.WithAttributes(attribute.String("db.namespace", databaseID), attribute.String("db.operation.name", operation),
 			attribute.String("db.query.text", statement)))
 	started := time.Now()
 	fields := requestFields(ctx, databaseID)
-	fields = append(fields, "operation", operation, "query", statement, "parameters", safeParameters(args, ActivityFromContext(ctx).SafeParameterIndexes))
+	fields = append(fields, "status", "started", "operation", operation, "query", statement,
+		"parameters", safeParameters(args, ActivityFromContext(ctx).SafeParameterIndexes))
 	fields = append(fields, observability.TraceFields(ctx)...)
 	logger.InfoContext(ctx, "target SQL started", append([]any{"event", "database_query_started"}, fields...)...)
 	return ctx, span, started
 }
 
-func finishQuery(ctx context.Context, logger *slog.Logger, databaseID, operation, query string, args []any,
+func finishQuery(ctx context.Context, logger *slog.Logger, databaseID, operation, statement string, args []any,
 	started time.Time, rows int64, err error, span trace.Span) {
 	duration := time.Since(started)
 	fields := requestFields(ctx, databaseID)
-	fields = append(fields, "operation", operation, "query", redactStatement(query), "parameters", safeParameters(args, ActivityFromContext(ctx).SafeParameterIndexes),
+	fields = append(fields, "operation", operation, "query", statement, "parameters", safeParameters(args, ActivityFromContext(ctx).SafeParameterIndexes),
 		"duration_ms", duration.Milliseconds(), "rows_affected", rows)
 	fields = append(fields, observability.TraceFields(ctx)...)
 	if err != nil {
@@ -351,28 +354,6 @@ func requestFields(ctx context.Context, databaseID string) []any {
 	}
 	return fields
 }
-
-var (
-	quotedLiteralPattern  = regexp.MustCompile(`'(?:''|[^'])*'`)
-	dollarLiteralPattern  = regexp.MustCompile(`(?s)\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$.*?\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$`)
-	sqlCommentPattern     = regexp.MustCompile(`(?s)/\*.*?\*/|--[^\r\n]*`)
-	numericLiteralPattern = regexp.MustCompile(`(^|[^[:alnum:]_$])([-+]?(?:0[xX][0-9A-Fa-f]+|0[bB][01]+|(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][-+]?[0-9]+)?))([^[:alnum:]_$]|$)`)
-	credentialSQLPattern  = regexp.MustCompile(`(?i)(password|passwd|pwd|token|secret|session)\s*=\s*[^\s,;]+`)
-	postgresURLPattern    = regexp.MustCompile(`(?i)(postgres(?:ql)?://[^:/@\s]+:)[^@\s]+@`)
-)
-
-// RedactSQLStatement keeps query shape useful for diagnosis while removing
-// literals, comments, and credential values before they reach application logs.
-func RedactSQLStatement(query string) string {
-	redacted := dollarLiteralPattern.ReplaceAllString(query, "'[redacted]'")
-	redacted = quotedLiteralPattern.ReplaceAllString(redacted, "'[redacted]'")
-	redacted = sqlCommentPattern.ReplaceAllString(redacted, "[comment]")
-	redacted = credentialSQLPattern.ReplaceAllString(redacted, "$1=[redacted]")
-	redacted = postgresURLPattern.ReplaceAllString(redacted, "$1[redacted]@")
-	return numericLiteralPattern.ReplaceAllString(redacted, "$1[redacted]$3")
-}
-
-func redactStatement(query string) string { return RedactSQLStatement(query) }
 
 type parameterLog struct {
 	Index    int    `json:"index"`

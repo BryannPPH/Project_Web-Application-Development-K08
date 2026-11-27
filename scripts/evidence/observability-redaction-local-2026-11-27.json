@@ -1,0 +1,288 @@
+{
+  "checkedAtUtc": "2026-11-27T14:17:52.787474+00:00",
+  "environment": "wbd-k08-m2test local disposable PostgreSQL fixtures",
+  "baseCommit": "5ff8cef50576cd429e7f32dceb5d566f79a09660",
+  "workingTree": "redaction patch present",
+  "redactionSourceSHA256": "ba4e4d7a3b94e47a693217b508e3b0222091006123361a2e39c490b817e07d89",
+  "syntheticMarkerFoundInLogOrTrace": false,
+  "checks": {
+    "viewer": {
+      "started": {
+        "time": "2026-11-27T14:17:46.73073713Z",
+        "level": "INFO",
+        "service.name": "dbmp-backend",
+        "event": "database_query_started",
+        "actor": "m2_test_admin",
+        "database_id": "5d2231f0-fc2c-46fa-b495-e11584f3bff7",
+        "correlation_id": "c1b73f6e16f73c509f16005ef7e597e0",
+        "status": "started",
+        "operation": "query",
+        "query": "SELECT * FROM \"public\".\"redaction_fixture_c46a57fb\" ORDER BY \"id\" LIMIT $1 OFFSET $2",
+        "parameters": [
+          {
+            "index": 1,
+            "type": "int",
+            "value": "[redacted]",
+            "redacted": true
+          },
+          {
+            "index": 2,
+            "type": "int64",
+            "value": "[redacted]",
+            "redacted": true
+          }
+        ],
+        "trace_id": "0451db3ec068606f9d26f67260581b87",
+        "span_id": "cfa46e02b93265bf"
+      },
+      "finished": {
+        "time": "2026-11-27T14:17:46.731149422Z",
+        "level": "INFO",
+        "service.name": "dbmp-backend",
+        "event": "database_query_completed",
+        "actor": "m2_test_admin",
+        "database_id": "5d2231f0-fc2c-46fa-b495-e11584f3bff7",
+        "correlation_id": "c1b73f6e16f73c509f16005ef7e597e0",
+        "status": "succeeded",
+        "operation": "query",
+        "query": "SELECT * FROM \"public\".\"redaction_fixture_c46a57fb\" ORDER BY \"id\" LIMIT $1 OFFSET $2",
+        "parameters": [
+          {
+            "index": 1,
+            "type": "int",
+            "value": "[redacted]",
+            "redacted": true
+          },
+          {
+            "index": 2,
+            "type": "int64",
+            "value": "[redacted]",
+            "redacted": true
+          }
+        ],
+        "duration_ms": 0,
+        "rows_affected": 3,
+        "trace_id": "0451db3ec068606f9d26f67260581b87",
+        "span_id": "cfa46e02b93265bf"
+      },
+      "querySpan": {
+        "name": "db.query",
+        "traceId": "0451db3ec068606f9d26f67260581b87",
+        "spanId": "cfa46e02b93265bf",
+        "durationNanoseconds": 443417,
+        "sqlstate": null,
+        "status": null,
+        "query": "SELECT * FROM \"public\".\"redaction_fixture_c46a57fb\" ORDER BY \"id\" LIMIT $1 OFFSET $2"
+      },
+      "traceSpanNames": [
+        "db.connection.open",
+        "db.query",
+        "db.transaction",
+        "http.server"
+      ]
+    },
+    "explainRead": {
+      "started": {
+        "time": "2026-11-27T14:17:46.740200089Z",
+        "level": "INFO",
+        "service.name": "dbmp-backend",
+        "event": "database_query_started",
+        "actor": "m2_test_admin",
+        "database_id": "5d2231f0-fc2c-46fa-b495-e11584f3bff7",
+        "correlation_id": "34cd9265bf12e91df72e0da4dceac00e",
+        "status": "started",
+        "operation": "query_row",
+        "query": "EXPLAIN (FORMAT JSON) SELECT [redacted],[redacted]",
+        "parameters": [],
+        "trace_id": "d6214441342d1ea418faf6430c755d11",
+        "span_id": "7559982c835a7752"
+      },
+      "finished": {
+        "time": "2026-11-27T14:17:46.740430714Z",
+        "level": "INFO",
+        "service.name": "dbmp-backend",
+        "event": "database_query_completed",
+        "actor": "m2_test_admin",
+        "database_id": "5d2231f0-fc2c-46fa-b495-e11584f3bff7",
+        "correlation_id": "34cd9265bf12e91df72e0da4dceac00e",
+        "status": "succeeded",
+        "operation": "query_row",
+        "query": "EXPLAIN (FORMAT JSON) SELECT [redacted],[redacted]",
+        "parameters": [],
+        "duration_ms": 0,
+        "rows_affected": 1,
+        "trace_id": "d6214441342d1ea418faf6430c755d11",
+        "span_id": "7559982c835a7752"
+      },
+      "querySpan": {
+        "name": "db.query",
+        "traceId": "d6214441342d1ea418faf6430c755d11",
+        "spanId": "7559982c835a7752",
+        "durationNanoseconds": 243875,
+        "sqlstate": null,
+        "status": null,
+        "query": "EXPLAIN (FORMAT JSON) SELECT [redacted],[redacted]"
+      },
+      "traceSpanNames": [
+        "db.connection.open",
+        "db.query",
+        "db.transaction",
+        "http.server"
+      ]
+    },
+    "batch": {
+      "started": {
+        "time": "2026-11-27T14:17:47.036558839Z",
+        "level": "INFO",
+        "service.name": "dbmp-worker",
+        "event": "database_query_started",
+        "actor": "m2_test_admin",
+        "database_id": "5d2231f0-fc2c-46fa-b495-e11584f3bff7",
+        "correlation_id": "b8841ff2eb4bb7146ca3f97ded87fb28",
+        "status": "started",
+        "operation": "query",
+        "query": "UPDATE redaction_fixture_c46a57fb SET value=value+(ARRAY[[redacted],[redacted],[redacted]])[[redacted]] WHERE id>$1 AND id<=$2\nRETURNING \"id\"",
+        "parameters": [
+          {
+            "index": 1,
+            "type": "int64",
+            "value": 2,
+            "redacted": false
+          },
+          {
+            "index": 2,
+            "type": "int64",
+            "value": 3,
+            "redacted": false
+          }
+        ],
+        "job_id": "67870057-daec-4844-9b80-caad149a1929",
+        "migration_id": "d780715d-ddc4-408b-86d0-d06a251d6933",
+        "execution_id": "1033a8e8-1097-4db8-b0a3-e1868f05df81",
+        "attempt": 1,
+        "batch_number": 2,
+        "trace_id": "eb3c99bc5acea7ebe1048c93a8f0277f",
+        "span_id": "a5252b2c3363a35f"
+      },
+      "finished": {
+        "time": "2026-11-27T14:17:47.036719464Z",
+        "level": "INFO",
+        "service.name": "dbmp-worker",
+        "event": "database_query_completed",
+        "actor": "m2_test_admin",
+        "database_id": "5d2231f0-fc2c-46fa-b495-e11584f3bff7",
+        "correlation_id": "b8841ff2eb4bb7146ca3f97ded87fb28",
+        "status": "succeeded",
+        "operation": "query",
+        "query": "UPDATE redaction_fixture_c46a57fb SET value=value+(ARRAY[[redacted],[redacted],[redacted]])[[redacted]] WHERE id>$1 AND id<=$2\nRETURNING \"id\"",
+        "parameters": [
+          {
+            "index": 1,
+            "type": "int64",
+            "value": 2,
+            "redacted": false
+          },
+          {
+            "index": 2,
+            "type": "int64",
+            "value": 3,
+            "redacted": false
+          }
+        ],
+        "duration_ms": 0,
+        "rows_affected": 1,
+        "job_id": "67870057-daec-4844-9b80-caad149a1929",
+        "migration_id": "d780715d-ddc4-408b-86d0-d06a251d6933",
+        "execution_id": "1033a8e8-1097-4db8-b0a3-e1868f05df81",
+        "attempt": 1,
+        "batch_number": 2,
+        "trace_id": "eb3c99bc5acea7ebe1048c93a8f0277f",
+        "span_id": "a5252b2c3363a35f"
+      },
+      "querySpan": {
+        "name": "db.query",
+        "traceId": "eb3c99bc5acea7ebe1048c93a8f0277f",
+        "spanId": "a5252b2c3363a35f",
+        "durationNanoseconds": 172000,
+        "sqlstate": null,
+        "status": null,
+        "query": "UPDATE redaction_fixture_c46a57fb SET value=value+(ARRAY[[redacted],[redacted],[redacted]])[[redacted]] WHERE id>$1 AND id<=$2\nRETURNING \"id\""
+      },
+      "traceSpanNames": [
+        "db.connection.open",
+        "db.query",
+        "db.transaction",
+        "http.server",
+        "migration.batch.execute",
+        "migration.execute",
+        "migration.job.enqueue",
+        "migration.job.process",
+        "migration.lock.acquire",
+        "migration.target.lock.acquire"
+      ]
+    },
+    "failure": {
+      "started": {
+        "time": "2026-11-27T14:17:48.042328756Z",
+        "level": "INFO",
+        "service.name": "dbmp-worker",
+        "event": "database_query_started",
+        "actor": "m2_test_admin",
+        "database_id": "5d2231f0-fc2c-46fa-b495-e11584f3bff7",
+        "correlation_id": "5f361d75aa4b2ed9a678f8cd7a290f75",
+        "status": "started",
+        "operation": "exec_script",
+        "query": "SELECT [redacted],[redacted],[redacted]/[redacted]",
+        "parameters": [],
+        "job_id": "593239c8-5472-4df6-a7c6-4d092c418067",
+        "migration_id": "b3efffaa-33d3-4ae6-be9c-bc33525f88c9",
+        "execution_id": "12fabfa3-ccd7-4ccf-afc4-b69e1b05641f",
+        "attempt": 1,
+        "trace_id": "ef50f5f781261c061636b126d8f216bd",
+        "span_id": "13b104de5d43015d"
+      },
+      "finished": {
+        "time": "2026-11-27T14:17:48.042613714Z",
+        "level": "ERROR",
+        "service.name": "dbmp-worker",
+        "event": "database_query_failed",
+        "actor": "m2_test_admin",
+        "database_id": "5d2231f0-fc2c-46fa-b495-e11584f3bff7",
+        "correlation_id": "5f361d75aa4b2ed9a678f8cd7a290f75",
+        "status": "failed",
+        "operation": "exec_script",
+        "query": "SELECT [redacted],[redacted],[redacted]/[redacted]",
+        "parameters": [],
+        "duration_ms": 0,
+        "rows_affected": 0,
+        "sqlstate": "22012",
+        "job_id": "593239c8-5472-4df6-a7c6-4d092c418067",
+        "migration_id": "b3efffaa-33d3-4ae6-be9c-bc33525f88c9",
+        "execution_id": "12fabfa3-ccd7-4ccf-afc4-b69e1b05641f",
+        "attempt": 1,
+        "trace_id": "ef50f5f781261c061636b126d8f216bd",
+        "span_id": "13b104de5d43015d"
+      },
+      "querySpan": {
+        "name": "db.query",
+        "traceId": "ef50f5f781261c061636b126d8f216bd",
+        "spanId": "13b104de5d43015d",
+        "durationNanoseconds": 309541,
+        "sqlstate": "22012",
+        "status": "STATUS_CODE_ERROR",
+        "query": "SELECT [redacted],[redacted],[redacted]/[redacted]"
+      },
+      "traceSpanNames": [
+        "db.connection.open",
+        "db.query",
+        "db.transaction",
+        "http.server",
+        "migration.execute",
+        "migration.job.enqueue",
+        "migration.job.process",
+        "migration.lock.acquire",
+        "migration.target.lock.acquire"
+      ]
+    }
+  }
+}
