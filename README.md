@@ -9,9 +9,9 @@ untuk melanjutkan atau membatalkan perubahan.
 
 ## Preview Aplikasi
 
-Cuplikan tampilan aplikasi DB Manager.
+Cuplikan tampilan aplikasi Emberden.
 
-![Preview aplikasi DB Manager](assets/db-manager-preview.gif)
+![Preview aplikasi Emberden](assets/emberden-preview.gif)
 
 ## Authors
 
