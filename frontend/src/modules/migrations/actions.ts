@@ -47,13 +47,20 @@ const forward: PendingAction = {
   confirmNote: 'SQL migration dijalankan lagi setelah rollback. Forward adalah aksi baru dan butuh approval sendiri.',
 }
 
+const resumeForward: PendingAction = {
+  ...forward,
+  label: (version) => `Lanjutkan forward v${version}`,
+  confirmTitle: (version, db) => `Lanjutkan forward v${version} pada ${db}?`,
+  confirmNote: 'Batch yang sudah committed dipertahankan. Forward dilanjutkan dari checkpoint terakhir.',
+}
+
 /**
  * Aksi berikutnya yang boleh dikerjakan editor untuk migration ini. Mengikuti syarat
  * status di backend (migration.PlanExecution): backend tetap sumber kebenaran, ini hanya
  * menentukan tombol dan approval mana yang ditampilkan.
  */
 type ActionState = Pick<MigrationEntry, 'status'> &
-  Partial<Pick<MigrationEntry, 'isActive' | 'downSql' | 'irreversibleReason' | 'executionMode'>>
+  Partial<Pick<MigrationEntry, 'isActive' | 'downSql' | 'irreversibleReason' | 'executionMode' | 'partialAction'>>
 
 export function nextAction(entry: ActionState): PendingAction | null {
   return availableActions(entry)[0] ?? null
@@ -67,14 +74,17 @@ export function availableActions(
       return [apply]
     case 'failed':
       return [retry]
-    case 'partial':
+    case 'partial': {
+      const resume = entry.partialAction === 'forward' ? resumeForward : retry
       return entry.executionMode === 'batch' && entry.downSql != null && entry.irreversibleReason == null
-        ? [retry, rollback]
-        : [retry]
+        ? [resume, rollback]
+        : [resume]
+    }
     case 'succeeded':
-    case 'partially_reverted':
       // Tanpa down SQL (atau ditandai irreversible) rollback memang ditolak backend.
       return entry.isActive !== false && entry.downSql != null && entry.irreversibleReason == null ? [rollback] : []
+    case 'partially_reverted':
+      return entry.downSql != null && entry.irreversibleReason == null ? [rollback] : []
     case 'rolled_back':
       return [forward]
     default:

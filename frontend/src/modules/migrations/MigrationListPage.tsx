@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 
 import { MigrationStatusBadge } from '@/components/Badges'
 import { Icon } from '@/components/Icon'
@@ -10,16 +10,30 @@ import { listMigrations } from '@/modules/migrations/api'
 import { displayTime, migrationQueryKeys } from '@/modules/migrations/query-helpers'
 import '@/modules/migrations/migrations.css'
 
+const PAGE_SIZE = 50
+
 export function MigrationListPage() {
   const { databaseId = '' } = useParams()
+  const [search, setSearch] = useSearchParams()
+  const requestedPage = Number(search.get('page') ?? '1')
+  const page = requestedPage > 0 && Number.isSafeInteger(requestedPage * PAGE_SIZE) && Number.isInteger(requestedPage) ? requestedPage : 1
+  const offset = (page - 1) * PAGE_SIZE
   const query = useQuery({
-    queryKey: migrationQueryKeys.all(databaseId),
-    queryFn: ({ signal }) => listMigrations(databaseId, signal),
+    queryKey: migrationQueryKeys.list(databaseId, offset),
+    queryFn: ({ signal }) => listMigrations(databaseId, { limit: PAGE_SIZE, offset }, signal),
     enabled: databaseId !== '',
   })
   const reconciliationRequired = query.data?.items.some(
     (entry) => entry.status === 'interrupted' || entry.status === 'needs_reconciliation',
   )
+  function goToPage(nextPage: number) {
+    setSearch((current) => {
+      const updated = new URLSearchParams(current)
+      if (nextPage === 1) updated.delete('page')
+      else updated.set('page', String(nextPage))
+      return updated
+    })
+  }
 
   return (
     <section>
@@ -61,10 +75,16 @@ export function MigrationListPage() {
           {query.error instanceof ApiError ? query.error.message : 'Riwayat migration gagal dimuat.'}
         </StatusMessage>
       ) : null}
-      {query.data && query.data.items.length === 0 ? (
+      {query.data && query.data.items.length === 0 && page === 1 ? (
         <StatusMessage illustration="lantern" title="Belum ada migration" tone="empty">
           Riwayat untuk database ini masih kosong.
         </StatusMessage>
+      ) : null}
+      {query.data && query.data.items.length === 0 && page > 1 ? (
+        <div className="execution-history__page-reset">
+          <StatusMessage tone="empty">Halaman versi ini tidak tersedia.</StatusMessage>
+          <button className="button button--secondary" onClick={() => goToPage(1)} type="button">Kembali ke halaman pertama</button>
+        </div>
       ) : null}
       {query.data && query.data.items.length > 0 ? (
         <div className="data-table-wrapper">
@@ -105,8 +125,17 @@ export function MigrationListPage() {
           </table>
         </div>
       ) : null}
-      {query.data && query.data.items.length > 0 ? (
-        <ExecutionHistory databaseId={databaseId} migrations={query.data.items} />
+      {query.data && query.data.items.length > 0 && query.data.total > PAGE_SIZE ? (
+        <nav aria-label="Pagination versi migration" className="execution-history__pagination">
+          <span className="muted">Menampilkan {offset + 1}–{offset + query.data.items.length} dari {query.data.total} versi · halaman {page} dari {Math.ceil(query.data.total / PAGE_SIZE)}</span>
+          <div>
+            <button className="button button--secondary" disabled={page === 1} onClick={() => goToPage(page - 1)} type="button">Sebelumnya</button>
+            <button className="button button--secondary" disabled={offset + PAGE_SIZE >= query.data.total} onClick={() => goToPage(page + 1)} type="button">Berikutnya</button>
+          </div>
+        </nav>
+      ) : null}
+      {query.data && (query.data.items.length > 0 || page > 1) ? (
+        <ExecutionHistory databaseId={databaseId} key={databaseId} migrations={query.data.items} />
       ) : null}
     </section>
   )

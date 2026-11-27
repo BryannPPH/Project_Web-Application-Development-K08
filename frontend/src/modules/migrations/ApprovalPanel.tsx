@@ -77,10 +77,10 @@ export function ApprovalPanel({ action, databaseId, migrationId, databaseName, s
 
           <CompatibilityHints sql={sql} />
           {action === 'rollback' ? (
-            <p className="approval-panel__note muted">
-              <Icon name="info" size={14} />
-              SQL di atas adalah Down SQL yang akan dijalankan.
-            </p>
+            <div>
+              <h4>Down SQL yang akan dijalankan</h4>
+              <pre className="migration-sql-preview">{sql}</pre>
+            </div>
           ) : null}
 
           {review.canDecide ? (
@@ -149,7 +149,7 @@ function CompatibilityHints({ sql }: { sql: string }) {
       <h4>Periksa kompatibilitas</h4>
       {hints.length === 0 ? (
         <p className="muted">
-          Tidak terdeteksi pola yang biasanya merusak query yang sudah ada. Tetap baca SQL di bawah sebelum memutuskan.
+          Tidak terdeteksi pola yang biasanya merusak query yang sudah ada. Periksa SQL sebelum memutuskan.
         </p>
       ) : (
         <ul>

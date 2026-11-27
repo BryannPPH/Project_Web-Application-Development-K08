@@ -38,8 +38,13 @@ export interface MigrationEntry {
   isActive?: boolean
   executionMode?: ExecutionMode
   latestExecutionId?: string | null
+  latestJobId?: string | null
+  partialAction?: ExecutionAction
   downSql?: string | null
   irreversibleReason?: string | null
+  batchSelectSql?: string | null
+  batchSize?: number | null
+  batchCursorStart?: number
 }
 
 export interface ReconciliationInput {
@@ -137,6 +142,7 @@ export interface MigrationJob {
 export interface ExecutionAttempt {
   executionId: string
   migrationId: string
+  migrationName?: string
   version: number
   revision: number
   action: ExecutionAction
@@ -145,6 +151,22 @@ export interface ExecutionAttempt {
   relatedExecutionId: string | null
   status: string
   errorMessage: string | null
+  sqlSnapshot?: string
+  events?: ExecutionEvent[]
+}
+
+export interface ExecutionEvent {
+  id: number
+  status: string
+  event: string
+  occurredAt: string
+  errorMessage: string | null
+  querySql?: string
+  queryParameters?: number[]
+  rowsAffected: number | null
+  batchNumber: number | null
+  cursorStart: number | null
+  cursorEnd: number | null
 }
 
 export interface ExecutionHistoryPage {
@@ -157,6 +179,12 @@ export interface ExecutionHistoryPage {
 export interface DraftInput {
   name: string
   sql: string
+  downSql?: string
+  irreversibleReason?: string
+  executionMode?: ExecutionMode
+  batchSelectSql?: string
+  batchSize?: number
+  batchCursorStart?: number
 }
 
 // ---------- Query execution plan analysis (bonus) ----------

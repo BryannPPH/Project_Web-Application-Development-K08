@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { clearCsrfToken, setCsrfToken } from '@/lib/csrf-token'
 import type { AccessibleDatabase } from '@/modules/databases/types'
+import { ExecutionDetailPage } from '@/modules/migrations/ExecutionDetailPage'
 import { ExecutionHistory } from '@/modules/migrations/ExecutionHistory'
 import { MigrationDetailPage } from '@/modules/migrations/MigrationDetailPage'
 import type { ApprovalAction, ApprovalReview, ExecutionAttempt, MigrationEntry, MigrationJob } from '@/modules/migrations/types'
@@ -107,6 +108,29 @@ describe('aksi migration per status', () => {
 
     expect(await screen.findByRole('heading', { name: 'Review & approval rollback' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Rollback v5' })).toBeEnabled()
+  })
+
+  it('leader View Only dapat memilih review rollback partial dan melihat Down SQL yang tepat', async () => {
+    const down = 'UPDATE widgets SET value=0 WHERE id>$1 AND id<=$2'
+    renderDetail(migrationEntry({ status: 'partial', canEdit: false, executionMode: 'batch', downSql: down, isActive: false }), {
+      rollback: review('rollback', { canDecide: true, status: 'pending', approvedCount: 0 }),
+    })
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Pilih: Rollback v1' }))
+    expect(await screen.findByRole('heading', { name: 'Down SQL yang akan dijalankan' })).toBeInTheDocument()
+    expect(screen.getByText(down, { selector: 'pre' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Setujui revisi 1' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Rollback v1' })).not.toBeInTheDocument()
+  })
+
+  it('langsung memantau job yang tersimpan ketika detail dibuka kembali', async () => {
+    renderDetail(migrationEntry({ status: 'draft', latestJobId: 'job-1' }), {}, (url) => {
+      if (url.pathname.endsWith('/migration-jobs/job-1')) return jsonResponse(job({ status: 'retrying', retryCount: 1 }))
+      return undefined
+    })
+
+    expect(await screen.findByText('Eksekusi: Mencoba ulang (ke-1)')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Jalankan v1' })).toBeDisabled()
   })
 
   it('konfirmasi rollback menyebut Down SQL, bukan teks draft', async () => {
@@ -224,6 +248,7 @@ describe('ExecutionHistory: Hide rollback', () => {
 
     await waitFor(() => expect(screen.getAllByRole('row')).toHaveLength(3))
     expect(screen.getByText('Forward')).toBeInTheDocument()
+    expect(screen.getAllByRole('link').map((link) => link.getAttribute('href'))).toContain('/databases/db-1/migrations/executions/f1')
     expect(screen.getByText('Gagal')).toBeInTheDocument()
     expect(screen.queryByText('Rollback')).not.toBeInTheDocument()
     expect(screen.getByText('Menampilkan 1–2 dari 2 execution · halaman 1 dari 1')).toBeInTheDocument()
@@ -253,4 +278,22 @@ describe('ExecutionHistory: Hide rollback', () => {
     expect(await screen.findByText('Menampilkan 101–101 dari 101 execution · halaman 2 dari 2')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Sebelumnya' })).toBeEnabled()
   })
+})
+
+it('menampilkan snapshot dan metadata attempt pada rute execution', async () => {
+  mockFetch((url) => url.pathname.endsWith('/migration-executions/e1') ? jsonResponse({
+    executionId: 'e1', migrationId: 'm1', migrationName: 'widgets', version: 2, revision: 3,
+    action: 'rollback', actorUsername: 'operator', requestedAt: '2026-11-20T09:00:00Z',
+    relatedExecutionId: 'e0', status: 'failed', errorMessage: 'Down SQL gagal', sqlSnapshot: 'DROP TABLE widgets',
+  }) : undefined)
+  renderRoute(<ExecutionDetailPage />, {
+    route: '/databases/db-1/migrations/executions/e1',
+    path: '/databases/:databaseId/migrations/executions/:executionId',
+    user: regularUser,
+  })
+
+  expect(await screen.findByRole('heading', { name: 'Rollback v2' })).toBeInTheDocument()
+  expect(screen.getByText('DROP TABLE widgets')).toBeInTheDocument()
+  expect(screen.getByText('Down SQL gagal')).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: 'e0' })).toHaveAttribute('href', '/databases/db-1/migrations/executions/e0')
 })

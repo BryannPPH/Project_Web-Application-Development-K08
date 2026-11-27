@@ -48,4 +48,11 @@ describe('availableActions', () => {
     expect(availableActions({ status: 'partial', executionMode: 'single', downSql: 'x', irreversibleReason: null })).toHaveLength(1)
     expect(availableActions({ status: 'partial', executionMode: 'batch', downSql: null, irreversibleReason: 'irreversible' })).toHaveLength(1)
   })
+
+  it('menawarkan forward untuk resume forward batch dan rollback untuk pembatalan partial yang belum aktif', () => {
+    const batch = { ...reversible, executionMode: 'batch' as const, isActive: false }
+    expect(availableActions({ ...batch, status: 'partial', partialAction: 'forward' }).map(({ action }) => action))
+      .toEqual(['forward', 'rollback'])
+    expect(nextAction({ ...batch, status: 'partially_reverted' })?.action).toBe('rollback')
+  })
 })

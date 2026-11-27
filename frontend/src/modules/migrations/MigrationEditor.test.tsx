@@ -21,10 +21,48 @@ describe('MigrationEditor', () => {
     render(<MigrationEditor onSubmit={submit} submitLabel="Simpan" />)
 
     fireEvent.change(screen.getByLabelText('Nama migration'), { target: { value: 'create widgets' } })
-    fireEvent.change(screen.getByLabelText('SQL'), { target: { value: 'CREATE TABLE widgets(id bigint)' } })
+    fireEvent.change(screen.getByLabelText('Up SQL'), { target: { value: 'CREATE TABLE widgets(id bigint)' } })
+    fireEvent.change(screen.getByLabelText('Down SQL'), { target: { value: 'DROP TABLE widgets' } })
     fireEvent.click(screen.getByRole('button', { name: 'Simpan' }))
 
-    expect(submit).toHaveBeenCalledWith({ name: 'create widgets', sql: 'CREATE TABLE widgets(id bigint)' })
+    expect(submit).toHaveBeenCalledWith({
+      name: 'create widgets', sql: 'CREATE TABLE widgets(id bigint)', downSql: 'DROP TABLE widgets', executionMode: 'single',
+    })
+  })
+
+  it('mempertahankan definisi batch ketika nama draft diedit', () => {
+    const submit = vi.fn()
+    const definition = {
+      name: 'Batch',
+      sql: 'UPDATE widgets SET value=1 WHERE id>$1 AND id<=$2',
+      downSql: 'UPDATE widgets SET value=0 WHERE id>$1 AND id<=$2',
+      executionMode: 'batch' as const,
+      batchSelectSql: 'SELECT id FROM widgets WHERE id>$1 ORDER BY id LIMIT $2',
+      batchSize: 25,
+      batchCursorStart: -1,
+    }
+    render(<MigrationEditor initialValue={definition} onSubmit={submit} submitLabel="Simpan" />)
+
+    fireEvent.change(screen.getByLabelText('Nama migration'), { target: { value: 'Nama baru' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Simpan' }))
+
+    expect(submit).toHaveBeenCalledWith({ ...definition, name: 'Nama baru' })
+  })
+
+  it('meminta alasan bila migration irreversible', () => {
+    const submit = vi.fn()
+    render(<MigrationEditor initialValue={{ name: 'Hapus tabel', sql: 'DROP TABLE widgets' }} onSubmit={submit} submitLabel="Simpan" />)
+
+    fireEvent.change(screen.getByLabelText('Strategi rollback'), { target: { value: 'irreversible' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Simpan' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Alasan irreversible wajib diisi')
+    expect(submit).not.toHaveBeenCalled()
+
+    fireEvent.change(screen.getByLabelText('Alasan irreversible'), { target: { value: 'Data sementara' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Simpan' }))
+    expect(submit).toHaveBeenCalledWith({
+      name: 'Hapus tabel', sql: 'DROP TABLE widgets', executionMode: 'single', irreversibleReason: 'Data sementara',
+    })
   })
 
   it('readonly untuk history terminal', () => {

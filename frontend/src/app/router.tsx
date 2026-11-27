@@ -10,6 +10,7 @@ import { AdminUsersPage } from '@/modules/admin/AdminUsersPage'
 import { RequirePlatformAdmin } from '@/modules/admin/RequirePlatformAdmin'
 import { LoginPage } from '@/modules/auth/LoginPage'
 import { ProtectedRoute } from '@/modules/auth/ProtectedRoute'
+import { ExecutionDetailPage } from '@/modules/migrations/ExecutionDetailPage'
 import { MigrationDetailPage } from '@/modules/migrations/MigrationDetailPage'
 import { MigrationListPage } from '@/modules/migrations/MigrationListPage'
 import { SchemaDiffPage } from '@/modules/schema-diff/SchemaDiffPage'
@@ -34,6 +35,7 @@ export const router = createBrowserRouter([
           { path: '/databases/:databaseId/schemas/:schema/tables/:table', element: <ViewerPage /> },
           { path: '/databases/:databaseId/migrations', element: <MigrationListPage /> },
           { path: '/databases/:databaseId/migrations/new', element: <MigrationDetailPage create /> },
+          { path: '/databases/:databaseId/migrations/executions/:executionId', element: <ExecutionDetailPage /> },
           { path: '/databases/:databaseId/migrations/:migrationId', element: <MigrationDetailPage /> },
           { path: '/databases/:databaseId/schema-diff', element: <SchemaDiffPage /> },
           {

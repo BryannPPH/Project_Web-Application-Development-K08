@@ -6,6 +6,7 @@ import type {
   BatchProgress,
   DraftInput,
   ExecutionAction,
+  ExecutionAttempt,
   ExecutionHistoryPage,
   ExplainResult,
   MigrationEntry,
@@ -18,8 +19,9 @@ function migrationPath(databaseId: string, suffix = '') {
   return `/databases/${encodeURIComponent(databaseId)}/migrations${suffix}`
 }
 
-export function listMigrations(databaseId: string, signal?: AbortSignal) {
-  return apiRequest<MigrationPage>(migrationPath(databaseId), { signal })
+export function listMigrations(databaseId: string, options: { limit: number; offset: number }, signal?: AbortSignal) {
+  const query = new URLSearchParams({ limit: String(options.limit), offset: String(options.offset) })
+  return apiRequest<MigrationPage>(migrationPath(databaseId, `?${query}`), { signal })
 }
 
 export function getMigration(databaseId: string, migrationId: string, signal?: AbortSignal) {
@@ -46,9 +48,10 @@ const actionPaths: Record<ExecutionAction, string> = {
 
 // Backend menjawab 202 + job: SQL berjalan di worker, bukan di request ini.
 export function enqueueMigrationAction(databaseId: string, migrationId: string, action: ExecutionAction) {
+  const idempotencyKey = Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('')
   return apiRequest<MigrationJob>(
     migrationPath(databaseId, `/${encodeURIComponent(migrationId)}/${actionPaths[action]}`),
-    { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() } },
+    { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey } },
   )
 }
 
@@ -59,6 +62,13 @@ export function getMigrationJob(databaseId: string, jobId: string, signal?: Abor
 export function getBatchProgress(databaseId: string, executionId: string, signal?: AbortSignal) {
   return apiRequest<BatchProgress>(
     `/databases/${encodeURIComponent(databaseId)}/migration-executions/${encodeURIComponent(executionId)}/progress`,
+    { signal },
+  )
+}
+
+export function getExecution(databaseId: string, executionId: string, signal?: AbortSignal) {
+  return apiRequest<ExecutionAttempt>(
+    `/databases/${encodeURIComponent(databaseId)}/migration-executions/${encodeURIComponent(executionId)}`,
     { signal },
   )
 }

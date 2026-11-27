@@ -1,4 +1,4 @@
-import { cleanup, screen } from '@testing-library/react'
+import { cleanup, fireEvent, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { MigrationListPage } from '@/modules/migrations/MigrationListPage'
@@ -93,5 +93,26 @@ describe('MigrationListPage', () => {
 
     expect(await screen.findByText('Execution diblokir')).toBeInTheDocument()
     expect(screen.getByText('Terputus')).toBeInTheDocument()
+  })
+
+  it('menampilkan versi draft lama dengan pagination dari server', async () => {
+    mockFetch((url) => {
+      if (url.pathname === '/api/v1/databases/db-1/migrations') {
+        const offset = Number(url.searchParams.get('offset'))
+        const items = offset === 0
+          ? Array.from({ length: 50 }, (_, i) => migrationEntry({ id: `m${51 - i}`, version: 51 - i, name: `draft-${51 - i}` }))
+          : [migrationEntry({ name: 'draft-paling-lama' })]
+        return jsonResponse({ items, limit: 50, offset, total: 51, canEdit: true })
+      }
+      if (url.pathname.endsWith('/migration-history')) return jsonResponse({ items: [], limit: 100, offset: 0, total: 0 })
+      return undefined
+    })
+    renderRoute(<MigrationListPage />, { route: '/databases/db-1/migrations', path: '/databases/:databaseId/migrations', user: regularUser })
+
+    const pagination = await screen.findByRole('navigation', { name: 'Pagination versi migration' })
+    fireEvent.click(within(pagination).getByRole('button', { name: 'Berikutnya' }))
+
+    expect(await screen.findByRole('link', { name: 'draft-paling-lama' })).toBeInTheDocument()
+    expect(screen.getByText(/halaman 2 dari 2/)).toBeInTheDocument()
   })
 })

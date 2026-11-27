@@ -86,8 +86,8 @@ describe('MigrationDetailPage', () => {
 
     expect(await screen.findByText('Migration berhasil dijalankan')).toBeInTheDocument()
     expect(senjaImage('success')).toBeInTheDocument()
-    expect(screen.getByLabelText('SQL')).toHaveValue('CREATE TABLE public.m1_demo_items (id BIGINT PRIMARY KEY);')
-    expect(screen.getByLabelText('SQL')).toBeDisabled()
+    expect(screen.getByLabelText('Up SQL')).toHaveValue('CREATE TABLE public.m1_demo_items (id BIGINT PRIMARY KEY);')
+    expect(screen.getByLabelText('Up SQL')).toBeDisabled()
     expect(screen.getByText('dibuat oleh admin_m1')).toBeInTheDocument()
     expect(screen.getByText('oleh admin_m1')).toBeInTheDocument()
     expect(screen.queryByText(/df814edc/)).not.toBeInTheDocument()

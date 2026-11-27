@@ -29,6 +29,11 @@ function ErrorMessage({ error }: { error: unknown }) {
 }
 
 export function MigrationDetailPage({ create = false }: { create?: boolean }) {
+  const { databaseId, migrationId } = useParams()
+  return <MigrationDetail key={`${databaseId}/${migrationId ?? 'new'}`} create={create} />
+}
+
+function MigrationDetail({ create }: { create: boolean }) {
   const { databaseId = '', migrationId = '' } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
@@ -36,6 +41,7 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
   // Draft baru dapat diisi otomatis dari halaman schema diff.
   const prefill = create ? readPrefill(location.state) : undefined
   const [liveSql, setLiveSql] = useState<string | null>(null)
+  const [draftDirty, setDraftDirty] = useState(false)
   const [reconciliationNote, setReconciliationNote] = useState('')
   const [targetInspected, setTargetInspected] = useState(false)
   const database = useAccessibleDatabase(databaseId)
@@ -43,23 +49,28 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
     queryKey: migrationQueryKeys.detail(databaseId, migrationId),
     queryFn: ({ signal }) => getMigration(databaseId, migrationId, signal),
     enabled: !create && databaseId !== '' && migrationId !== '',
+    refetchOnMount: 'always',
   })
   // Status partial menawarkan resume dan rollback; approval mengikuti aksi yang dipilih.
   const pendingOptions = !create && detail.data ? availableActions(detail.data) : []
   const [selectedAction, setSelectedAction] = useState<ExecutionAction | null>(null)
   const pending = pendingOptions.find((option) => option.action === selectedAction) ?? pendingOptions[0] ?? null
   const approval = useApprovalReview(databaseId, migrationId, pending ? pending.approval : null)
-  const [jobId, setJobId] = useState<string | null>(null)
+  const jobId = detail.data?.latestJobId ?? null
   const job = useMigrationJob(databaseId, jobId)
   const jobDone = job.data ? isTerminalJob(job.data.status) : false
-  const batchExecutionId = detail.data?.executionMode === 'batch' ? job.data?.executionId ?? detail.data.latestExecutionId : null
-  const batchLive = jobId !== null && !jobDone
+  const batchExecutionId = detail.data?.executionMode === 'batch'
+    ? jobId ? job.data?.executionId : detail.data.latestExecutionId
+    : null
+  const batchLive = Boolean(batchExecutionId && jobId && !jobDone)
   const batchProgress = useBatchProgress(databaseId, batchExecutionId, batchLive)
   const save = useMutation({
     mutationFn: (input: DraftInput) => create
       ? createMigration(databaseId, input)
       : updateMigration(databaseId, migrationId, input),
     onSuccess: async (entry) => {
+      setLiveSql(null)
+      setDraftDirty(false)
       await queryClient.invalidateQueries({ queryKey: migrationQueryKeys.all(databaseId) })
       await navigate(`/databases/${databaseId}/migrations/${entry.id}`, { replace: create })
     },
@@ -69,7 +80,12 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
       return enqueueMigrationAction(databaseId, migrationId, action)
     },
     // 202: job masuk antrean. Status akhir dipantau lewat polling, bukan dari response ini.
-    onSuccess: (queued) => setJobId(queued.jobId),
+    onSuccess: async (queued) => {
+      const detailKey = migrationQueryKeys.detail(databaseId, migrationId)
+      await queryClient.cancelQueries({ queryKey: detailKey, exact: true })
+      queryClient.setQueryData<MigrationEntry>(detailKey,
+        (entry) => entry ? { ...entry, latestJobId: queued.jobId } : entry)
+    },
     // Ditolak gerbang approval (approval berubah sejak halaman dibuka): muat ulang status.
     onError: () => {
       void queryClient.invalidateQueries({ queryKey: migrationQueryKeys.all(databaseId) })
@@ -95,6 +111,9 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
 
   if (!create && detail.isPending) return <StatusMessage tone="loading">Memuat migration...</StatusMessage>
   if (!create && detail.isError) return <ErrorMessage error={detail.error} />
+  if (create && database.isPending) return <StatusMessage tone="loading">Memuat database...</StatusMessage>
+  if (create && database.isError) return <ErrorMessage error={database.error} />
+  if (create && database.data?.accessLevel !== 'view_edit') return <StatusMessage tone="info">Akses View + Edit diperlukan untuk membuat migration.</StatusMessage>
 
   const entry = detail.data
   const editable = create || (entry?.canEdit === true && entry.status === 'draft')
@@ -104,7 +123,9 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
   const databaseName = database.data?.name ?? 'database ini'
   const transactionalDdl = database.data?.capabilities?.transactionalDdl !== false
   // null = boleh dijalankan; selain itu = alasan tombol dikunci.
-  const blockedReason = pending ? executionBlockedReason(approval.data) : null
+  const blockedReason = pending
+    ? draftDirty ? 'Simpan perubahan draft sebelum menjalankan migration.' : executionBlockedReason(approval.data)
+    : null
 
   function confirmExecution(action = pending) {
     if (!entry || !action) return
@@ -142,15 +163,14 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
             </div>
           ) : null}
         </div>
-        {entry?.canEdit && pending ? (
+        {entry && pending && (entry.canEdit || pendingOptions.length > 1) ? (
           <div className="page-header__actions migration-run">
             {pendingOptions.length > 1 ? (
-              <div aria-label="Pilih aksi migration" className="migration-run__choices" role="group">
+              <div aria-label="Pilih aksi untuk ditinjau" className="migration-run__choices" role="group">
                 {pendingOptions.map((option) => (
                   <button
                     aria-pressed={pending.action === option.action}
                     className="button button--secondary"
-                    disabled={busy}
                     key={option.action}
                     onClick={() => setSelectedAction(option.action)}
                     type="button"
@@ -160,7 +180,7 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
                 ))}
               </div>
             ) : null}
-            <button
+            {entry.canEdit ? <button
               aria-describedby={blockedReason ? 'migration-run-reason' : undefined}
               className="button button--primary"
               disabled={busy || blockedReason !== null}
@@ -169,8 +189,8 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
             >
               <Icon className={execute.isPending ? 'spinner' : undefined} name={execute.isPending ? 'loader' : blockedReason ? 'lock' : 'play'} size={16} />
               {execute.isPending ? pending.runningLabel : pending.label(entry.version)}
-            </button>
-            {blockedReason ? (
+            </button> : null}
+            {entry.canEdit && blockedReason ? (
               <p className="migration-run__reason" id="migration-run-reason">{blockedReason}</p>
             ) : null}
           </div>
@@ -179,7 +199,7 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
 
       {jobId ? <JobStatusPanel error={job.isError ? job.error : null} job={job.data} loading={job.isPending} /> : null}
       {batchProgress.data ? <BatchProgressPanel action={job.data?.action} progress={batchProgress.data} /> : null}
-      {entry ? <MigrationResult entry={entry} transactionalDdl={transactionalDdl} /> : null}
+      {entry ? <MigrationResult entry={entry} failedAction={job.data?.status === 'failed' ? job.data.action : undefined} transactionalDdl={transactionalDdl} /> : null}
       {entry && !pending && entry.isActive !== false && (entry.status === 'succeeded' || entry.status === 'partially_reverted') && entry.downSql == null ? (
         <StatusMessage tone="info">
           Migration ini tidak punya Down SQL, jadi tidak dapat di-rollback.
@@ -230,13 +250,25 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
       <div className="migration-layout">
         <div className="migration-main">
           <MigrationEditor
+            key={entry ? `${entry.id}/${entry.revision}` : 'new'}
             disabled={!editable}
-            initialValue={entry ? { name: entry.name, sql: entry.sql } : prefill}
+            initialValue={entry ? {
+              name: entry.name,
+              sql: entry.sql,
+              downSql: entry.downSql ?? undefined,
+              irreversibleReason: entry.irreversibleReason ?? undefined,
+              executionMode: entry.executionMode,
+              batchSelectSql: entry.batchSelectSql ?? undefined,
+              batchSize: entry.batchSize ?? undefined,
+              batchCursorStart: entry.batchCursorStart,
+            } : prefill}
+            onDirtyChange={setDraftDirty}
             onSqlChange={setLiveSql}
             onSubmit={(input) => save.mutate(input)}
             pending={busy}
             primary={create}
             submitLabel={create ? 'Simpan draft' : 'Simpan perubahan'}
+            supportsBatch={database.data?.engine === 'postgresql'}
             transactionalDdl={transactionalDdl}
           />
           {/* Milestone 2: review setelah SQL, supaya leader membaca SQL dulu baru memutuskan. */}
@@ -260,7 +292,7 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
             <ul className="migration-rules">
               <li>
                 <Icon name="check" size={14} />
-                {transactionalDdl ? 'Dijalankan dalam satu transaksi' : 'DML transaksional; DDL dapat melakukan implicit commit'}
+              {entry?.executionMode === 'batch' ? 'Setiap batch memiliki transaksi sendiri' : transactionalDdl ? 'Dijalankan dalam satu transaksi' : 'DML transaksional; DDL dapat melakukan implicit commit'}
               </li>
               <li>
                 <Icon name="close" size={14} />
@@ -305,7 +337,7 @@ export function MigrationDetailPage({ create = false }: { create?: boolean }) {
 }
 
 // Panel hasil execution bersama Senja (konfeti, putar balik jam, kabel lepas).
-function MigrationResult({ entry, transactionalDdl }: { entry: MigrationEntry; transactionalDdl: boolean }) {
+function MigrationResult({ entry, failedAction, transactionalDdl }: { entry: MigrationEntry; failedAction?: ExecutionAction; transactionalDdl: boolean }) {
   if (entry.status === 'reconciled') {
     return (
       <div className="migration-result migration-result--warning" role="status">
@@ -325,13 +357,18 @@ function MigrationResult({ entry, transactionalDdl }: { entry: MigrationEntry; t
     )
   }
   if (entry.status === 'succeeded') {
+    if (failedAction === 'rollback') {
+      return <StatusMessage tone="info">Migration masih aktif karena rollback terakhir gagal.</StatusMessage>
+    }
     return (
       <div className="migration-result migration-result--success" role="status">
         <img alt="" src={senja.success} />
         <div>
           <strong>Migration berhasil dijalankan</strong>
           <p>
-            {transactionalDdl
+            {entry.executionMode === 'batch'
+              ? `Semua batch v${entry.version} sudah diterapkan.`
+              : transactionalDdl
               ? `Semua perubahan v${entry.version} sudah diterapkan dalam satu transaksi.`
               : `Semua statement v${entry.version} berhasil diterapkan. DML bersifat transaksional; DDL MySQL memakai implicit commit.`}
           </p>
@@ -368,7 +405,7 @@ function MigrationResult({ entry, transactionalDdl }: { entry: MigrationEntry; t
         <img alt="" src={senja.unplugged} />
         <div>
           <strong>Target perlu direkonsiliasi</strong>
-          <p>DDL MySQL dapat menyisakan perubahan sebelumnya. Migration berikutnya diblokir sampai kondisi target diperiksa.</p>
+          <p>Migration berikutnya diblokir sampai kondisi target diperiksa dan hasil pemeriksaan dicatat.</p>
           {entry.errorMessage ? <pre>{entry.errorMessage}</pre> : null}
         </div>
       </div>
@@ -380,7 +417,7 @@ function MigrationResult({ entry, transactionalDdl }: { entry: MigrationEntry; t
         <img alt="" src={senja.rewind} />
         <div>
           <strong>Migration sudah di-rollback</strong>
-          <p>Perubahan v{entry.version} dibatalkan lewat Down SQL. Jalankan ulang (forward) membutuhkan approval baru.</p>
+          <p>{failedAction === 'forward' ? 'Forward terakhir gagal. Periksa penyebab kegagalannya sebelum mencoba lagi.' : `Perubahan v${entry.version} dibatalkan lewat Down SQL. Jalankan ulang membutuhkan approval forward.`}</p>
         </div>
       </div>
     )
@@ -395,7 +432,7 @@ function MigrationResult({ entry, transactionalDdl }: { entry: MigrationEntry; t
           <p>
             {reverted
               ? 'Sebagian batch sudah dibatalkan. Lanjutkan rollback dari checkpoint terakhir setelah approval lengkap.'
-              : 'Batch yang sudah committed tetap tersimpan. Coba ulang melanjutkan dari checkpoint terakhir, bukan dari awal.'}
+              : 'Batch yang sudah committed tetap tersimpan. Lanjutkan dari checkpoint terakhir atau pilih rollback bila Down SQL tersedia.'}
           </p>
           {entry.errorMessage ? <pre>{entry.errorMessage}</pre> : null}
         </div>
@@ -405,7 +442,7 @@ function MigrationResult({ entry, transactionalDdl }: { entry: MigrationEntry; t
   if (entry.status === 'running') {
     return (
       <StatusMessage tone="loading" title="Sedang berjalan">
-        Migration sedang dijalankan. Jangan tutup halaman ini.
+        Worker sedang memproses migration. Kamu bisa kembali ke halaman ini untuk memeriksa hasilnya.
       </StatusMessage>
     )
   }

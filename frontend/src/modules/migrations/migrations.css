@@ -71,6 +71,40 @@
   gap: 1rem;
 }
 
+.migration-batch-fields,
+.execution-detail__meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  gap: 1rem;
+}
+
+.migration-sql-field,
+.migration-sql-preview {
+  font-family: var(--font-mono);
+}
+
+.migration-sql-preview {
+  max-height: 20rem;
+  overflow: auto;
+  padding: 0.75rem;
+  border: 1px solid var(--plum);
+  border-radius: var(--radius);
+  color: #ffe3d3;
+  background: var(--plum);
+}
+
+.execution-detail__meta dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.execution-detail__events {
+  display: grid;
+  gap: 0.75rem;
+  padding-inline-start: 1.25rem;
+  overflow-wrap: anywhere;
+}
+
 .sql-editor {
   display: flex;
   overflow: hidden;

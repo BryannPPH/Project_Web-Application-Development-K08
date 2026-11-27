@@ -6,25 +6,8 @@ import { describeError } from '@/components/error-message'
 import { StatusMessage } from '@/components/StatusMessage'
 import { listExecutionHistory } from '@/modules/migrations/api'
 import { jobQueryKeys } from '@/modules/migrations/jobs'
-import { displayTime } from '@/modules/migrations/query-helpers'
-import type { ExecutionAction, MigrationEntry } from '@/modules/migrations/types'
-
-const actionText: Record<ExecutionAction, string> = {
-  apply: 'Eksekusi',
-  retry: 'Eksekusi ulang',
-  rollback: 'Rollback',
-  forward: 'Forward',
-}
-
-const statusText: Record<string, string> = {
-  running: 'Berjalan',
-  succeeded: 'Berhasil',
-  failed: 'Gagal',
-  partial: 'Sebagian',
-  partially_reverted: 'Sebagian dibatalkan',
-  interrupted: 'Terputus',
-  needs_reconciliation: 'Perlu rekonsiliasi',
-}
+import { displayTime, executionActionText, executionStatusText } from '@/modules/migrations/query-helpers'
+import type { MigrationEntry } from '@/modules/migrations/types'
 
 const PAGE_SIZE = 100
 
@@ -94,17 +77,17 @@ export function ExecutionHistory({ databaseId, migrations }: { databaseId: strin
             </thead>
             <tbody>
               {shown.map((item) => {
-                const entry = byMigration.get(item.migrationId)
+                const name = item.migrationName || byMigration.get(item.migrationId)?.name
                 return (
                   <tr key={item.executionId}>
                     <td data-label="Waktu">{displayTime(item.requestedAt)}</td>
                     <td data-label="Versi">
-                      <Link className="migration-name-link" to={item.migrationId}>
-                        v{item.version}{entry ? ` · ${entry.name}` : ''}
+                      <Link className="migration-name-link" to={`/databases/${databaseId}/migrations/executions/${item.executionId}`}>
+                        v{item.version}{name ? ` · ${name}` : ''}
                       </Link>
                     </td>
-                    <td data-label="Aksi">{actionText[item.action]}</td>
-                    <td data-label="Status">{statusText[item.status] ?? item.status}</td>
+                    <td data-label="Aksi">{executionActionText[item.action]}</td>
+                    <td data-label="Status">{executionStatusText[item.status] ?? item.status}</td>
                     <td data-label="Oleh">{item.actorUsername}</td>
                   </tr>
                 )
