@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type Row interface {
@@ -19,6 +20,21 @@ type Rows interface {
 	Next() bool
 	Scan(dest ...any) error
 	Values() ([]any, error)
+}
+
+// PostgreSQLSingleColumn returns the result column name for one-column queries.
+func PostgreSQLSingleColumn(rows Rows) (string, bool) {
+	result, ok := rows.(interface {
+		FieldDescriptions() []pgconn.FieldDescription
+	})
+	if !ok {
+		return "", false
+	}
+	fields := result.FieldDescriptions()
+	if len(fields) != 1 || fields[0].Name == "" || fields[0].Name == "?column?" {
+		return "", false
+	}
+	return fields[0].Name, true
 }
 
 type CommandResult interface {

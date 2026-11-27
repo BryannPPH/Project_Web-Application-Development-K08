@@ -549,6 +549,8 @@ func publicJobError(err error) (string, string) {
 		return "TARGET_UNAVAILABLE", "target database is temporarily unavailable"
 	case errors.Is(err, ErrRevisionChanged):
 		return "MIGRATION_REVISION_CHANGED", "migration changed after this job was approved; approve and enqueue the current revision"
+	case errors.Is(err, ErrTargetBatchBlocked):
+		return "TARGET_BATCH_BLOCKED", "an unresolved batch on another connection blocks this target; complete or recover that batch first"
 	case errors.Is(err, ErrWrongOrder):
 		return "MIGRATION_ORDER_CONFLICT", "an earlier migration blocks this job"
 	case errors.Is(err, ErrIrreversible):

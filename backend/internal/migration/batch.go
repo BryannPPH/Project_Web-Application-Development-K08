@@ -29,11 +29,11 @@ func (e *PGExecutor) ValidateBatch(ctx context.Context, databaseID string, entry
 	if entry.ExecutionMode != ExecutionModeBatch || entry.BatchSelectSQL == nil || entry.BatchSize == nil {
 		return ErrInvalidInput
 	}
-	connection, err := e.provider.Open(ctx, databaseID)
+	connection, closeConnection, err := e.executionConnection(ctx, databaseID)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = connection.Close(context.WithoutCancel(ctx)) }()
+	defer closeConnection()
 	if connection.Engine() != targetdb.EnginePostgreSQL {
 		return ErrSQLPolicy
 	}
@@ -47,19 +47,24 @@ func (e *PGExecutor) ExecuteBatch(ctx context.Context, databaseID, executionID s
 	if plan.Entry.ExecutionMode != ExecutionModeBatch || plan.Entry.BatchSelectSQL == nil || plan.Entry.BatchSize == nil {
 		return failedBatch("invalid batch migration definition", ErrInvalidInput)
 	}
-	connection, err := e.provider.Open(ctx, databaseID)
+	connection, closeConnection, err := e.executionConnection(ctx, databaseID)
 	if err != nil {
 		return failedBatch("target database is unavailable", err)
 	}
-	defer func() { _ = connection.Close(context.WithoutCancel(ctx)) }()
+	defer closeConnection()
 	if connection.Engine() != targetdb.EnginePostgreSQL {
 		return failedBatch("batch migrations require PostgreSQL", ErrSQLPolicy)
 	}
-	if err := acquireTargetMigrationLock(ctx, connection); err != nil {
-		return failedBatch("could not acquire the PostgreSQL migration lock", err)
+	if !hasLockedTarget(ctx, databaseID) {
+		if err := acquireTargetMigrationLock(ctx, connection); err != nil {
+			return failedBatch("could not acquire the PostgreSQL migration lock", err)
+		}
 	}
 	if _, err := connection.Exec(ctx, batchCheckpointTable); err != nil {
 		return failedBatch("could not initialize batch checkpoint storage", err)
+	}
+	if _, err := connection.Exec(ctx, batchScopeTable); err != nil {
+		return failedBatch("could not initialize batch scope storage", err)
 	}
 	if plan.Action == ActionRollback {
 		return e.executeBatchRollback(ctx, connection, databaseID, executionID, plan, report)
@@ -78,68 +83,28 @@ func (e *PGExecutor) executeBatchUp(ctx context.Context, connection targetdb.Con
 		rootID, plan.Entry.BatchCursorStart).Scan(&cursorStart, &batchNumber); err != nil {
 		return failedBatch("could not read batch checkpoint", err)
 	}
+	if err := prepareBatchScope(ctx, connection, rootID, plan.Entry, batchNumber); err != nil {
+		return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "up", "could not establish the original batch scope", err)
+	}
 	for {
 		activity := targetdb.ActivityFromContext(ctx)
 		activity.BatchNumber = batchNumber + 1
 		batchCtx := targetdb.WithActivity(ctx, activity)
+		keys, column, err := loadBatchScope(batchCtx, connection, rootID, batchNumber+1)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ExecutionResult{Status: StatusSucceeded}
+		}
+		if err != nil {
+			return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "up", "could not read the batch scope", err)
+		}
+		cursorEnd := keys[len(keys)-1]
 		selectCtx, cancel := context.WithCancel(batchCtx)
 		tx, err := connection.Begin(selectCtx)
 		if err != nil {
 			cancel()
 			return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "up", "could not start batch transaction", err)
 		}
-		selectorCtx := targetdb.WithSafeParameterIndexes(selectCtx, 0, 1)
-		rows, err := tx.Query(selectorCtx, *plan.Entry.BatchSelectSQL, cursorStart, *plan.Entry.BatchSize)
-		if err != nil {
-			_ = tx.Rollback(context.WithoutCancel(ctx))
-			cancel()
-			return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "up", "could not select the next batch", err,
-				BatchFailureEvent{QuerySQL: *plan.Entry.BatchSelectSQL, QueryParameters: []int64{cursorStart, int64(*plan.Entry.BatchSize)}})
-		}
-		var cursorEnd int64
-		var selected int64
-		for rows.Next() {
-			if selected >= int64(*plan.Entry.BatchSize) {
-				rows.Close()
-				_ = tx.Rollback(context.WithoutCancel(ctx))
-				cancel()
-				return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "up", "batch selector returned more rows than the configured size", ErrInvalidInput,
-					BatchFailureEvent{QuerySQL: *plan.Entry.BatchSelectSQL, QueryParameters: []int64{cursorStart, int64(*plan.Entry.BatchSize)}})
-			}
-			var raw any
-			if err := rows.Scan(&raw); err != nil {
-				rows.Close()
-				_ = tx.Rollback(context.WithoutCancel(ctx))
-				cancel()
-				return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "up", "batch cursor must be an integer", err,
-					BatchFailureEvent{QuerySQL: *plan.Entry.BatchSelectSQL, QueryParameters: []int64{cursorStart, int64(*plan.Entry.BatchSize)}})
-			}
-			value, ok := integerCursor(raw)
-			if !ok || (selected > 0 && value <= cursorEnd) || value <= cursorStart {
-				rows.Close()
-				_ = tx.Rollback(context.WithoutCancel(ctx))
-				cancel()
-				return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "up", "batch cursor values must be unique, increasing integers", ErrInvalidInput,
-					BatchFailureEvent{QuerySQL: *plan.Entry.BatchSelectSQL, QueryParameters: []int64{cursorStart, int64(*plan.Entry.BatchSize)}})
-			}
-			cursorEnd = value
-			selected++
-		}
-		rowsErr := rows.Err()
-		rows.Close()
-		if rowsErr != nil {
-			_ = tx.Rollback(context.WithoutCancel(ctx))
-			cancel()
-			return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "up", "batch cursor query failed", rowsErr,
-				BatchFailureEvent{QuerySQL: *plan.Entry.BatchSelectSQL, QueryParameters: []int64{cursorStart, int64(*plan.Entry.BatchSize)}})
-		}
-		if selected == 0 {
-			_ = tx.Rollback(context.WithoutCancel(ctx))
-			cancel()
-			return ExecutionResult{Status: StatusSucceeded}
-		}
-		migrationSQLCtx := targetdb.WithSafeParameterIndexes(selectCtx, 0, 1)
-		result, err := tx.Exec(migrationSQLCtx, plan.SQLSnapshot, cursorStart, cursorEnd)
+		rowsAffected, err := executeScopedBatch(selectCtx, tx, plan.SQLSnapshot, column, cursorStart, cursorEnd, keys)
 		if err != nil {
 			_ = tx.Rollback(context.WithoutCancel(ctx))
 			cancel()
@@ -148,7 +113,6 @@ func (e *PGExecutor) executeBatchUp(ctx context.Context, connection targetdb.Con
 				BatchFailureEvent{QuerySQL: plan.SQLSnapshot, QueryParameters: []int64{cursorStart, cursorEnd},
 					BatchNumber: &batchNumber, CursorStart: &cursorStart, CursorEnd: &cursorEnd})
 		}
-		rowsAffected := result.RowsAffected()
 		batchNumber++
 		if _, err := tx.Exec(selectCtx, `INSERT INTO dbmp_migration_batch_checkpoints
 			(root_execution_id,execution_id,operation,batch_number,cursor_start,cursor_end,rows_affected,committed_at)
@@ -207,11 +171,11 @@ func (e *PGExecutor) executeBatchRollback(ctx context.Context, connection target
 		WHERE root_execution_id=$1::uuid AND operation='up'`, rootID).Scan(&lastBatch); err != nil {
 		return failedBatch("could not read source batch checkpoints", err)
 	}
-	if lastBatch == 0 {
-		return failedBatch("rollback has no committed source batch", ErrConflict)
-	}
 	if plan.Entry.DownSQL == nil {
 		return failedBatch("batch migration is irreversible", ErrIrreversible)
+	}
+	if _, _, err := loadBatchScope(ctx, connection, rootID, 0); err != nil {
+		return failedBatch("rollback cannot verify the original row scope; create a repair migration", err)
 	}
 	for batchNumber := lastBatch; batchNumber > 0; batchNumber-- {
 		activity := targetdb.ActivityFromContext(ctx)
@@ -234,19 +198,21 @@ func (e *PGExecutor) executeBatchRollback(ctx context.Context, connection target
 		if committed {
 			continue
 		}
+		keys, column, err := loadBatchScope(batchCtx, connection, rootID, batchNumber)
+		if err != nil {
+			return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "down", "rollback cannot verify the original row scope", err)
+		}
 		tx, err := connection.Begin(batchCtx)
 		if err != nil {
 			return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "down", "could not start rollback batch transaction", err)
 		}
-		migrationSQLCtx := targetdb.WithSafeParameterIndexes(batchCtx, 0, 1)
-		result, err := tx.Exec(migrationSQLCtx, plan.SQLSnapshot, cursorStart, cursorEnd)
+		rowsAffected, err := executeScopedBatch(batchCtx, tx, plan.SQLSnapshot, column, cursorStart, cursorEnd, keys)
 		if err != nil {
 			_ = tx.Rollback(context.WithoutCancel(ctx))
 			return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "down", "rollback batch SQL failed", err,
 				BatchFailureEvent{QuerySQL: plan.SQLSnapshot, QueryParameters: []int64{cursorStart, cursorEnd},
 					BatchNumber: &batchNumber, CursorStart: &cursorStart, CursorEnd: &cursorEnd})
 		}
-		rowsAffected := result.RowsAffected()
 		if _, err := tx.Exec(batchCtx, `INSERT INTO dbmp_migration_batch_checkpoints
 			(root_execution_id,execution_id,operation,batch_number,cursor_start,cursor_end,rows_affected,committed_at)
 			VALUES ($1::uuid,$2::uuid,'down',$3,$4,$5,$6,$7)`,

@@ -34,11 +34,11 @@ func NewPGExecutorWithLogger(provider targetdb.Provider, logger *slog.Logger) *P
 }
 
 func (e *PGExecutor) Validate(ctx context.Context, databaseID, sqlText string) error {
-	connection, err := e.provider.Open(ctx, databaseID)
+	connection, closeConnection, err := e.executionConnection(ctx, databaseID)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = connection.Close(context.WithoutCancel(ctx)) }()
+	defer closeConnection()
 	if connection.Engine() == targetdb.EngineMySQL {
 		return validateMySQLMigrationPolicy(sqlText)
 	}
@@ -46,18 +46,14 @@ func (e *PGExecutor) Validate(ctx context.Context, databaseID, sqlText string) e
 }
 
 func (e *PGExecutor) Execute(ctx context.Context, databaseID, sqlText string) ExecutionResult {
-	connection, err := e.provider.Open(ctx, databaseID)
+	connection, closeConnection, err := e.executionConnection(ctx, databaseID)
 	if err != nil {
 		message := "target database is unavailable"
 		return ExecutionResult{Status: StatusFailed, PublicError: &message, InternalError: fmt.Errorf("open target: %w", err)}
 	}
-	defer func() {
-		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = connection.Close(closeCtx)
-	}()
+	defer closeConnection()
 
-	if connection.Engine() == targetdb.EnginePostgreSQL {
+	if connection.Engine() == targetdb.EnginePostgreSQL && !hasLockedTarget(ctx, databaseID) {
 		if err := acquireTargetMigrationLock(ctx, connection); err != nil {
 			return failedBatch("could not acquire the PostgreSQL migration lock", err)
 		}

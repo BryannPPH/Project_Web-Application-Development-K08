@@ -318,6 +318,25 @@ func (s *Service) ExecuteAction(ctx context.Context, principal auth.Principal, d
 	if err := validateSQLPolicy(plan.SQLSnapshot); err != nil {
 		return Entry{}, err
 	}
+	if executor, ok := s.executor.(*PGExecutor); ok {
+		targetCtx, unlockTarget, err := executor.lockExecutionTarget(ctx, databaseID)
+		if err != nil {
+			return Entry{}, err
+		}
+		defer unlockTarget()
+		ctx = targetCtx
+		if guard, ok := repository.(interface {
+			unresolvedBatchRoots(context.Context, string) ([]string, error)
+		}); ok && hasLockedPostgreSQLTarget(ctx) {
+			roots, err := guard.unresolvedBatchRoots(ctx, databaseID)
+			if err != nil {
+				return Entry{}, err
+			}
+			if err := checkUnresolvedTargetBatches(ctx, roots); err != nil {
+				return Entry{}, err
+			}
+		}
+	}
 	var batchExecutor BatchExecutor
 	if plan.Entry.ExecutionMode == ExecutionModeBatch {
 		var ok bool

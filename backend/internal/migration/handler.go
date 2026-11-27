@@ -474,6 +474,9 @@ func (h *Handler) writeServiceError(w http.ResponseWriter, r *http.Request, err 
 		writeMigrationError(w, http.StatusNotFound, "NOT_FOUND", "migration not found")
 	case errors.Is(err, ErrConflict):
 		writeMigrationError(w, http.StatusConflict, "MIGRATION_CONFLICT", "migration is no longer an editable draft")
+	case errors.Is(err, ErrTargetBatchBlocked):
+		code, message := publicJobError(err)
+		writeMigrationError(w, http.StatusConflict, code, message)
 	case errors.Is(err, ErrWrongOrder):
 		writeMigrationError(w, http.StatusConflict, "MIGRATION_ORDER_BLOCKED", "an earlier migration blocks execution")
 	case errors.Is(err, ErrIrreversible):

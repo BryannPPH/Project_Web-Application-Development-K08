@@ -13,6 +13,7 @@ import (
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/observability"
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/requestmeta"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -211,6 +212,15 @@ type loggingRows struct {
 	span       trace.Span
 	count      int64
 	once       sync.Once
+}
+
+func (r *loggingRows) FieldDescriptions() []pgconn.FieldDescription {
+	if result, ok := r.Rows.(interface {
+		FieldDescriptions() []pgconn.FieldDescription
+	}); ok {
+		return result.FieldDescriptions()
+	}
+	return nil
 }
 
 func (r *loggingRows) Next() bool {
