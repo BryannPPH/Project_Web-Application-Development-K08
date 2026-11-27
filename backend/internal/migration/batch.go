@@ -66,10 +66,32 @@ func (e *PGExecutor) ExecuteBatch(ctx context.Context, databaseID, executionID s
 	if _, err := connection.Exec(ctx, batchScopeTable); err != nil {
 		return failedBatch("could not initialize batch scope storage", err)
 	}
+	var result ExecutionResult
 	if plan.Action == ActionRollback {
-		return e.executeBatchRollback(ctx, connection, databaseID, executionID, plan, report)
+		result = e.executeBatchRollback(ctx, connection, databaseID, executionID, plan, report)
+	} else {
+		result = e.executeBatchUp(ctx, connection, databaseID, executionID, plan, report)
 	}
-	return e.executeBatchUp(ctx, connection, databaseID, executionID, plan, report)
+
+	// A partial migration blocks every later migration. If its saved scope
+	// cannot be applied safely, keep that hold until an operator inspects and
+	// reconciles the target. A separately approved repair can then run.
+	partial := plan.Entry.Status == StatusPartial || plan.Entry.Status == StatusPartiallyReverted ||
+		result.Status == StatusPartial || result.Status == StatusPartiallyReverted
+	unsafeScope := errors.Is(result.InternalError, errBatchScopeMissing) || errors.Is(result.InternalError, errBatchScopeMismatch)
+	if partial && unsafeScope && result.Status != StatusInterrupted {
+		result.Status = StatusNeedsReconciliation
+		result.PublicError = stringPtr(batchReconciliationMessage(result.InternalError))
+	}
+	return result
+}
+
+func batchReconciliationMessage(err error) string {
+	message := "The original batch scope cannot be verified."
+	if errors.Is(err, errBatchScopeMismatch) {
+		message = "Affected rows differ from the original batch scope. The unsafe batch was not committed."
+	}
+	return message + " Inspect the target and record reconciliation before running a repair migration."
 }
 
 func (e *PGExecutor) executeBatchUp(ctx context.Context, connection targetdb.Connection, databaseID, executionID string, plan ExecutionPlan, report func(BatchCommitEvent) error) ExecutionResult {
@@ -175,7 +197,10 @@ func (e *PGExecutor) executeBatchRollback(ctx context.Context, connection target
 		return failedBatch("batch migration is irreversible", ErrIrreversible)
 	}
 	if _, _, err := loadBatchScope(ctx, connection, rootID, 0); err != nil {
-		return failedBatch("rollback cannot verify the original row scope; create a repair migration", err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return failedBatch("rollback cannot verify the original row scope; create a repair migration", errBatchScopeMissing)
+		}
+		return failedBatch("could not read the original rollback scope", err)
 	}
 	for batchNumber := lastBatch; batchNumber > 0; batchNumber-- {
 		activity := targetdb.ActivityFromContext(ctx)
@@ -186,7 +211,7 @@ func (e *PGExecutor) executeBatchRollback(ctx context.Context, connection target
 			WHERE root_execution_id=$1::uuid AND operation='up' AND batch_number=$2`, rootID, batchNumber).
 			Scan(&cursorStart, &cursorEnd)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "down", "source batch checkpoint is missing", err)
+			return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "down", "source batch checkpoint is missing", errBatchScopeMissing)
 		}
 		if err != nil {
 			return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "down", "could not read source batch range", err)
@@ -199,8 +224,11 @@ func (e *PGExecutor) executeBatchRollback(ctx context.Context, connection target
 			continue
 		}
 		keys, column, err := loadBatchScope(batchCtx, connection, rootID, batchNumber)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "down", "rollback cannot verify the original row scope", errBatchScopeMissing)
+		}
 		if err != nil {
-			return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "down", "rollback cannot verify the original row scope", err)
+			return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "down", "could not read the original rollback scope", err)
 		}
 		tx, err := connection.Begin(batchCtx)
 		if err != nil {

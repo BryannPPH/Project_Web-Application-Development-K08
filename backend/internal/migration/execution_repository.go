@@ -10,6 +10,7 @@ import (
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/platformdb"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func (r *PGRepository) PlanExecution(ctx context.Context, databaseID, migrationID string, action ExecutionAction, _ string) (ExecutionPlan, error) {
@@ -268,11 +269,16 @@ func (r *PGRepository) RecordBatchEvent(ctx context.Context, executionID string,
 }
 
 func (r *PGRepository) RecordBatchFailure(ctx context.Context, executionID, status string, failure BatchFailureEvent, message *string, now time.Time) error {
+	return insertBatchFailure(ctx, r.pool.Exec, executionID, status, failure, message, now)
+}
+
+func insertBatchFailure(ctx context.Context, exec func(context.Context, string, ...any) (pgconn.CommandTag, error),
+	executionID, status string, failure BatchFailureEvent, message *string, now time.Time) error {
 	parameters, err := json.Marshal(failure.QueryParameters)
 	if err != nil {
 		return fmt.Errorf("encode failed batch SQL parameters: %w", err)
 	}
-	_, err = r.pool.Exec(ctx, `INSERT INTO migration_execution_events
+	_, err = exec(ctx, `INSERT INTO migration_execution_events
 		(execution_id,status,event,occurred_at,error_message,query_sql,query_parameters,batch_number,cursor_start,cursor_end)
 		VALUES ($1::uuid,$2,'batch_failed',$3,$4,$5,$6::jsonb,$7,$8,$9)`,
 		executionID, status, now, message, failure.QuerySQL, parameters,
@@ -281,7 +287,7 @@ func (r *PGRepository) RecordBatchFailure(ctx context.Context, executionID, stat
 }
 
 func (r *PGRepository) FinishExecution(ctx context.Context, attempt ExecutionAttempt, status Status, message *string, now time.Time) (Entry, error) {
-	return r.finishExecution(ctx, attempt, status, message, now, nil)
+	return r.finishExecution(ctx, attempt, status, message, now, nil, nil)
 }
 
 type reconciliationRecord struct {
@@ -290,7 +296,7 @@ type reconciliationRecord struct {
 }
 
 func (r *PGRepository) finishExecution(ctx context.Context, attempt ExecutionAttempt, status Status, message *string,
-	now time.Time, reconciliation *reconciliationRecord) (Entry, error) {
+	now time.Time, reconciliation *reconciliationRecord, batchFailure *BatchFailureEvent) (Entry, error) {
 	eventStatus, eventType := string(status), eventForStatus(status)
 	eventMessage := message
 	if status == StatusSucceeded {
@@ -346,6 +352,13 @@ func (r *PGRepository) finishExecution(ctx context.Context, attempt ExecutionAtt
 		migrationStatus, active, message = StatusPartial, false, nil
 	default:
 		migrationStatus, active = StatusFailed, false
+	}
+	// Commit failure evidence with the final status so recovery cannot see
+	// a terminal event while the migration is still marked running.
+	if batchFailure != nil {
+		if err := insertBatchFailure(ctx, tx.Exec, attempt.ID, eventStatus, *batchFailure, eventMessage, now); err != nil {
+			return Entry{}, err
+		}
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO migration_execution_events
 		(execution_id,status,event,occurred_at,error_message) VALUES ($1::uuid,$2,$3,$4,$5)`,

@@ -259,7 +259,7 @@ func (s *Service) reconcileTargetJournal(ctx context.Context, entry Entry, now t
 		status = StatusFailed
 		message = stringPtr("target journal confirms the transaction did not commit")
 	}
-	result, err := repository.finishExecution(ctx, attempt, status, message, now, &record)
+	result, err := repository.finishExecution(ctx, attempt, status, message, now, &record, nil)
 	return result, true, err
 }
 
@@ -472,7 +472,9 @@ func (s *Service) ExecuteAction(ctx context.Context, principal auth.Principal, d
 		message := "migration outcome is uncertain; manual reconciliation is required"
 		result.PublicError = &message
 	}
-	if plan.Entry.ExecutionMode == ExecutionModeBatch && result.Status != StatusSucceeded {
+	failedBatch := plan.Entry.ExecutionMode == ExecutionModeBatch && result.Status != StatusSucceeded
+	pgRepository, atomicBatchHistory := repository.(*PGRepository)
+	if failedBatch && !atomicBatchHistory {
 		recordCtx, recordCancel := context.WithTimeout(context.WithoutCancel(executionCtx), 5*time.Second)
 		var recordErr error
 		if result.BatchFailure != nil {
@@ -495,7 +497,18 @@ func (s *Service) ExecuteAction(ctx context.Context, principal auth.Principal, d
 	}
 	finalizeCtx, finalizeCancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer finalizeCancel()
-	entry, finishErr := repository.FinishExecution(finalizeCtx, attempt, result.Status, result.PublicError, s.clock.Now())
+	var entry Entry
+	var finishErr error
+	finishedAt := s.clock.Now()
+	if failedBatch && atomicBatchHistory {
+		failure := result.BatchFailure
+		if failure == nil {
+			failure = &BatchFailureEvent{}
+		}
+		entry, finishErr = pgRepository.finishExecution(finalizeCtx, attempt, result.Status, result.PublicError, finishedAt, nil, failure)
+	} else {
+		entry, finishErr = repository.FinishExecution(finalizeCtx, attempt, result.Status, result.PublicError, finishedAt)
+	}
 	if finishErr != nil {
 		s.logger.Error("CRITICAL: target execution finished but history finalization failed",
 			"event", "migration_history_finalize_failed", "database_id", databaseID,

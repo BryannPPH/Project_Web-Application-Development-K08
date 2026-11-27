@@ -10,6 +10,11 @@ import (
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/targetdb"
 )
 
+var (
+	errBatchScopeMissing  = errors.New("the original row scope was not recorded")
+	errBatchScopeMismatch = errors.New("affected rows differ from the original batch scope; no changes from this batch were committed")
+)
+
 const batchScopeTable = `CREATE TABLE IF NOT EXISTS dbmp_migration_batch_scope (
 	root_execution_id UUID NOT NULL,
 	batch_number BIGINT NOT NULL CHECK (batch_number >= 0),
@@ -36,7 +41,7 @@ func prepareBatchScope(ctx context.Context, connection targetdb.Connection, root
 		return err
 	}
 	if committedBatches > 0 {
-		return errors.New("the original row scope was not recorded; create a repair migration")
+		return errBatchScopeMissing
 	}
 	tx, err := connection.Begin(ctx)
 	if err != nil {
@@ -134,10 +139,9 @@ func executeScopedBatch(ctx context.Context, tx targetdb.Transaction, sql, curso
 	}
 	defer rows.Close()
 	actual := make([]int64, 0, len(expected))
-	scopeError := errors.New("affected rows differ from the original batch scope; no changes from this batch were committed")
 	for rows.Next() {
 		if len(actual) == len(expected) {
-			return 0, query, scopeError
+			return 0, query, errBatchScopeMismatch
 		}
 		key, err := scanBatchKey(rows)
 		if err != nil {
@@ -150,7 +154,7 @@ func executeScopedBatch(ctx context.Context, tx targetdb.Transaction, sql, curso
 	}
 	slices.Sort(actual)
 	if !slices.Equal(actual, expected) {
-		return 0, query, scopeError
+		return 0, query, errBatchScopeMismatch
 	}
 	return int64(len(actual)), query, nil
 }

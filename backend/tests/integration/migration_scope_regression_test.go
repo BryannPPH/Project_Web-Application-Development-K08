@@ -2,6 +2,7 @@ package integration_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -271,4 +272,76 @@ func TestUnresolvedTargetBlocksAliasesAndRejectedJobsRemainInHistory(t *testing.
 	if job := enqueue(otherAlias, aliasSingle, "execute"); job["status"] != "succeeded" {
 		t.Fatalf("reconciled single migration still blocks alias: %v", job)
 	}
+
+	t.Run("repair after unsafe partial rollback", func(t *testing.T) {
+		partial := create(otherAlias, map[string]any{
+			"name":           "partial with changing scope",
+			"sql":            "UPDATE " + table + " SET value=value+1 WHERE id>$1 AND id<=$2",
+			"downSql":        "UPDATE " + table + " SET value=value-1 WHERE id>$1 AND id<=$2",
+			"executionMode":  "batch",
+			"batchSize":      1,
+			"batchSelectSql": "SELECT id FROM " + table + " WHERE id>$1 ORDER BY id LIMIT $2",
+		})
+		if job := apply(otherAlias, partial); job["status"] != "partial" {
+			t.Fatalf("expected a partial apply: %v", job)
+		}
+		if _, err := target.Exec(ctx, "DELETE FROM "+table+" WHERE id=1"); err != nil {
+			t.Fatal(err)
+		}
+		if job := enqueue(otherAlias, partial, "retry"); job["status"] != "partial" {
+			t.Fatalf("ordinary SQL failure should still allow batch recovery: %v", job)
+		}
+
+		harness.approveMigrationAction(otherAlias+"/migrations", partial, "rollback", editor)
+		blockedRollback := enqueue(otherAlias, partial, "rollback")
+		if blockedRollback["status"] != "needs_reconciliation" ||
+			!strings.Contains(fmt.Sprint(blockedRollback["errorMessage"]), "original batch scope") {
+			t.Fatalf("expected rollback rejection with a reconciliation path: %v", blockedRollback)
+		}
+		detail := harness.call(http.MethodGet, otherAlias+"/migrations/"+partial, nil, editor, http.StatusOK)
+		if detail["canReconcile"] != true {
+			t.Fatalf("the unsafe migration must expose reconciliation: %v", detail)
+		}
+		progress := harness.call(http.MethodGet, otherAlias+"/migration-executions/"+blockedRollback["executionId"].(string)+"/progress",
+			nil, editor, http.StatusOK)
+		if progress["committedBatches"] != float64(0) {
+			t.Fatalf("the unsafe rollback must not commit: %v", progress)
+		}
+
+		repair := create(otherAlias, map[string]any{
+			"name":    "repair inspected target",
+			"sql":     "INSERT INTO " + table + " (id,value) VALUES (1,0)",
+			"downSql": "DELETE FROM " + table + " WHERE id=1",
+		})
+		repairPath := otherAlias + "/migrations/" + repair + "/execute"
+		if response := harness.do(http.MethodPost, repairPath, nil, &editor, true); response.Code != http.StatusConflict ||
+			errorCode(response) != "APPROVAL_REQUIRED" {
+			t.Fatalf("repair must still require approval: %d %s", response.Code, response.Body.String())
+		}
+		harness.approveApply(otherAlias+"/migrations", repair, editor)
+		queued := harness.do(http.MethodPost, repairPath, nil, &editor, true)
+		if queued.Code != http.StatusAccepted {
+			t.Fatalf("enqueue approved repair: %d %s", queued.Code, queued.Body.String())
+		}
+		location := queued.Header().Get("Location")
+		for i := 0; i < 3; i++ {
+			time.Sleep(50 * time.Millisecond)
+			if job := harness.call(http.MethodGet, location, nil, editor, http.StatusOK); job["status"] != "queued" {
+				t.Fatalf("repair must wait for reconciliation: %v", job)
+			}
+		}
+
+		reconciled := harness.call(http.MethodPost, otherAlias+"/migrations/"+partial+"/reconcile", map[string]any{
+			"inspectedTarget": true, "note": "The original row was removed and rollback committed no changes.",
+		}, editor, http.StatusOK)
+		if reconciled["status"] != "reconciled" {
+			t.Fatalf("expected the operator's inspection to be recorded: %v", reconciled)
+		}
+		if job := harness.waitForJob(location, editor); job["status"] != "succeeded" {
+			t.Fatalf("approved repair did not run after reconciliation: %v", job)
+		}
+		if err := target.QueryRow(ctx, "SELECT value FROM "+table+" WHERE id=1").Scan(&value); err != nil || value != 0 {
+			t.Fatalf("expected the repair to restore the row: value=%d error=%v", value, err)
+		}
+	})
 }
