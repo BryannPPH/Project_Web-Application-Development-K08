@@ -54,36 +54,41 @@ const (
 )
 
 type Entry struct {
-	ID                   string        `json:"id"`
-	DatabaseID           string        `json:"databaseId"`
-	Version              int64         `json:"version"`
-	Revision             int64         `json:"revision"`
-	Name                 string        `json:"name"`
-	SQL                  string        `json:"sql"`
-	DownSQL              *string       `json:"downSql"`
-	IrreversibleReason   *string       `json:"irreversibleReason"`
-	IsActive             bool          `json:"isActive"`
-	LatestExecutionID    *string       `json:"latestExecutionId"`
-	ExecutionMode        ExecutionMode `json:"executionMode"`
-	BatchSelectSQL       *string       `json:"batchSelectSql"`
-	BatchSize            *int          `json:"batchSize"`
-	BatchCursorStart     int64         `json:"batchCursorStart"`
-	Status               Status        `json:"status"`
-	CreatedBy            string        `json:"createdBy"`
-	CreatedByUsername    string        `json:"createdByUsername"`
-	ExecutedBy           *string       `json:"executedBy"`
-	ExecutedByUsername   *string       `json:"executedByUsername"`
-	CreatedAt            time.Time     `json:"createdAt"`
-	StartedAt            *time.Time    `json:"startedAt"`
-	FinishedAt           *time.Time    `json:"finishedAt"`
-	ErrorMessage         *string       `json:"errorMessage"`
-	ReconciledFrom       *Status       `json:"reconciledFrom"`
-	ReconciledBy         *string       `json:"reconciledBy"`
-	ReconciledByUsername *string       `json:"reconciledByUsername"`
-	ReconciledAt         *time.Time    `json:"reconciledAt"`
-	ReconciliationNote   *string       `json:"reconciliationNote"`
-	CanEdit              bool          `json:"canEdit"`
-	CanReconcile         bool          `json:"canReconcile"`
+	ID                   string          `json:"id"`
+	DatabaseID           string          `json:"databaseId"`
+	Version              int64           `json:"version"`
+	Revision             int64           `json:"revision"`
+	Name                 string          `json:"name"`
+	SQL                  string          `json:"sql"`
+	DownSQL              *string         `json:"downSql"`
+	IrreversibleReason   *string         `json:"irreversibleReason"`
+	IsActive             bool            `json:"isActive"`
+	LatestExecutionID    *string         `json:"latestExecutionId"`
+	LatestJobID          *string         `json:"latestJobId,omitempty"`
+	PartialAction        ExecutionAction `json:"partialAction,omitempty"`
+	ExecutionMode        ExecutionMode   `json:"executionMode"`
+	BatchSelectSQL       *string         `json:"batchSelectSql"`
+	BatchSize            *int            `json:"batchSize"`
+	BatchCursorStart     int64           `json:"batchCursorStart"`
+	Status               Status          `json:"status"`
+	CreatedBy            string          `json:"createdBy"`
+	CreatedByUsername    string          `json:"createdByUsername"`
+	ExecutedBy           *string         `json:"executedBy"`
+	ExecutedByUsername   *string         `json:"executedByUsername"`
+	CreatedAt            time.Time       `json:"createdAt"`
+	StartedAt            *time.Time      `json:"startedAt"`
+	FinishedAt           *time.Time      `json:"finishedAt"`
+	ErrorMessage         *string         `json:"errorMessage"`
+	ReconciledFrom       *Status         `json:"reconciledFrom"`
+	ReconciledBy         *string         `json:"reconciledBy"`
+	ReconciledByUsername *string         `json:"reconciledByUsername"`
+	ReconciledAt         *time.Time      `json:"reconciledAt"`
+	ReconciliationNote   *string         `json:"reconciliationNote"`
+	CanEdit              bool            `json:"canEdit"`
+	CanReconcile         bool            `json:"canReconcile"`
+
+	attemptStatus Status
+	attemptError  *string
 }
 
 // Definition is immutable after the first execution attempt has been recorded.
@@ -104,6 +109,7 @@ type ExecutionAttempt struct {
 	ID                 string           `json:"executionId"`
 	DatabaseID         string           `json:"databaseId"`
 	MigrationID        string           `json:"migrationId"`
+	MigrationName      string           `json:"migrationName"`
 	Version            int64            `json:"version"`
 	Revision           int64            `json:"revision"`
 	Action             ExecutionAction  `json:"action"`
@@ -116,6 +122,8 @@ type ExecutionAttempt struct {
 	Status             string           `json:"status"`
 	ErrorMessage       *string          `json:"errorMessage"`
 	Events             []ExecutionEvent `json:"events,omitempty"`
+
+	previousMigrationStatus Status
 }
 
 type ExecutionEvent struct {

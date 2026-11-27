@@ -49,6 +49,7 @@ type HistoryMigrationService interface {
 type JobHandlerService interface {
 	EnqueueAction(context.Context, auth.Principal, string, string, ExecutionAction, EnqueueMetadata) (Job, error)
 	GetJob(context.Context, auth.Principal, string, string) (Job, error)
+	LatestJobID(context.Context, auth.Principal, string, string) (*string, error)
 }
 
 type Handler struct {
@@ -202,10 +203,18 @@ func (h *Handler) detail(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	entry, err := h.service.Get(r.Context(), principal, databaseID, r.PathValue("migrationId"))
+	migrationID := r.PathValue("migrationId")
+	entry, err := h.service.Get(r.Context(), principal, databaseID, migrationID)
 	if err != nil {
 		h.writeServiceError(w, r, err)
 		return
+	}
+	if h.jobs != nil {
+		entry.LatestJobID, err = h.jobs.LatestJobID(r.Context(), principal, databaseID, migrationID)
+		if err != nil {
+			h.writeServiceError(w, r, err)
+			return
+		}
 	}
 	writeMigrationJSON(w, http.StatusOK, entry)
 }

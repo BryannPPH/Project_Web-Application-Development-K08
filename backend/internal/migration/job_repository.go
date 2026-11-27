@@ -96,6 +96,19 @@ func (r *PGJobRepository) Get(ctx context.Context, databaseID, jobID string) (Jo
 	return job, mapRepositoryError(err)
 }
 
+func (r *PGJobRepository) LatestJobID(ctx context.Context, databaseID, migrationID string) (*string, error) {
+	var id string
+	err := r.pool.QueryRow(ctx, `SELECT id::text FROM migration_jobs
+		WHERE database_id=$1::uuid AND migration_id=$2::uuid ORDER BY created_at DESC, id DESC LIMIT 1`, databaseID, migrationID).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, mapRepositoryError(err)
+	}
+	return &id, nil
+}
+
 func (r *PGJobRepository) ClaimNext(ctx context.Context, workerID, leaseToken string, lease time.Duration, now time.Time) (Job, bool, error) {
 	query := `WITH candidate AS MATERIALIZED (
 		SELECT j.id
@@ -107,10 +120,10 @@ func (r *PGJobRepository) ClaimNext(ctx context.Context, workerID, leaseToken st
 			  AND (earlier.created_at,earlier.id) < (j.created_at,j.id)
 			  AND (
 				(earlier.status IN ('queued','running','retrying') AND NOT (
-					j.action IN ('retry','rollback') AND EXISTS (
+					j.action IN ('retry','rollback','forward') AND EXISTS (
 						SELECT 1 FROM migration_entries corrective
 						WHERE corrective.id=j.migration_id AND corrective.database_id=j.database_id
-						  AND ((j.action='retry' AND corrective.status='partial')
+						  AND (corrective.status='partial'
 						    OR (j.action='rollback' AND corrective.status='partially_reverted'))
 						  AND EXISTS (
 							SELECT 1 FROM migration_entries blocked
@@ -121,7 +134,7 @@ func (r *PGJobRepository) ClaimNext(ctx context.Context, workerID, leaseToken st
 				))
 				OR (earlier.status IN ('partial','partially_reverted') AND EXISTS (
 					SELECT 1 FROM migration_entries e WHERE e.id=earlier.migration_id
-					  AND ((e.status='partial' AND NOT (earlier.migration_id=j.migration_id AND j.action IN ('retry','rollback')))
+					  AND ((e.status='partial' AND NOT (earlier.migration_id=j.migration_id AND j.action IN ('retry','rollback','forward')))
 					    OR (e.status='partially_reverted' AND NOT (earlier.migration_id=j.migration_id AND j.action='rollback')))
 				))
 				OR (earlier.status='needs_reconciliation' AND EXISTS (

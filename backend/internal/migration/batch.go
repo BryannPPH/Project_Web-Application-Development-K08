@@ -55,6 +55,9 @@ func (e *PGExecutor) ExecuteBatch(ctx context.Context, databaseID, executionID s
 	if connection.Engine() != targetdb.EnginePostgreSQL {
 		return failedBatch("batch migrations require PostgreSQL", ErrSQLPolicy)
 	}
+	if err := acquireTargetMigrationLock(ctx, connection); err != nil {
+		return failedBatch("could not acquire the PostgreSQL migration lock", err)
+	}
 	if _, err := connection.Exec(ctx, batchCheckpointTable); err != nil {
 		return failedBatch("could not initialize batch checkpoint storage", err)
 	}

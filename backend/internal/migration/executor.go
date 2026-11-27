@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
 
 	"github.com/BryannPPH/Project_Web-Application-Development-K08/backend/internal/targetdb"
 )
@@ -55,6 +57,11 @@ func (e *PGExecutor) Execute(ctx context.Context, databaseID, sqlText string) Ex
 		_ = connection.Close(closeCtx)
 	}()
 
+	if connection.Engine() == targetdb.EnginePostgreSQL {
+		if err := acquireTargetMigrationLock(ctx, connection); err != nil {
+			return failedBatch("could not acquire the PostgreSQL migration lock", err)
+		}
+	}
 	if connection.Engine() == targetdb.EngineMySQL {
 		mode, err := classifyMySQLMigration(sqlText)
 		if err != nil {
@@ -106,6 +113,20 @@ func (e *PGExecutor) Execute(ctx context.Context, databaseID, sqlText string) Ex
 		return ExecutionResult{Status: StatusInterrupted, PublicError: &message, InternalError: fmt.Errorf("commit target migration: %w", err)}
 	}
 	return ExecutionResult{Status: StatusSucceeded}
+}
+
+// The advisory lock is scoped to the physical database. Holding it on the
+// execution session covers aliases and the gaps between batch transactions.
+const targetMigrationLockSQL = "SELECT pg_advisory_lock($1, $2)"
+
+func acquireTargetMigrationLock(ctx context.Context, connection targetdb.Connection) error {
+	ctx, span := otel.Tracer("dbmp/migration").Start(ctx, "migration.target.lock.acquire")
+	defer span.End()
+	_, err := connection.Exec(ctx, targetMigrationLockSQL, int32(0x44424d50), int32(1))
+	if err != nil {
+		span.SetStatus(codes.Error, "target migration lock unavailable")
+	}
+	return err
 }
 
 var credentialPattern = regexp.MustCompile(`(?i)(password|passwd|pwd|user|username|host|dbname|database|sslkey|sslcert)\s*=\s*([^\s;]+)`)

@@ -34,7 +34,10 @@ func (f *fakeTargetConnection) Query(context.Context, string, ...any) (targetdb.
 func (f *fakeTargetConnection) QueryRow(context.Context, string, ...any) targetdb.Row {
 	return fakeRow{err: errors.New("not configured")}
 }
-func (f *fakeTargetConnection) Exec(context.Context, string, ...any) (targetdb.CommandResult, error) {
+func (f *fakeTargetConnection) Exec(_ context.Context, query string, _ ...any) (targetdb.CommandResult, error) {
+	if query == targetMigrationLockSQL {
+		return nil, nil
+	}
 	return nil, errors.New("not configured")
 }
 func (f *fakeTargetConnection) Begin(context.Context, ...targetdb.TxOptions) (targetdb.Transaction, error) {

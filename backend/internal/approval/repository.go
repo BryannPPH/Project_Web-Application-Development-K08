@@ -29,10 +29,16 @@ func NewPGRepository(pool *pgxpool.Pool) *PGRepository { return &PGRepository{po
 func (r *PGRepository) Target(ctx context.Context, databaseID, migrationID string) (Target, error) {
 	var target Target
 	err := r.pool.QueryRow(ctx, `
-		SELECT id::text, database_id::text, status, revision
-		FROM migration_entries
-		WHERE database_id = $1::uuid AND id = $2::uuid`, databaseID, migrationID).
-		Scan(&target.MigrationID, &target.DatabaseID, &target.Status, &target.Revision)
+		SELECT m.id::text, m.database_id::text, m.status, m.revision,
+			m.sql_down IS NOT NULL AND m.irreversible_reason IS NULL,
+			COALESCE(CASE WHEN m.status='partial' THEN (
+				SELECT a.action FROM migration_execution_attempts a
+				WHERE a.migration_id=m.id AND a.action IN ('apply','retry','forward')
+				ORDER BY a.requested_at DESC,a.id DESC LIMIT 1
+			) END,'')
+		FROM migration_entries m
+		WHERE m.database_id = $1::uuid AND m.id = $2::uuid`, databaseID, migrationID).
+		Scan(&target.MigrationID, &target.DatabaseID, &target.Status, &target.Revision, &target.Reversible, &target.PartialAction)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Target{}, ErrNotFound
 	}

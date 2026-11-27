@@ -74,10 +74,12 @@ type GroupReview struct {
 
 // Target = migration yang sedang direview: status & revisi saat ini.
 type Target struct {
-	MigrationID string
-	DatabaseID  string
-	Status      string // status migration_entries: draft, succeeded, ...
-	Revision    int64
+	MigrationID   string
+	DatabaseID    string
+	Status        string // status migration_entries: draft, succeeded, ...
+	Revision      int64
+	PartialAction string
+	Reversible    bool
 }
 
 // Review = jawaban GET .../approvals.

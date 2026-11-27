@@ -72,7 +72,7 @@ func (s *Service) Review(ctx context.Context, principal auth.Principal, database
 		Groups:        reviews,
 		ApprovedCount: approved,
 		RequiredCount: len(groups),
-		CanDecide:     isRequiredLeader(groups, principal.UserID) && reviewable(target.Status, action),
+		CanDecide:     isRequiredLeader(groups, principal.UserID) && reviewable(target, action),
 	}
 	if mine, ok := decisions[principal.UserID]; ok {
 		decision := mine.Decision
@@ -98,7 +98,7 @@ func (s *Service) Decide(ctx context.Context, principal auth.Principal, database
 	if err != nil {
 		return Review{}, err
 	}
-	if !reviewable(target.Status, input.Action) {
+	if !reviewable(target, input.Action) {
 		return Review{}, ErrNotReviewable
 	}
 	if input.Revision != target.Revision {
@@ -168,16 +168,28 @@ func (s *Service) load(ctx context.Context, target Target, action Action) ([]Req
 
 // reviewable mengikuti syarat status di migration.PlanExecution:
 //   - apply    : draft, atau failed/partial karena retry memakai approval apply.
-//   - rollback : succeeded atau partially_reverted (lanjutan rollback batch).
-//   - forward  : hanya rolled_back.
-func reviewable(migrationStatus string, action Action) bool {
+//   - rollback : succeeded, partial yang reversible, atau partially_reverted.
+//   - forward  : rolled_back atau melanjutkan forward batch yang partial.
+func reviewable(target Target, action Action) bool {
+	if target.Status == "partial" {
+		switch action {
+		case ActionApply:
+			return target.PartialAction == "apply" || target.PartialAction == "retry"
+		case ActionRollback:
+			return target.Reversible
+		case ActionForward:
+			return target.PartialAction == "forward"
+		default:
+			return false
+		}
+	}
 	switch action {
 	case ActionApply:
-		return migrationStatus == "draft" || migrationStatus == "failed" || migrationStatus == "partial"
+		return target.Status == "draft" || target.Status == "failed"
 	case ActionRollback:
-		return migrationStatus == "succeeded" || migrationStatus == "partially_reverted"
+		return target.Status == "succeeded" || target.Status == "partially_reverted"
 	case ActionForward:
-		return migrationStatus == "rolled_back"
+		return target.Status == "rolled_back"
 	default:
 		return false
 	}

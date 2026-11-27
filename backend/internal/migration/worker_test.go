@@ -67,6 +67,10 @@ func (j *workerTestJobs) Get(context.Context, string, string) (Job, error) { ret
 func (j *workerTestJobs) ClaimNext(context.Context, string, string, time.Duration, time.Time) (Job, bool, error) {
 	return Job{}, false, errors.New("unexpected ClaimNext")
 }
+
+func (j *workerTestJobs) LatestJobID(context.Context, string, string) (*string, error) {
+	return nil, nil
+}
 func (j *workerTestJobs) Heartbeat(context.Context, Job, time.Time, time.Duration) error { return nil }
 func (j *workerTestJobs) Finish(_ context.Context, _ Job, status JobStatus, code, _ *string, _ time.Time) error {
 	j.finished++
@@ -121,7 +125,9 @@ func TestRecoverBatchAttempt(t *testing.T) {
 		{name: "rollback before first down commit", action: ActionRollback, checkpoints: BatchCheckpointState{UpBatches: 2}, want: StatusFailed},
 		{name: "rollback partway through", action: ActionRollback, checkpoints: BatchCheckpointState{UpBatches: 3, DownBatches: 1}, want: StatusPartiallyReverted},
 		{name: "rollback fully committed", action: ActionRollback, checkpoints: BatchCheckpointState{UpBatches: 3, DownBatches: 3}, want: StatusSucceeded},
-		{name: "unknown action remains conservative", action: ActionForward, checkpoints: BatchCheckpointState{UpBatches: 1}, want: StatusNeedsReconciliation},
+		{name: "forward from fresh root before first commit", action: ActionForward, want: StatusFailed},
+		{name: "forward after a committed batch", action: ActionForward, checkpoints: BatchCheckpointState{UpBatches: 1}, want: StatusPartial},
+		{name: "unknown action remains conservative", action: ExecutionAction("unknown"), checkpoints: BatchCheckpointState{UpBatches: 1}, want: StatusNeedsReconciliation},
 		{name: "missing source checkpoint remains conservative", action: ActionRollback, want: StatusNeedsReconciliation},
 		{name: "inconsistent rollback remains conservative", action: ActionRollback, checkpoints: BatchCheckpointState{UpBatches: 1, DownBatches: 2}, want: StatusNeedsReconciliation},
 	}

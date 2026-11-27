@@ -21,9 +21,15 @@ func (r *PGRepository) PlanExecution(ctx context.Context, databaseID, migrationI
 	if latestErr != nil && !errors.Is(latestErr, ErrNoAttempt) {
 		return ExecutionPlan{}, latestErr
 	}
-	var latestOK bool
-	if latestErr == nil {
-		latestOK = true
+	latestOK := latestErr == nil
+	if entry.Status == StatusPartial {
+		if !latestOK {
+			return ExecutionPlan{}, ErrConflict
+		}
+		latest, latestErr = partialSourceAttempt(ctx, r, entry, latest)
+		if latestErr != nil {
+			return ExecutionPlan{}, latestErr
+		}
 	}
 
 	switch action {
@@ -47,8 +53,9 @@ func (r *PGRepository) PlanExecution(ctx context.Context, databaseID, migrationI
 		plan.RelatedExecutionID = stringPtr(latest.ID)
 		plan.CheckpointRootID = latest.CheckpointRootID
 	case ActionRollback:
-		partialBatch := entry.Status == StatusPartial && entry.ExecutionMode == ExecutionModeBatch && !entry.IsActive
-		if !partialBatch && (!entry.IsActive || (entry.Status != StatusSucceeded && entry.Status != StatusPartiallyReverted)) {
+		partialBatch := entry.ExecutionMode == ExecutionModeBatch && entry.Status == StatusPartial && !entry.IsActive
+		resumeRollback := entry.ExecutionMode == ExecutionModeBatch && entry.Status == StatusPartiallyReverted
+		if !partialBatch && !resumeRollback && !(entry.IsActive && entry.Status == StatusSucceeded) {
 			return ExecutionPlan{}, ErrConflict
 		}
 		var laterBlocking bool
@@ -66,10 +73,6 @@ func (r *PGRepository) PlanExecution(ctx context.Context, databaseID, migrationI
 		}
 		var applied ExecutionAttempt
 		if partialBatch {
-			if !latestOK || latest.Status != string(StatusPartial) ||
-				(latest.Action != ActionApply && latest.Action != ActionRetry) {
-				return ExecutionPlan{}, ErrConflict
-			}
 			applied = latest
 		} else if entry.Status == StatusPartiallyReverted && latestOK &&
 			latest.Action == ActionRollback && latest.RelatedExecutionID != nil {
@@ -88,14 +91,29 @@ func (r *PGRepository) PlanExecution(ctx context.Context, databaseID, migrationI
 		plan.RelatedExecutionID = stringPtr(applied.ID)
 		plan.CheckpointRootID = applied.CheckpointRootID
 	case ActionForward:
-		if entry.IsActive || entry.Status != StatusRolledBack {
+		if entry.IsActive || (entry.Status != StatusRolledBack && entry.Status != StatusPartial) {
 			return ExecutionPlan{}, ErrConflict
 		}
 		if err := r.ensureEarlierMigrationsAllow(ctx, databaseID, entry.Version); err != nil {
 			return ExecutionPlan{}, err
 		}
-		if !latestOK || latest.Action != ActionRollback || latest.Status != string(StatusSucceeded) {
-			return ExecutionPlan{}, ErrConflict
+		if entry.Status == StatusPartial {
+			if latest.Action != ActionForward {
+				return ExecutionPlan{}, ErrConflict
+			}
+			plan.CheckpointRootID = latest.CheckpointRootID
+		} else {
+			// A failed forward leaves the migration rolled back. Reuse the
+			// successful rollback as the anchor for the next forward attempt.
+			if latestOK && latest.Action == ActionForward && latest.Status == string(StatusFailed) && latest.RelatedExecutionID != nil {
+				latest, err = r.getAttempt(ctx, databaseID, *latest.RelatedExecutionID)
+				if err != nil {
+					return ExecutionPlan{}, err
+				}
+			}
+			if !latestOK || latest.Action != ActionRollback || latest.Status != string(StatusSucceeded) {
+				return ExecutionPlan{}, ErrConflict
+			}
 		}
 		var laterBlocking bool
 		if err := r.pool.QueryRow(ctx, `SELECT EXISTS (
@@ -113,6 +131,23 @@ func (r *PGRepository) PlanExecution(ctx context.Context, databaseID, migrationI
 		return ExecutionPlan{}, ErrInvalidInput
 	}
 	return plan, nil
+}
+
+func partialSourceAttempt(ctx context.Context, repository AttemptRepository, entry Entry, attempt ExecutionAttempt) (ExecutionAttempt, error) {
+	if attempt.Status == string(StatusFailed) && attempt.RelatedExecutionID != nil {
+		// A failed resume or rollback with no new commits leaves the source
+		// partial execution intact.
+		source, err := repository.GetHistory(ctx, entry.DatabaseID, *attempt.RelatedExecutionID)
+		if err != nil {
+			return ExecutionAttempt{}, err
+		}
+		attempt = source
+	}
+	if attempt.Status != string(StatusPartial) ||
+		(attempt.Action != ActionApply && attempt.Action != ActionRetry && attempt.Action != ActionForward) {
+		return ExecutionAttempt{}, ErrConflict
+	}
+	return attempt, nil
 }
 
 func (r *PGRepository) ensureEarlierMigrationsAllow(ctx context.Context, databaseID string, version int64) error {
@@ -140,12 +175,12 @@ func (r *PGRepository) StartExecution(ctx context.Context, plan ExecutionPlan, a
 
 	var attempt ExecutionAttempt
 	err = tx.QueryRow(ctx, `INSERT INTO migration_execution_attempts
-		(id,database_id, migration_id, version, revision, action, actor_id, requested_at, sql_snapshot, related_execution_id, checkpoint_root_id, lock_wait_micros)
-		VALUES ($1::uuid,$2::uuid,$3::uuid,$4,$5,$6,$7::uuid,$8,$9,$10::uuid,$11::uuid,$12)
+		(id,database_id, migration_id, version, revision, action, actor_id, requested_at, sql_snapshot, related_execution_id, checkpoint_root_id, lock_wait_micros, previous_migration_status)
+		VALUES ($1::uuid,$2::uuid,$3::uuid,$4,$5,$6,$7::uuid,$8,$9,$10::uuid,$11::uuid,$12,$13)
 		RETURNING id::text, database_id::text, migration_id::text, version, revision, action,
 		actor_id::text, requested_at, sql_snapshot, related_execution_id::text, checkpoint_root_id::text`,
 		plan.ExecutionID, plan.Entry.DatabaseID, plan.Entry.ID, plan.Entry.Version, plan.Entry.Revision, plan.Action,
-		actorID, now, plan.SQLSnapshot, plan.RelatedExecutionID, plan.CheckpointRootID, plan.LockWait.Microseconds()).Scan(
+		actorID, now, plan.SQLSnapshot, plan.RelatedExecutionID, plan.CheckpointRootID, plan.LockWait.Microseconds(), plan.Entry.Status).Scan(
 		&attempt.ID, &attempt.DatabaseID, &attempt.MigrationID, &attempt.Version, &attempt.Revision,
 		&attempt.Action, &attempt.ActorID, &attempt.RequestedAt, &attempt.SQLSnapshot, &attempt.RelatedExecutionID,
 		&attempt.CheckpointRootID)
@@ -153,6 +188,7 @@ func (r *PGRepository) StartExecution(ctx context.Context, plan ExecutionPlan, a
 		return ExecutionAttempt{}, mapRepositoryError(err)
 	}
 	attempt.ActorUsername = actorUsername
+	attempt.previousMigrationStatus = plan.Entry.Status
 
 	var allowed bool
 	err = tx.QueryRow(ctx, `UPDATE migration_entries SET status='running', executed_by=$3::uuid,
@@ -251,15 +287,30 @@ func (r *PGRepository) FinishExecution(ctx context.Context, attempt ExecutionAtt
 	case status == StatusPartial:
 		migrationStatus, active = StatusPartial, false
 	case status == StatusPartiallyReverted:
-		migrationStatus, active = StatusPartiallyReverted, true
+		migrationStatus = StatusPartiallyReverted
 	case status == StatusInterrupted || status == StatusNeedsReconciliation:
 		migrationStatus = StatusNeedsReconciliation
 		// A commit may have completed even when its acknowledgement was lost.
 		// Preserve the last known active position and block later work for review.
 	case attempt.Action == ActionRollback:
-		migrationStatus, active, message = StatusSucceeded, true, nil
+		switch attempt.previousMigrationStatus {
+		case StatusPartial, StatusPartiallyReverted, StatusSucceeded:
+			migrationStatus = attempt.previousMigrationStatus
+		default:
+			// Older attempts do not have a saved previous state.
+			migrationStatus = StatusSucceeded
+			if !active {
+				migrationStatus = StatusPartial
+			}
+		}
+		message = nil
 	case attempt.Action == ActionForward:
 		migrationStatus, active, message = StatusRolledBack, false, nil
+		if attempt.previousMigrationStatus == StatusPartial {
+			migrationStatus = StatusPartial
+		}
+	case attempt.Action == ActionRetry && attempt.previousMigrationStatus == StatusPartial:
+		migrationStatus, active, message = StatusPartial, false, nil
 	default:
 		migrationStatus, active = StatusFailed, false
 	}
@@ -304,9 +355,10 @@ func (r *PGRepository) latestSuccessfulApply(ctx context.Context, migrationID st
 
 const attemptSelect = `SELECT a.id::text,a.database_id::text,a.migration_id::text,a.version,a.revision,
 	a.action,a.actor_id::text,u.username,a.requested_at,a.sql_snapshot,a.related_execution_id::text,
-	a.checkpoint_root_id::text,COALESCE(latest.status,'queued'),latest.error_message
+	a.checkpoint_root_id::text,COALESCE(latest.status,'queued'),latest.error_message,COALESCE(a.previous_migration_status,''),m.name
 	FROM migration_execution_attempts a
 	JOIN users u ON u.id=a.actor_id
+	JOIN migration_entries m ON m.id=a.migration_id
 	LEFT JOIN LATERAL (SELECT e.status,e.error_message FROM migration_execution_events e
 		WHERE e.execution_id=a.id ORDER BY e.id DESC LIMIT 1) latest ON TRUE `
 
@@ -387,6 +439,15 @@ func (r *PGRepository) ListHistory(ctx context.Context, databaseID string, optio
 }
 
 func (r *PGRepository) GetHistory(ctx context.Context, databaseID, executionID string) (ExecutionAttempt, error) {
+	attempt, err := r.getAttempt(ctx, databaseID, executionID)
+	if err != nil {
+		return ExecutionAttempt{}, err
+	}
+	attempt.Events, err = r.executionEvents(ctx, executionID)
+	return attempt, err
+}
+
+func (r *PGRepository) getAttempt(ctx context.Context, databaseID, executionID string) (ExecutionAttempt, error) {
 	attempt, err := scanAttempt(r.pool.QueryRow(ctx, attemptSelect+`WHERE a.database_id=$1::uuid AND a.id=$2::uuid`, databaseID, executionID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ExecutionAttempt{}, ErrNoAttempt
@@ -394,8 +455,7 @@ func (r *PGRepository) GetHistory(ctx context.Context, databaseID, executionID s
 	if err != nil {
 		return ExecutionAttempt{}, mapRepositoryError(err)
 	}
-	attempt.Events, err = r.executionEvents(ctx, executionID)
-	return attempt, err
+	return attempt, nil
 }
 
 func (r *PGRepository) executionEvents(ctx context.Context, executionID string) ([]ExecutionEvent, error) {
@@ -429,7 +489,8 @@ func scanAttempt(row rowScanner) (ExecutionAttempt, error) {
 	var attempt ExecutionAttempt
 	err := row.Scan(&attempt.ID, &attempt.DatabaseID, &attempt.MigrationID, &attempt.Version, &attempt.Revision,
 		&attempt.Action, &attempt.ActorID, &attempt.ActorUsername, &attempt.RequestedAt, &attempt.SQLSnapshot,
-		&attempt.RelatedExecutionID, &attempt.CheckpointRootID, &attempt.Status, &attempt.ErrorMessage)
+		&attempt.RelatedExecutionID, &attempt.CheckpointRootID, &attempt.Status, &attempt.ErrorMessage,
+		&attempt.previousMigrationStatus, &attempt.MigrationName)
 	return attempt, err
 }
 

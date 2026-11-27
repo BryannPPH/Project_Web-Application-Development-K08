@@ -433,7 +433,6 @@ func TestReviewableMatchesExecutionRules(t *testing.T) {
 	}{
 		{"draft", ActionApply, true},
 		{"failed", ActionApply, true}, // retry memakai approval apply
-		{"partial", ActionApply, true},
 		{"succeeded", ActionApply, false},
 		{"succeeded", ActionRollback, true},
 		{"partially_reverted", ActionRollback, true},
@@ -443,8 +442,21 @@ func TestReviewableMatchesExecutionRules(t *testing.T) {
 		{"reconciled", ActionForward, false},
 	}
 	for _, c := range cases {
-		if got := reviewable(c.status, c.action); got != c.want {
+		if got := reviewable(Target{Status: c.status}, c.action); got != c.want {
 			t.Errorf("reviewable(%q, %q) = %v, want %v", c.status, c.action, got, c.want)
 		}
+	}
+
+	partial := Target{Status: "partial", PartialAction: "apply", Reversible: true}
+	if !reviewable(partial, ActionApply) || !reviewable(partial, ActionRollback) || reviewable(partial, ActionForward) {
+		t.Fatal("partial apply should allow apply approval and rollback approval")
+	}
+	partial.PartialAction = "forward"
+	if reviewable(partial, ActionApply) || !reviewable(partial, ActionRollback) || !reviewable(partial, ActionForward) {
+		t.Fatal("partial forward should allow forward approval and rollback approval")
+	}
+	partial.Reversible = false
+	if reviewable(partial, ActionRollback) {
+		t.Fatal("irreversible partial migration cannot request rollback approval")
 	}
 }

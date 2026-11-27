@@ -115,6 +115,9 @@ func (s *QueueService) GetJob(ctx context.Context, principal auth.Principal, dat
 	if err != nil {
 		return Job{}, err
 	}
+	if err := s.authorizer.RequireDatabaseEdit(ctx, principal, databaseID); err != nil {
+		job.ErrorMessage = sanitizeForViewer(job.ErrorMessage)
+	}
 	if job.ExecutionID == nil || job.ExecutionMode != ExecutionModeBatch {
 		return job, nil
 	}
@@ -137,6 +140,13 @@ func (s *QueueService) GetJob(ctx context.Context, principal auth.Principal, dat
 	}
 	job.BatchProgress = &progress
 	return job, nil
+}
+
+func (s *QueueService) LatestJobID(ctx context.Context, principal auth.Principal, databaseID, migrationID string) (*string, error) {
+	if err := s.authorizer.RequireDatabaseView(ctx, principal, databaseID); err != nil {
+		return nil, err
+	}
+	return s.repository.LatestJobID(ctx, databaseID, migrationID)
 }
 
 func validAction(action ExecutionAction) bool {

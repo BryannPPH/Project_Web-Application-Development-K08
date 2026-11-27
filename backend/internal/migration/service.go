@@ -160,6 +160,19 @@ func (s *Service) Get(ctx context.Context, principal auth.Principal, databaseID,
 	if err != nil {
 		return Entry{}, err
 	}
+	if entry.Status == StatusPartial {
+		if attempts, ok := s.repository.(AttemptRepository); ok {
+			latest, err := attempts.LatestAttempt(ctx, entry.ID)
+			if err != nil {
+				return Entry{}, err
+			}
+			source, err := partialSourceAttempt(ctx, attempts, entry, latest)
+			if err != nil {
+				return Entry{}, err
+			}
+			entry.PartialAction = source.Action
+		}
+	}
 	if err := s.authorizer.RequireDatabaseEdit(ctx, principal, databaseID); err != nil {
 		entry.ErrorMessage = sanitizeForViewer(entry.ErrorMessage)
 	} else {
@@ -427,6 +440,8 @@ func (s *Service) ExecuteAction(ctx context.Context, principal auth.Principal, d
 	entry.CanReconcile = needsReconciliation(entry.Status)
 	entry.CreatedByUsername = plan.Entry.CreatedByUsername
 	entry.ExecutedByUsername = &principal.Username
+	entry.attemptStatus = result.Status
+	entry.attemptError = result.PublicError
 	return entry, nil
 }
 

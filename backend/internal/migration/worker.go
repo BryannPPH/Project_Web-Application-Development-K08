@@ -188,12 +188,20 @@ func (w *Worker) process(ctx context.Context, workerID string, job Job) {
 		w.handleExecutionError(ctx, jobCtx, job, executionErr)
 		return
 	}
-	status := jobStatusForMigration(entry.Status)
+	status := jobStatusForExecutionStatus(string(entry.attemptStatus))
+	if !status.Terminal() {
+		w.handleExecutionError(ctx, jobCtx, job, errors.New("missing terminal execution result"))
+		return
+	}
 	var code *string
-	message := entry.ErrorMessage
-	if message != nil {
-		errorCode, _ := publicJobError(errors.New(*message))
+	message := entry.attemptError
+	if status != JobSucceeded {
+		errorCode := "MIGRATION_JOB_FAILED"
+		if status == JobNeedsReconciliation {
+			errorCode = "MIGRATION_OUTCOME_UNCERTAIN"
+		}
 		code = &errorCode
+		span.SetStatus(codes.Error, string(status))
 	}
 	finishCtx, finishCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer finishCancel()
@@ -448,7 +456,7 @@ func (w *Worker) recoverExpiredExecution(ctx context.Context, expired Job) {
 
 func recoverBatchAttempt(action ExecutionAction, checkpoints BatchCheckpointState) (Status, string) {
 	if checkpoints.UpBatches == 0 {
-		if action == ActionApply || action == ActionRetry {
+		if action == ActionApply || action == ActionRetry || action == ActionForward {
 			return StatusFailed, "worker stopped before any batch committed; the migration may be retried after approval"
 		}
 		return StatusNeedsReconciliation, "batch recovery found no committed source checkpoint; inspect target checkpoint storage before retry"
@@ -457,7 +465,7 @@ func recoverBatchAttempt(action ExecutionAction, checkpoints BatchCheckpointStat
 		return StatusNeedsReconciliation, "batch recovery found inconsistent rollback checkpoints; inspect the target before continuing"
 	}
 	switch action {
-	case ActionApply, ActionRetry:
+	case ActionApply, ActionRetry, ActionForward:
 		if checkpoints.DownBatches != 0 {
 			return StatusNeedsReconciliation, "apply recovery found rollback checkpoints; inspect the target before continuing"
 		}
@@ -503,21 +511,6 @@ func (w *Worker) wait(ctx context.Context) {
 	select {
 	case <-ctx.Done():
 	case <-timer.C:
-	}
-}
-
-func jobStatusForMigration(status Status) JobStatus {
-	switch status {
-	case StatusSucceeded, StatusRolledBack:
-		return JobSucceeded
-	case StatusPartial:
-		return JobPartial
-	case StatusPartiallyReverted:
-		return JobPartiallyReverted
-	case StatusInterrupted, StatusNeedsReconciliation:
-		return JobNeedsReconciliation
-	default:
-		return JobFailed
 	}
 }
 

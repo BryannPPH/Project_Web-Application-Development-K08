@@ -102,8 +102,9 @@ func TestMigrationThroughProductionHTTPStack(t *testing.T) {
 	})
 
 	successSQL := "CREATE TABLE " + quotedTable + " (id bigint PRIMARY KEY); INSERT INTO " + quotedTable + " VALUES (1)"
+	downSQL := "DROP TABLE " + quotedTable
 	createdResponse := harness.do(http.MethodPost, base,
-		map[string]string{"name": "create integration table", "sql": "SELECT 1"}, &editor, true)
+		map[string]string{"name": "create integration table", "sql": "SELECT 1", "downSql": downSQL}, &editor, true)
 	if createdResponse.Code != http.StatusCreated {
 		t.Fatalf("create migration = %d %s", createdResponse.Code, createdResponse.Body.String())
 	}
@@ -117,7 +118,7 @@ func TestMigrationThroughProductionHTTPStack(t *testing.T) {
 	}
 	updated := harness.call(http.MethodPatch, base+"/"+migrationID,
 		map[string]string{"name": "create integration table", "sql": successSQL}, editor, http.StatusOK)
-	if updated["sql"] != successSQL {
+	if updated["sql"] != successSQL || updated["downSql"] != downSQL {
 		t.Fatalf("updated migration SQL = %v", updated["sql"])
 	}
 	harness.approveApply(base, migrationID, viewer, editor)
@@ -132,6 +133,9 @@ func TestMigrationThroughProductionHTTPStack(t *testing.T) {
 	jobLocation := enqueuedResponse.Header().Get("Location")
 	if jobID == "" || jobLocation == "" || !strings.HasSuffix(jobLocation, "/"+jobID) {
 		t.Fatalf("accepted execution did not include jobId and Location: body=%v location=%q", enqueued, jobLocation)
+	}
+	if reloaded := harness.call(http.MethodGet, base+"/"+migrationID, nil, viewer, http.StatusOK); reloaded["latestJobId"] != jobID {
+		t.Fatalf("migration detail should expose the queued job after reload: %v", reloaded)
 	}
 	duplicateResponse := harness.doWithHeaders(http.MethodPost, base+"/"+migrationID+"/execute", nil, &editor, true, enqueueHeaders)
 	duplicate := decodeMap(duplicateResponse.Body.Bytes())
@@ -162,6 +166,7 @@ func TestMigrationThroughProductionHTTPStack(t *testing.T) {
 		executed["finishedAt"] == nil {
 		t.Fatalf("successful execution = %v", executed)
 	}
+	verifyRollbackAndForwardFailures(t, harness, target, base, databaseID, migrationID, tableName, viewer, editor)
 
 	failureSQL := "INSERT INTO " + quotedTable + " VALUES (2); INSERT INTO migration_table_that_does_not_exist VALUES (1)"
 	failedDraft := harness.call(http.MethodPost, base,
@@ -340,11 +345,64 @@ func TestMigrationThroughProductionHTTPStack(t *testing.T) {
 	if recoveredJob["status"] != "partial" || recoveredJob["executionId"] != attemptID {
 		t.Fatalf("expired batch recovery job = %v", recoveredJob)
 	}
+	partialReview := objectField(harness.call(http.MethodGet, base+"/"+recoveryMigrationID+"/approvals?action=rollback", nil, viewer, http.StatusOK), "review")
+	if partialReview["canDecide"] != true || partialReview["requiredCount"] != float64(2) {
+		t.Fatalf("view-only leader cannot review rollback for a partial batch: %v", partialReview)
+	}
+	harness.approveMigrationAction(base, recoveryMigrationID, "rollback", viewer, editor)
 	var recoveredRows, untouchedRows int64
 	if err := target.QueryRow(context.Background(), "SELECT count(*) FILTER (WHERE value=10),count(*) FILTER (WHERE value=0) FROM "+quotedRecoveryTable).
 		Scan(&recoveredRows, &untouchedRows); err != nil || recoveredRows != 1 || untouchedRows != 1 {
 		t.Fatalf("recovered target state: committed=%d untouched=%d error=%v", recoveredRows, untouchedRows, err)
 	}
+}
+
+func verifyRollbackAndForwardFailures(t *testing.T, harness *platformHarness, target *pgx.Conn,
+	base, databaseID, migrationID, tableName string, viewer, editor platformLogin) {
+	t.Helper()
+	ctx := context.Background()
+	table := pgx.Identifier{tableName}.Sanitize()
+	moved := pgx.Identifier{tableName + "_moved"}.Sanitize()
+	t.Cleanup(func() { _, _ = target.Exec(ctx, "DROP TABLE IF EXISTS "+moved) })
+	runTarget := func(sql string) {
+		t.Helper()
+		if _, err := target.Exec(ctx, sql); err != nil {
+			t.Fatalf("prepare target failure: %v", err)
+		}
+	}
+	checkAction := func(action, wantJob, wantMigration string) {
+		t.Helper()
+		response := harness.do(http.MethodPost, base+"/"+migrationID+"/"+action, nil, &editor, true)
+		if response.Code != http.StatusAccepted {
+			t.Fatalf("enqueue %s: %d %s", action, response.Code, response.Body.String())
+		}
+		location := response.Header().Get("Location")
+		job := harness.waitForJob(location, editor)
+		if job["status"] != wantJob || (wantJob == "failed" && job["errorMessage"] == nil) {
+			t.Fatalf("%s job = %v, want %s", action, job, wantJob)
+		}
+		entry := harness.call(http.MethodGet, base+"/"+migrationID, nil, viewer, http.StatusOK)
+		if entry["status"] != wantMigration || entry["latestJobId"] != job["jobId"] {
+			t.Fatalf("%s retained migration state = %v, want %s", action, entry, wantMigration)
+		}
+		executionID, _ := job["executionId"].(string)
+		attempt := harness.call(http.MethodGet, "/api/v1/databases/"+databaseID+"/migration-executions/"+executionID, nil, viewer, http.StatusOK)
+		if attempt["status"] != wantJob || attempt["migrationName"] == "" || attempt["sqlSnapshot"] == "" {
+			t.Fatalf("%s execution detail = %v, want status %s and SQL snapshot", action, attempt, wantJob)
+		}
+	}
+
+	runTarget("ALTER TABLE " + table + " RENAME TO " + moved)
+	harness.approveMigrationAction(base, migrationID, "rollback", viewer, editor)
+	checkAction("rollback", "failed", "succeeded")
+	runTarget("ALTER TABLE " + moved + " RENAME TO " + table)
+	checkAction("rollback", "succeeded", "rolled_back")
+
+	runTarget("CREATE TABLE " + table + " (id bigint)")
+	harness.approveMigrationAction(base, migrationID, "forward", viewer, editor)
+	checkAction("forward", "failed", "rolled_back")
+	runTarget("DROP TABLE " + table)
+	checkAction("forward", "succeeded", "succeeded")
 }
 
 func verifyUncertainSingleCommitRecovery(t *testing.T, harness *platformHarness, target *pgx.Conn,

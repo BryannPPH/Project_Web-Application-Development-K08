@@ -84,6 +84,7 @@ type enqueueJobInput struct {
 type JobRepository interface {
 	Enqueue(context.Context, enqueueJobInput) (Job, bool, error)
 	Get(context.Context, string, string) (Job, error)
+	LatestJobID(context.Context, string, string) (*string, error)
 	ClaimNext(context.Context, string, string, time.Duration, time.Time) (Job, bool, error)
 	Heartbeat(context.Context, Job, time.Time, time.Duration) error
 	Finish(context.Context, Job, JobStatus, *string, *string, time.Time) error

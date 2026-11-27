@@ -220,9 +220,28 @@ func TestBatchMigrationPartialFailureResumeAndReverseRollback(t *testing.T) {
 	if err := target.QueryRow(ctx, `SELECT count(*) FROM `+table+` WHERE value<>0`).Scan(&committedRows); err != nil || committedRows != 0 {
 		t.Fatalf("rows remaining after reverse batch rollback = %d, error %v", committedRows, err)
 	}
+	if _, err := target.Exec(ctx, `CREATE FUNCTION `+function+`() RETURNS trigger LANGUAGE plpgsql AS $body$
+		BEGIN IF NEW.id=7 THEN RAISE EXCEPTION 'fixture forward failure'; END IF; RETURN NEW; END
+		$body$; CREATE TRIGGER `+trigger+` BEFORE UPDATE ON `+table+` FOR EACH ROW EXECUTE FUNCTION `+function+`()`); err != nil {
+		t.Fatalf("prepare partial forward: %v", err)
+	}
+	partialForward, err := service.Forward(ctx, principal, databaseID, entry.ID)
+	if err != nil || partialForward.Status != migration.StatusPartial || partialForward.IsActive {
+		t.Fatalf("partial forward = %#v, error %v", partialForward, err)
+	}
+	reloaded, err := service.Get(ctx, principal, databaseID, entry.ID)
+	if err != nil || reloaded.PartialAction != migration.ActionForward {
+		t.Fatalf("reload partial forward = %#v, error %v", reloaded, err)
+	}
+	if _, err := target.Exec(ctx, `DROP TRIGGER `+trigger+` ON `+table+`; DROP FUNCTION `+function+`()`); err != nil {
+		t.Fatalf("clear partial forward obstacle: %v", err)
+	}
 	forwarded, err := service.Forward(ctx, principal, databaseID, entry.ID)
 	if err != nil || forwarded.Status != migration.StatusSucceeded || !forwarded.IsActive {
-		t.Fatalf("forward original batch migration = %#v, error %v", forwarded, err)
+		t.Fatalf("resume partial forward = %#v, error %v", forwarded, err)
+	}
+	if err := target.QueryRow(ctx, `SELECT count(*) FROM `+table+` WHERE value=10`).Scan(&committedRows); err != nil || committedRows != 7 {
+		t.Fatalf("resumed forward reapplied or skipped rows: expected 7, got %d, error %v", committedRows, err)
 	}
 
 	if _, err := target.Exec(ctx, `CREATE FUNCTION `+function+`() RETURNS trigger LANGUAGE plpgsql AS $body$
@@ -252,15 +271,24 @@ func TestBatchMigrationPartialFailureResumeAndReverseRollback(t *testing.T) {
 		t.Fatalf("remove second partial batch function: %v", err)
 	}
 	if _, err := target.Exec(ctx, `CREATE FUNCTION `+function+`() RETURNS trigger LANGUAGE plpgsql AS $body$
-		BEGIN IF NEW.id=2 THEN RAISE EXCEPTION 'fixture rollback failure'; END IF; RETURN NEW; END
+		BEGIN IF NEW.id=5 THEN RAISE EXCEPTION 'fixture rollback failure'; END IF; RETURN NEW; END
 		$body$`); err != nil {
 		t.Fatalf("create rollback failure function: %v", err)
 	}
 	if _, err := target.Exec(ctx, `CREATE TRIGGER `+trigger+` BEFORE UPDATE ON `+table+` FOR EACH ROW EXECUTE FUNCTION `+function+`() `); err != nil {
 		t.Fatalf("create rollback failure trigger: %v", err)
 	}
+	failedRollback, err := service.Rollback(ctx, principal, databaseID, partialEntry.ID)
+	if err != nil || failedRollback.Status != migration.StatusPartial || failedRollback.IsActive {
+		t.Fatalf("rollback with zero down commits must preserve partial apply: %#v, error %v", failedRollback, err)
+	}
+	if _, err := target.Exec(ctx, `CREATE OR REPLACE FUNCTION `+function+`() RETURNS trigger LANGUAGE plpgsql AS $body$
+		BEGIN IF NEW.id=2 THEN RAISE EXCEPTION 'fixture rollback failure'; END IF; RETURN NEW; END
+		$body$`); err != nil {
+		t.Fatalf("move rollback failure to a later batch: %v", err)
+	}
 	partialRollback, err := service.Rollback(ctx, principal, databaseID, partialEntry.ID)
-	if err != nil || partialRollback.Status != migration.StatusPartiallyReverted || !partialRollback.IsActive {
+	if err != nil || partialRollback.Status != migration.StatusPartiallyReverted || partialRollback.IsActive {
 		t.Fatalf("rollback from partial apply = %#v, error %v", partialRollback, err)
 	}
 	rollbackProgress, err := service.GetBatchProgress(ctx, principal, databaseID, *partialRollback.LatestExecutionID)
@@ -283,5 +311,81 @@ func TestBatchMigrationPartialFailureResumeAndReverseRollback(t *testing.T) {
 	}
 	if err := target.QueryRow(ctx, `SELECT count(*) FROM `+table+` WHERE value<>10`).Scan(&committedRows); err != nil || committedRows != 0 {
 		t.Fatalf("rows remaining after resumed partial rollback = %d, error %v", committedRows, err)
+	}
+}
+
+func TestPhysicalTargetLockSurvivesBatchCommit(t *testing.T) {
+	targetURL := os.Getenv("TEST_TARGET_DATABASE_URL")
+	if targetURL == "" {
+		targetURL = loadTargetSettings(t).url()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	target, err := pgx.Connect(ctx, targetURL)
+	if err != nil {
+		t.Fatalf("connect lock fixture: %v", err)
+	}
+	defer target.Close(context.Background())
+	table := pgx.Identifier{fmt.Sprintf("migration_alias_lock_%d", time.Now().UnixNano())}.Sanitize()
+	if _, err := target.Exec(ctx, "CREATE TABLE "+table+" (id bigint PRIMARY KEY, value bigint NOT NULL); INSERT INTO "+table+" VALUES (1,0),(2,0)"); err != nil {
+		t.Fatalf("create lock fixture: %v", err)
+	}
+	defer target.Exec(context.Background(), "DROP TABLE "+table)
+	var executionID string
+	if err := target.QueryRow(ctx, "SELECT gen_random_uuid()::text").Scan(&executionID); err != nil {
+		t.Fatalf("create checkpoint root: %v", err)
+	}
+	defer target.Exec(context.Background(), "DELETE FROM dbmp_migration_batch_checkpoints WHERE root_execution_id=$1::uuid", executionID)
+	selector := "SELECT id FROM " + table + " WHERE id>$1 ORDER BY id LIMIT $2"
+	batchSize := 1
+	executor := migration.NewPGExecutor(integrationTargetProvider{url: targetURL})
+	batchCommitted := make(chan struct{})
+	resume := make(chan struct{})
+	result := make(chan migration.ExecutionResult, 1)
+	go func() {
+		result <- executor.ExecuteBatch(ctx, "first-connection", executionID, migration.ExecutionPlan{
+			Entry:  migration.Entry{ExecutionMode: migration.ExecutionModeBatch, BatchSelectSQL: &selector, BatchSize: &batchSize},
+			Action: migration.ActionApply, SQLSnapshot: "UPDATE " + table + " SET value=value+1 WHERE id>$1 AND id<=$2",
+		}, func(event migration.BatchCommitEvent) error {
+			if event.BatchNumber == 1 {
+				close(batchCommitted)
+				select {
+				case <-resume:
+				case <-ctx.Done():
+				}
+			}
+			return nil
+		})
+	}()
+	select {
+	case <-batchCommitted:
+	case early := <-result:
+		t.Fatalf("batch never committed: %#v", early)
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for first batch")
+	}
+
+	aliasCtx, aliasCancel := context.WithTimeout(ctx, 300*time.Millisecond)
+	aliasSQL := "UPDATE " + table + " SET value=99 WHERE id=2"
+	blocked := executor.Execute(aliasCtx, "second-connection", aliasSQL)
+	aliasCancel()
+	close(resume)
+	if blocked.Status != migration.StatusFailed || blocked.PublicError == nil || !strings.Contains(*blocked.PublicError, "migration lock") {
+		t.Fatalf("same target ran concurrently between batch commits: %#v", blocked)
+	}
+	select {
+	case batch := <-result:
+		if batch.Status != migration.StatusSucceeded {
+			t.Fatalf("batch failed after resuming: %#v", batch)
+		}
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for batch completion")
+	}
+	var value int
+	if err := target.QueryRow(ctx, "SELECT value FROM "+table+" WHERE id=2").Scan(&value); err != nil || value != 1 {
+		t.Fatalf("blocked alias modified the target: value=%d error=%v", value, err)
+	}
+	if retry := executor.Execute(ctx, "second-connection", aliasSQL); retry.Status != migration.StatusSucceeded {
+		t.Fatalf("target lock was not released after closing the batch connection: %#v", retry)
 	}
 }
