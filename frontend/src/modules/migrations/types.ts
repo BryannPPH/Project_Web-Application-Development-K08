@@ -115,6 +115,7 @@ export type JobStatus =
 
 export interface BatchProgress {
   executionId: string
+  action?: ExecutionAction
   committedBatches: number
   committedRows: number
   lastCursor: number
@@ -132,6 +133,7 @@ export interface MigrationJob {
   status: JobStatus
   retryCount: number
   executionId?: string
+  previousExecutionId?: string
   createdAt: string
   startedAt?: string
   finishedAt?: string

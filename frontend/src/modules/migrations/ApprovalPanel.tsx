@@ -43,9 +43,10 @@ interface ApprovalPanelProps {
   review: ApprovalReview | undefined
   loading: boolean
   error: unknown
+  verifyBatchRecovery?: boolean
 }
 
-export function ApprovalPanel({ action, databaseId, migrationId, databaseName, sql, review, loading, error }: ApprovalPanelProps) {
+export function ApprovalPanel({ action, databaseId, migrationId, databaseName, sql, review, loading, error, verifyBatchRecovery }: ApprovalPanelProps) {
   const titleId = useId()
 
   return (
@@ -76,6 +77,12 @@ export function ApprovalPanel({ action, databaseId, migrationId, databaseName, s
           ) : null}
 
           <CompatibilityHints sql={sql} />
+          {verifyBatchRecovery ? (
+            <StatusMessage tone="info">
+              Sebelum menyetujui, periksa apakah Down SQL mengembalikan nilai awal untuk baris yang diproses.
+              Jika pemulihan memerlukan salinan nilai lama, pastikan salinan itu tersedia.
+            </StatusMessage>
+          ) : null}
           {action === 'rollback' ? (
             <div>
               <h4>Down SQL yang akan dijalankan</h4>

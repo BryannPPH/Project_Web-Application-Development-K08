@@ -209,6 +209,29 @@ describe('aksi migration per status', () => {
     expect(screen.getAllByText('1.500', { selector: 'dd' })).toHaveLength(2)
     expect(screen.getByRole('button', { name: 'Coba ulang v5' })).toBeInTheDocument()
   })
+
+  it.each([
+    { status: 'failed', previousExecutionId: undefined, historyStatus: 'partial', action: 'apply', label: 'Batch committed' },
+    { status: 'retrying', previousExecutionId: 'e1', historyStatus: 'partially_reverted', action: 'rollback', label: 'Batch dibatalkan' },
+  ] as const)('menjaga progres ketika job terbaru $status belum punya executionId', async ({
+    status, previousExecutionId, historyStatus, action, label,
+  }) => {
+    renderDetail(migrationEntry({
+      status: historyStatus, executionMode: 'batch',
+      latestExecutionId: previousExecutionId ? null : 'e1', latestJobId: 'job-1',
+    }), {}, (url) => {
+      if (url.pathname.endsWith('/migration-jobs/job-1')) {
+        return jsonResponse(job({ status, previousExecutionId, action: 'rollback', executionMode: 'batch' }))
+      }
+      if (url.pathname.endsWith('/migration-executions/e1/progress')) {
+        return jsonResponse({ executionId: 'e1', action, committedBatches: 2, committedRows: 40, lastCursor: 40, status: historyStatus })
+      }
+      return undefined
+    })
+
+    expect(await screen.findByText(label, { selector: 'dt' })).toBeInTheDocument()
+    expect(screen.getAllByText('40', { selector: 'dd' })).toHaveLength(2)
+  })
 })
 
 describe('ExecutionHistory: Hide rollback', () => {

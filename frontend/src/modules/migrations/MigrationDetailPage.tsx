@@ -59,10 +59,11 @@ function MigrationDetail({ create }: { create: boolean }) {
   const jobId = detail.data?.latestJobId ?? null
   const job = useMigrationJob(databaseId, jobId)
   const jobDone = job.data ? isTerminalJob(job.data.status) : false
+  const currentExecutionId = job.data?.executionId
   const batchExecutionId = detail.data?.executionMode === 'batch'
-    ? jobId ? job.data?.executionId : detail.data.latestExecutionId
+    ? currentExecutionId ?? job.data?.previousExecutionId ?? detail.data.latestExecutionId
     : null
-  const batchLive = Boolean(batchExecutionId && jobId && !jobDone)
+  const batchLive = Boolean(batchExecutionId && currentExecutionId && !jobDone)
   const batchProgress = useBatchProgress(databaseId, batchExecutionId, batchLive)
   const save = useMutation({
     mutationFn: (input: DraftInput) => create
@@ -198,7 +199,12 @@ function MigrationDetail({ create }: { create: boolean }) {
       </div>
 
       {jobId ? <JobStatusPanel error={job.isError ? job.error : null} job={job.data} loading={job.isPending} /> : null}
-      {batchProgress.data ? <BatchProgressPanel action={job.data?.action} progress={batchProgress.data} /> : null}
+      {batchProgress.data ? (
+        <BatchProgressPanel
+          action={batchProgress.data.action ?? (currentExecutionId === batchExecutionId ? job.data?.action : undefined)}
+          progress={batchProgress.data}
+        />
+      ) : null}
       {entry ? <MigrationResult entry={entry} failedAction={job.data?.status === 'failed' ? job.data.action : undefined} transactionalDdl={transactionalDdl} /> : null}
       {entry?.reconciledAt && entry.status !== 'reconciled' ? (
         <StatusMessage tone="info">
@@ -293,6 +299,7 @@ function MigrationDetail({ create }: { create: boolean }) {
               migrationId={migrationId}
               review={approval.data}
               sql={pending.action === 'rollback' ? (entry.downSql ?? '') : entry.sql}
+              verifyBatchRecovery={entry.executionMode === 'batch' && entry.downSql != null}
             />
           ) : null}
           {editable ? <ExplainPanel databaseId={databaseId} sql={currentSql} /> : null}

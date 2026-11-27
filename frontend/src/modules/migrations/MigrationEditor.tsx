@@ -137,9 +137,23 @@ export function MigrationEditor({
       ) : (
         <label className="form-field">
           Down SQL
-          <textarea className="migration-sql-field" disabled={locked} onChange={(event) => update('downSql', event.target.value)} rows={5} spellCheck={false} value={downSql} />
+          <textarea
+            aria-describedby={mode === 'batch' ? `${sqlId}-recovery` : undefined}
+            className="migration-sql-field"
+            disabled={locked}
+            onChange={(event) => update('downSql', event.target.value)}
+            rows={5}
+            spellCheck={false}
+            value={downSql}
+          />
         </label>
       )}
+      {mode === 'batch' && !irreversible ? (
+        <p className="migration-help" id={`${sqlId}-recovery`}>
+          Jika Down SQL memerlukan nilai lama yang akan ditimpa atau dihapus, siapkan salinan nilai itu sebelum eksekusi.
+          Pilih Irreversible jika data awal tidak dapat dipulihkan dengan aman.
+        </p>
+      ) : null}
       <label className="form-field">
         Mode eksekusi
         <select disabled={locked} onChange={(event) => update('mode', event.target.value as ExecutionMode)} value={mode}>
