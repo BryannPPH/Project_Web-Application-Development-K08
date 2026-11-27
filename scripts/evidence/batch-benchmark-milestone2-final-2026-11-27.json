@@ -1,0 +1,20 @@
+{
+  "environment": "dedicated test database",
+  "measuredAtUtc": "2026-11-27T11:58:45.0107900Z",
+  "databaseId": "8a1b0815-faf2-4acf-90e1-2cfa716477b2",
+  "migrationId": "6e29f885-18be-4408-a1d6-312daa3b3c53",
+  "jobId": "03aea7ec-e852-46b3-adb0-880a84c532d8",
+  "executionId": "b4426950-75e1-4d3e-9a02-d8d1bb676d44",
+  "jobStatus": "succeeded",
+  "targetRows": 2000000,
+  "batchSize": 10000,
+  "committedBatches": 200,
+  "committedRows": 2000000,
+  "nonBatchUpdateMilliseconds": 8959.2,
+  "applicationExecutionMilliseconds": 14508.426,
+  "enqueueToTerminalMilliseconds": 15467.937,
+  "nonBatchAboveOneSecond": true,
+  "verifiedRows": 2000000,
+  "sameFixtureVerified": true,
+  "targetValuesVerified": true
+}

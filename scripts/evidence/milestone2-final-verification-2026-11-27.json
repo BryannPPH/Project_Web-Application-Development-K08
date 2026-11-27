@@ -1,0 +1,259 @@
+{
+  "dateLocal": "2026-11-27",
+  "specification": "IF3110 Milestone 2 PDF v4",
+  "sourceBaseCommit": "2eb4662",
+  "source": "Local final Milestone 2 working tree",
+  "backend": {
+    "unitSuitePassed": true,
+    "integrationTopLevelTestsPassed": 23,
+    "integrationSkipped": 0,
+    "targets": [
+      "PostgreSQL",
+      "MySQL"
+    ]
+  },
+  "frontend": {
+    "testsPassed": 106,
+    "lintPassed": true,
+    "typecheckPassed": true,
+    "buildPassed": true
+  },
+  "batchBenchmark": {
+    "environment": "Dedicated PostgreSQL fixture and real batch executor",
+    "batchSize": 10000,
+    "committedBatches": 200,
+    "verifiedRows": 2000000,
+    "sameDatasetRecreatedForBothRuns": true,
+    "nonBatchUpdateMilliseconds": 7898.024,
+    "batchExecutionMilliseconds": 17507.954,
+    "nonBatchAboveOneSecond": true,
+    "workerQueueCoveredByIntegrationSuite": true
+  },
+  "browser": {
+    "engine": "Chrome headless",
+    "checks": [
+      {
+        "label": "Login desktop",
+        "viewport": 1280,
+        "noHorizontalPageOverflow": true
+      },
+      {
+        "label": "Editor v1",
+        "viewport": 1280,
+        "noHorizontalPageOverflow": true
+      },
+      {
+        "label": "Apply v1",
+        "viewport": 1280,
+        "noHorizontalPageOverflow": true
+      },
+      {
+        "label": "Editor v2",
+        "viewport": 375,
+        "noHorizontalPageOverflow": true
+      },
+      {
+        "label": "Apply v2",
+        "viewport": 375,
+        "noHorizontalPageOverflow": true
+      },
+      {
+        "label": "Rollback blocker mobile",
+        "viewport": 375,
+        "noHorizontalPageOverflow": true
+      },
+      {
+        "label": "Rollback v2 mobile",
+        "viewport": 375,
+        "noHorizontalPageOverflow": true
+      },
+      {
+        "label": "Forward v2 mobile",
+        "viewport": 375,
+        "noHorizontalPageOverflow": true
+      },
+      {
+        "label": "Filtered history mobile",
+        "viewport": 375,
+        "noHorizontalPageOverflow": true
+      },
+      {
+        "label": "Database viewer mobile",
+        "viewport": 375,
+        "noHorizontalPageOverflow": true
+      },
+      {
+        "label": "Login mobile",
+        "viewport": 375,
+        "noHorizontalPageOverflow": true
+      },
+      {
+        "label": "Admin users mobile",
+        "viewport": 375,
+        "noHorizontalPageOverflow": true
+      },
+      {
+        "label": "Admin groups mobile",
+        "viewport": 375,
+        "noHorizontalPageOverflow": true
+      },
+      {
+        "label": "Admin databases mobile",
+        "viewport": 375,
+        "noHorizontalPageOverflow": true
+      }
+    ]
+  },
+  "observability": {
+    "log": {
+      "event": "migration_job_finished",
+      "job_id": "76806bac-ac6a-435d-9bd0-9da866ceed64",
+      "trace_id": "3baf1b78effe4aaac4e355561342905f",
+      "span_id": "b1ca283ccf996646",
+      "status": "succeeded"
+    },
+    "traceSpanNames": [
+      "db.connection.open",
+      "db.query",
+      "db.transaction",
+      "http.server",
+      "migration.execute",
+      "migration.job.enqueue",
+      "migration.job.process",
+      "migration.lock.acquire",
+      "migration.target.lock.acquire"
+    ],
+    "prometheus": {
+      "dbmp_metrics_database_up": [
+        {
+          "labels": {
+            "__name__": "dbmp_metrics_database_up",
+            "instance": "backend:8080",
+            "job": "dbmp-backend"
+          },
+          "sample": [
+            1795780753.253,
+            "1"
+          ]
+        }
+      ],
+      "dbmp_jobs{status=\"succeeded\"}": [
+        {
+          "labels": {
+            "__name__": "dbmp_jobs",
+            "instance": "backend:8080",
+            "job": "dbmp-backend",
+            "status": "succeeded"
+          },
+          "sample": [
+            1795780753.256,
+            "3421"
+          ]
+        }
+      ],
+      "sum(dbmp_queue_wait_seconds_count)": [
+        {
+          "labels": {},
+          "sample": [
+            1795780753.258,
+            "3421"
+          ]
+        }
+      ],
+      "sum(dbmp_lock_wait_seconds_count)": [
+        {
+          "labels": {},
+          "sample": [
+            1795780753.26,
+            "3421"
+          ]
+        }
+      ],
+      "sum(dbmp_migration_duration_seconds_count)": [
+        {
+          "labels": {},
+          "sample": [
+            1795780753.261,
+            "3416"
+          ]
+        }
+      ],
+      "dbmp_db_pool_connections": [
+        {
+          "labels": {
+            "__name__": "dbmp_db_pool_connections",
+            "instance": "backend:8080",
+            "job": "dbmp-backend",
+            "state": "acquired"
+          },
+          "sample": [
+            1795780753.265,
+            "0"
+          ]
+        },
+        {
+          "labels": {
+            "__name__": "dbmp_db_pool_connections",
+            "instance": "backend:8080",
+            "job": "dbmp-backend",
+            "state": "constructing"
+          },
+          "sample": [
+            1795780753.265,
+            "0"
+          ]
+        },
+        {
+          "labels": {
+            "__name__": "dbmp_db_pool_connections",
+            "instance": "backend:8080",
+            "job": "dbmp-backend",
+            "state": "idle"
+          },
+          "sample": [
+            1795780753.265,
+            "3"
+          ]
+        }
+      ]
+    },
+    "grafanaHealthy": true
+  },
+  "codeqlTriage": ".github/codeql-evidence/milestone2-final-triage-2026-11-27.json",
+  "k6": {
+    "fullStress": "k6-stress-milestone2-final-2026-11-27.json",
+    "summary": "k6-summary-milestone2-final-2026-11-27.json",
+    "baselineVUs": 1,
+    "peakVUs": 30,
+    "thresholdsPassed": true,
+    "acceptedJobs": 3403,
+    "succeededJobs": 3403,
+    "fullRunStartedBeforeFinalReconciliationSchemaChange": true,
+    "finalBuildSmoke": {
+      "acceptedJobs": 4,
+      "succeededJobs": 4,
+      "thresholdsPassed": true
+    }
+  },
+  "batchBenchmarkEndToEnd": {
+    "file": "batch-benchmark-milestone2-final-2026-11-27.json",
+    "environment": "dedicated test database",
+    "measuredAtUtc": "2026-11-27T11:58:45.0107900Z",
+    "databaseId": "8a1b0815-faf2-4acf-90e1-2cfa716477b2",
+    "migrationId": "6e29f885-18be-4408-a1d6-312daa3b3c53",
+    "jobId": "03aea7ec-e852-46b3-adb0-880a84c532d8",
+    "executionId": "b4426950-75e1-4d3e-9a02-d8d1bb676d44",
+    "jobStatus": "succeeded",
+    "targetRows": 2000000,
+    "batchSize": 10000,
+    "committedBatches": 200,
+    "committedRows": 2000000,
+    "nonBatchUpdateMilliseconds": 8959.2,
+    "applicationExecutionMilliseconds": 14508.426,
+    "enqueueToTerminalMilliseconds": 15467.937,
+    "nonBatchAboveOneSecond": true,
+    "verifiedRows": 2000000,
+    "sameFixtureVerified": true,
+    "targetValuesVerified": true
+  }
+}

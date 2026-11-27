@@ -1,0 +1,200 @@
+{
+  "date": "2026-11-27",
+  "codeqlVersion": "2.27.6",
+  "sourceBaseCommit": "2eb4662",
+  "source": "Local final Milestone 2 working tree including the journal, policy revalidation, and SPA fixes.",
+  "priorJavaScriptFix": {
+    "commit": "bed7081",
+    "ruleId": "js/incomplete-multi-character-sanitization"
+  },
+  "scans": {
+    "go": {
+      "suite": "go-security-extended.qls",
+      "sarif": "codeql-go-milestone2-final-2026-11-27.sarif",
+      "sha256": "5388053e4320533cc5d4ee1877626ab541f4d5190239022fd491252c34b1c437",
+      "coverage": "101 out of 146 Go files",
+      "findingCount": 19,
+      "findings": [
+        {
+          "ruleId": "go/cookie-secure-not-set",
+          "file": "backend/internal/httpapi/auth_middleware.go",
+          "line": 179,
+          "securitySeverity": 4.0,
+          "potentialImpact": "A session cookie can be sent over HTTP if Secure is disabled.",
+          "decision": "Accepted for local HTTP only.",
+          "rationale": "Production configuration requires Secure cookies. Local development and disposable tests use HTTP."
+        },
+        {
+          "ruleId": "go/cookie-secure-not-set",
+          "file": "backend/internal/httpapi/auth_middleware.go",
+          "line": 185,
+          "securitySeverity": 4.0,
+          "potentialImpact": "A session cookie can be sent over HTTP if Secure is disabled.",
+          "decision": "Accepted for local HTTP only.",
+          "rationale": "Production configuration requires Secure cookies. Local development and disposable tests use HTTP."
+        },
+        {
+          "ruleId": "go/cookie-secure-not-set",
+          "file": "backend/internal/httpapi/auth_middleware.go",
+          "line": 192,
+          "securitySeverity": 4.0,
+          "potentialImpact": "A session cookie can be sent over HTTP if Secure is disabled.",
+          "decision": "Accepted for local HTTP only.",
+          "rationale": "Production configuration requires Secure cookies. Local development and disposable tests use HTTP."
+        },
+        {
+          "ruleId": "go/sql-injection",
+          "file": "backend/internal/targetdb/mysql.go",
+          "line": 62,
+          "securitySeverity": 8.8,
+          "potentialImpact": "Database statements can read or change data on the configured target.",
+          "decision": "Accepted design risk for approved SQL migrations.",
+          "rationale": "The target adapter intentionally executes approved SQL. The worker requires View + Edit, approval of every required leader, and SQL policy validation. The read-only path separately enforces its SQL policy."
+        },
+        {
+          "ruleId": "go/sql-injection",
+          "file": "backend/internal/targetdb/mysql.go",
+          "line": 70,
+          "securitySeverity": 8.8,
+          "potentialImpact": "Database statements can read or change data on the configured target.",
+          "decision": "Accepted design risk for approved SQL migrations.",
+          "rationale": "The target adapter intentionally executes approved SQL. The worker requires View + Edit, approval of every required leader, and SQL policy validation. The read-only path separately enforces its SQL policy."
+        },
+        {
+          "ruleId": "go/sql-injection",
+          "file": "backend/internal/targetdb/mysql.go",
+          "line": 74,
+          "securitySeverity": 8.8,
+          "potentialImpact": "Database statements can read or change data on the configured target.",
+          "decision": "Accepted design risk for approved SQL migrations.",
+          "rationale": "The target adapter intentionally executes approved SQL. The worker requires View + Edit, approval of every required leader, and SQL policy validation. The read-only path separately enforces its SQL policy."
+        },
+        {
+          "ruleId": "go/sql-injection",
+          "file": "backend/internal/targetdb/mysql.go",
+          "line": 94,
+          "securitySeverity": 8.8,
+          "potentialImpact": "Database statements can read or change data on the configured target.",
+          "decision": "Accepted design risk for approved SQL migrations.",
+          "rationale": "The target adapter intentionally executes approved SQL. The worker requires View + Edit, approval of every required leader, and SQL policy validation. The read-only path separately enforces its SQL policy."
+        },
+        {
+          "ruleId": "go/sql-injection",
+          "file": "backend/internal/targetdb/mysql.go",
+          "line": 102,
+          "securitySeverity": 8.8,
+          "potentialImpact": "Database statements can read or change data on the configured target.",
+          "decision": "Accepted design risk for approved SQL migrations.",
+          "rationale": "The target adapter intentionally executes approved SQL. The worker requires View + Edit, approval of every required leader, and SQL policy validation. The read-only path separately enforces its SQL policy."
+        },
+        {
+          "ruleId": "go/sql-injection",
+          "file": "backend/internal/targetdb/mysql.go",
+          "line": 106,
+          "securitySeverity": 8.8,
+          "potentialImpact": "Database statements can read or change data on the configured target.",
+          "decision": "Accepted design risk for approved SQL migrations.",
+          "rationale": "The target adapter intentionally executes approved SQL. The worker requires View + Edit, approval of every required leader, and SQL policy validation. The read-only path separately enforces its SQL policy."
+        },
+        {
+          "ruleId": "go/log-injection",
+          "file": "backend/internal/targetdb/logging.go",
+          "line": 74,
+          "securitySeverity": 6.1,
+          "potentialImpact": "Unexpected control characters could alter a log record in a line-based text logger.",
+          "decision": "False positive for the production JSON logging path.",
+          "rationale": "Both API and worker use slog.JSONHandler, which encodes control characters within a JSON value. Query and parameter recording also apply redaction."
+        },
+        {
+          "ruleId": "go/log-injection",
+          "file": "backend/internal/targetdb/logging.go",
+          "line": 79,
+          "securitySeverity": 6.1,
+          "potentialImpact": "Unexpected control characters could alter a log record in a line-based text logger.",
+          "decision": "False positive for the production JSON logging path.",
+          "rationale": "Both API and worker use slog.JSONHandler, which encodes control characters within a JSON value. Query and parameter recording also apply redaction."
+        },
+        {
+          "ruleId": "go/log-injection",
+          "file": "backend/internal/targetdb/logging.go",
+          "line": 287,
+          "securitySeverity": 6.1,
+          "potentialImpact": "Unexpected control characters could alter a log record in a line-based text logger.",
+          "decision": "False positive for the production JSON logging path.",
+          "rationale": "Both API and worker use slog.JSONHandler, which encodes control characters within a JSON value. Query and parameter recording also apply redaction."
+        },
+        {
+          "ruleId": "go/log-injection",
+          "file": "backend/internal/targetdb/logging.go",
+          "line": 300,
+          "securitySeverity": 6.1,
+          "potentialImpact": "Unexpected control characters could alter a log record in a line-based text logger.",
+          "decision": "False positive for the production JSON logging path.",
+          "rationale": "Both API and worker use slog.JSONHandler, which encodes control characters within a JSON value. Query and parameter recording also apply redaction."
+        },
+        {
+          "ruleId": "go/log-injection",
+          "file": "backend/internal/targetdb/logging.go",
+          "line": 306,
+          "securitySeverity": 6.1,
+          "potentialImpact": "Unexpected control characters could alter a log record in a line-based text logger.",
+          "decision": "False positive for the production JSON logging path.",
+          "rationale": "Both API and worker use slog.JSONHandler, which encodes control characters within a JSON value. Query and parameter recording also apply redaction."
+        },
+        {
+          "ruleId": "go/log-injection",
+          "file": "backend/internal/httpapi/middleware.go",
+          "line": 49,
+          "securitySeverity": 6.1,
+          "potentialImpact": "Unexpected control characters could alter a log record in a line-based text logger.",
+          "decision": "False positive for the production JSON logging path.",
+          "rationale": "Both API and worker use slog.JSONHandler, which encodes control characters within a JSON value. Query and parameter recording also apply redaction."
+        },
+        {
+          "ruleId": "go/log-injection",
+          "file": "backend/internal/migration/batch.go",
+          "line": 152,
+          "securitySeverity": 6.1,
+          "potentialImpact": "Unexpected control characters could alter a log record in a line-based text logger.",
+          "decision": "False positive for the production JSON logging path.",
+          "rationale": "Both API and worker use slog.JSONHandler, which encodes control characters within a JSON value. Query and parameter recording also apply redaction."
+        },
+        {
+          "ruleId": "go/log-injection",
+          "file": "backend/internal/migration/batch.go",
+          "line": 248,
+          "securitySeverity": 6.1,
+          "potentialImpact": "Unexpected control characters could alter a log record in a line-based text logger.",
+          "decision": "False positive for the production JSON logging path.",
+          "rationale": "Both API and worker use slog.JSONHandler, which encodes control characters within a JSON value. Query and parameter recording also apply redaction."
+        },
+        {
+          "ruleId": "go/log-injection",
+          "file": "backend/internal/migration/batch.go",
+          "line": 304,
+          "securitySeverity": 6.1,
+          "potentialImpact": "Unexpected control characters could alter a log record in a line-based text logger.",
+          "decision": "False positive for the production JSON logging path.",
+          "rationale": "Both API and worker use slog.JSONHandler, which encodes control characters within a JSON value. Query and parameter recording also apply redaction."
+        },
+        {
+          "ruleId": "go/log-injection",
+          "file": "backend/internal/targetdb/provider.go",
+          "line": 118,
+          "securitySeverity": 6.1,
+          "potentialImpact": "Unexpected control characters could alter a log record in a line-based text logger.",
+          "decision": "False positive for the production JSON logging path.",
+          "rationale": "Both API and worker use slog.JSONHandler, which encodes control characters within a JSON value. Query and parameter recording also apply redaction."
+        }
+      ]
+    },
+    "javascript-typescript": {
+      "suite": "javascript-security-extended.qls",
+      "sarif": "codeql-javascript-milestone2-final-2026-11-27.sarif",
+      "sha256": "0855c2f8c80be91cf73734170651031b0f3bccb0151c64be1616bf2c0a8a85e3",
+      "coverage": "86 out of 86 JavaScript/TypeScript files and 1 out of 1 GitHub Actions files",
+      "findingCount": 0,
+      "findings": []
+    }
+  }
+}
