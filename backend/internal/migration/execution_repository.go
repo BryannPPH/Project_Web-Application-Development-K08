@@ -225,7 +225,7 @@ func (r *PGRepository) StartExecution(ctx context.Context, plan ExecutionPlan, a
 		return ExecutionAttempt{}, mapRepositoryError(err)
 	}
 	if plan.JobID != "" {
-		command, err := tx.Exec(ctx, `UPDATE migration_jobs SET execution_id=$1::uuid,updated_at=$4
+		command, err := tx.Exec(ctx, `UPDATE migration_jobs SET execution_id=$1::uuid,retry_execution_id=NULL,updated_at=$4
 			WHERE id=$2::uuid AND database_id=$3::uuid AND status='running' AND lease_token=$5::uuid
 			  AND worker_id=$6 AND lease_expires_at > $4`,
 			attempt.ID, plan.JobID, attempt.DatabaseID, now, plan.JobLeaseToken, plan.JobWorkerID)
@@ -287,7 +287,7 @@ func insertBatchFailure(ctx context.Context, exec func(context.Context, string, 
 }
 
 func (r *PGRepository) FinishExecution(ctx context.Context, attempt ExecutionAttempt, status Status, message *string, now time.Time) (Entry, error) {
-	return r.finishExecution(ctx, attempt, status, message, now, nil, nil)
+	return r.finishExecution(ctx, attempt, status, message, now, nil, nil, nil)
 }
 
 type reconciliationRecord struct {
@@ -296,7 +296,7 @@ type reconciliationRecord struct {
 }
 
 func (r *PGRepository) finishExecution(ctx context.Context, attempt ExecutionAttempt, status Status, message *string,
-	now time.Time, reconciliation *reconciliationRecord, batchFailure *BatchFailureEvent) (Entry, error) {
+	now time.Time, reconciliation *reconciliationRecord, batchFailure *BatchFailureEvent, retryJob *Job) (Entry, error) {
 	eventStatus, eventType := string(status), eventForStatus(status)
 	eventMessage := message
 	if status == StatusSucceeded {
@@ -387,6 +387,23 @@ func (r *PGRepository) finishExecution(ctx context.Context, attempt ExecutionAtt
 			WHERE execution_id=$1::uuid AND status='needs_reconciliation'`,
 			attempt.ID, jobStatusForExecutionStatus(string(status)), code, eventMessage, now); err != nil {
 			return Entry{}, mapRepositoryError(err)
+		}
+	}
+	if retryJob != nil {
+		// Save the failed attempt and schedule the retry in one platform transaction.
+		command, err := tx.Exec(ctx, `UPDATE migration_jobs
+			SET status='retrying', retry_count=retry_count+1, next_attempt_at=$5, updated_at=$6,
+			    error_code='TARGET_TRANSACTION_RETRY', error_message=$7, retry_execution_id=execution_id,
+			    execution_id=NULL, worker_id=NULL, lease_token=NULL, lease_expires_at=NULL
+			WHERE id=$1::uuid AND status='running' AND lease_token=$2::uuid AND worker_id=$3
+			  AND execution_id=$4::uuid AND lease_expires_at > $6`,
+			retryJob.ID, valueOrEmpty(retryJob.leaseToken), valueOrEmpty(retryJob.workerID), attempt.ID,
+			now.Add(retryJob.transactionRetryDelay), now, message)
+		if err != nil {
+			return Entry{}, mapRepositoryError(err)
+		}
+		if command.RowsAffected() != 1 {
+			return Entry{}, ErrLeaseLost
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {

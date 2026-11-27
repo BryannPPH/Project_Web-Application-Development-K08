@@ -91,10 +91,11 @@ type Locker interface {
 }
 
 type ExecutionResult struct {
-	Status        Status
-	PublicError   *string
-	InternalError error
-	BatchFailure  *BatchFailureEvent
+	Status               Status
+	PublicError          *string
+	InternalError        error
+	BatchFailure         *BatchFailureEvent
+	retryableTransaction bool
 }
 
 type Executor interface {

@@ -24,31 +24,33 @@ func (s JobStatus) Terminal() bool {
 }
 
 type Job struct {
-	ID                string          `json:"jobId"`
-	DatabaseID        string          `json:"databaseId"`
-	MigrationID       string          `json:"migrationId"`
-	RequestedRevision int64           `json:"revision"`
-	Action            ExecutionAction `json:"action"`
-	ExecutionMode     ExecutionMode   `json:"executionMode"`
-	ActorID           string          `json:"actorId"`
-	ActorUsername     string          `json:"actor"`
-	Status            JobStatus       `json:"status"`
-	RetryCount        int             `json:"retryCount"`
-	ExecutionID       *string         `json:"executionId,omitempty"`
-	CorrelationID     *string         `json:"correlationId,omitempty"`
-	CreatedAt         time.Time       `json:"createdAt"`
-	StartedAt         *time.Time      `json:"startedAt,omitempty"`
-	FinishedAt        *time.Time      `json:"finishedAt,omitempty"`
-	NextAttemptAt     time.Time       `json:"nextAttemptAt"`
-	ErrorCode         *string         `json:"errorCode,omitempty"`
-	ErrorMessage      *string         `json:"errorMessage,omitempty"`
-	BatchProgress     *BatchProgress  `json:"batchProgress,omitempty"`
+	ID                  string          `json:"jobId"`
+	DatabaseID          string          `json:"databaseId"`
+	MigrationID         string          `json:"migrationId"`
+	RequestedRevision   int64           `json:"revision"`
+	Action              ExecutionAction `json:"action"`
+	ExecutionMode       ExecutionMode   `json:"executionMode"`
+	ActorID             string          `json:"actorId"`
+	ActorUsername       string          `json:"actor"`
+	Status              JobStatus       `json:"status"`
+	RetryCount          int             `json:"retryCount"`
+	ExecutionID         *string         `json:"executionId,omitempty"`
+	PreviousExecutionID *string         `json:"previousExecutionId,omitempty"`
+	CorrelationID       *string         `json:"correlationId,omitempty"`
+	CreatedAt           time.Time       `json:"createdAt"`
+	StartedAt           *time.Time      `json:"startedAt,omitempty"`
+	FinishedAt          *time.Time      `json:"finishedAt,omitempty"`
+	NextAttemptAt       time.Time       `json:"nextAttemptAt"`
+	ErrorCode           *string         `json:"errorCode,omitempty"`
+	ErrorMessage        *string         `json:"errorMessage,omitempty"`
+	BatchProgress       *BatchProgress  `json:"batchProgress,omitempty"`
 
-	leaseToken     *string
-	leaseExpiresAt *time.Time
-	workerID       *string
-	traceparent    *string
-	tracestate     *string
+	leaseToken            *string
+	leaseExpiresAt        *time.Time
+	workerID              *string
+	traceparent           *string
+	tracestate            *string
+	transactionRetryDelay time.Duration
 }
 
 type EnqueueMetadata struct {

@@ -22,12 +22,12 @@ func NewPGJobRepository(pool *pgxpool.Pool) *PGJobRepository {
 const jobColumns = `id::text,database_id::text,migration_id::text,requested_revision,action,
 	execution_mode,actor_id::text,actor_username,status,retry_count,execution_id::text,
 	correlation_id,created_at,started_at,finished_at,next_attempt_at,error_code,error_message,
-	lease_token::text,lease_expires_at,worker_id,traceparent,tracestate`
+	lease_token::text,lease_expires_at,worker_id,traceparent,tracestate,retry_execution_id::text`
 
 const jobColumnsJ = `j.id::text,j.database_id::text,j.migration_id::text,j.requested_revision,j.action,
 	j.execution_mode,j.actor_id::text,j.actor_username,j.status,j.retry_count,j.execution_id::text,
 	j.correlation_id,j.created_at,j.started_at,j.finished_at,j.next_attempt_at,j.error_code,j.error_message,
-	j.lease_token::text,j.lease_expires_at,j.worker_id,j.traceparent,j.tracestate`
+	j.lease_token::text,j.lease_expires_at,j.worker_id,j.traceparent,j.tracestate,j.retry_execution_id::text`
 
 func newUUID() (string, error) { return shareduuid.New() }
 
@@ -248,7 +248,7 @@ func scanJob(row rowScanner) (Job, error) {
 		&mode, &job.ActorID, &job.ActorUsername, &status, &job.RetryCount, &job.ExecutionID,
 		&job.CorrelationID, &job.CreatedAt, &job.StartedAt, &job.FinishedAt, &job.NextAttemptAt,
 		&job.ErrorCode, &job.ErrorMessage, &job.leaseToken, &job.leaseExpiresAt, &job.workerID,
-		&job.traceparent, &job.tracestate)
+		&job.traceparent, &job.tracestate, &job.PreviousExecutionID)
 	job.Action, job.ExecutionMode, job.Status = ExecutionAction(action), ExecutionMode(mode), JobStatus(status)
 	return job, err
 }

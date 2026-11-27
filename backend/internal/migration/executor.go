@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
 
@@ -106,14 +107,26 @@ func (e *PGExecutor) Execute(ctx context.Context, databaseID, sqlText string) Ex
 				InternalError: errors.Join(fmt.Errorf("execute target migration: %w", err), fmt.Errorf("rollback target migration: %w", rollbackErr)),
 			}
 		}
-		return ExecutionResult{Status: StatusFailed, PublicError: &public, InternalError: fmt.Errorf("execute target migration: %w", err)}
+		return ExecutionResult{Status: StatusFailed, PublicError: &public,
+			InternalError:        fmt.Errorf("execute target migration: %w", err),
+			retryableTransaction: connection.Engine() == targetdb.EnginePostgreSQL && postgresTransactionConflict(err)}
 	}
 
 	if err := tx.Commit(ctx); err != nil {
+		if connection.Engine() == targetdb.EnginePostgreSQL && postgresTransactionConflict(err) {
+			return ExecutionResult{Status: StatusFailed, PublicError: stringPtr(sanitizeTargetError(err)),
+				InternalError: fmt.Errorf("commit target migration: %w", err), retryableTransaction: true}
+		}
 		message := "migration outcome is uncertain; manual reconciliation is required"
 		return ExecutionResult{Status: StatusInterrupted, PublicError: &message, InternalError: fmt.Errorf("commit target migration: %w", err)}
 	}
 	return ExecutionResult{Status: StatusSucceeded}
+}
+
+// PostgreSQL reports these conflicts only when the transaction was aborted.
+func postgresTransactionConflict(err error) bool {
+	var postgresError *pgconn.PgError
+	return errors.As(err, &postgresError) && (postgresError.Code == "40001" || postgresError.Code == "40P01")
 }
 
 // The advisory lock is scoped to the physical database. Holding it on the

@@ -173,11 +173,25 @@ func (w *Worker) process(ctx context.Context, workerID string, job Job) {
 	workCtx, cancel := context.WithCancel(jobCtx)
 	heartbeatDone := make(chan error, 1)
 	go w.heartbeat(workCtx, job, cancel, heartbeatDone)
+	action := job.Action
+	if job.PreviousExecutionID != nil && action == ActionApply {
+		action = ActionRetry
+	}
+	if job.RetryCount < w.config.MaxRetries {
+		job.transactionRetryDelay = w.retryDelay(job.RetryCount)
+	}
 	executionCtx := withQueuedExecution(workCtx, job)
-	entry, executionErr := w.service.ExecuteAction(executionCtx, principal, job.DatabaseID, job.MigrationID, job.Action)
+	entry, executionErr := w.service.ExecuteAction(executionCtx, principal, job.DatabaseID, job.MigrationID, action)
 	cancel()
 	heartbeatErr := <-heartbeatDone
 
+	if entry.retryScheduled {
+		w.logger.WarnContext(jobCtx, "retry scheduled after target transaction aborted", append([]any{
+			"event", "migration_job_retry_scheduled", "job_id", job.ID, "retry_count", job.RetryCount + 1,
+			"retry_delay_ms", job.transactionRetryDelay.Milliseconds(), "error_code", "TARGET_TRANSACTION_RETRY",
+		}, observability.TraceFields(jobCtx)...)...)
+		return
+	}
 	if errors.Is(heartbeatErr, ErrLeaseLost) {
 		w.logger.WarnContext(jobCtx, "migration job lease lost", append([]any{
 			"event", "migration_job_lease_lost", "job_id", job.ID,

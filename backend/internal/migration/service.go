@@ -259,7 +259,7 @@ func (s *Service) reconcileTargetJournal(ctx context.Context, entry Entry, now t
 		status = StatusFailed
 		message = stringPtr("target journal confirms the transaction did not commit")
 	}
-	result, err := repository.finishExecution(ctx, attempt, status, message, now, &record, nil)
+	result, err := repository.finishExecution(ctx, attempt, status, message, now, &record, nil, nil)
 	return result, true, err
 }
 
@@ -343,6 +343,9 @@ func (s *Service) ExecuteAction(ctx context.Context, principal auth.Principal, d
 	if isQueued {
 		if plan.Entry.Revision != queuedJob.RequestedRevision || plan.Entry.ExecutionMode != queuedJob.ExecutionMode {
 			return Entry{}, ErrRevisionChanged
+		}
+		if queuedJob.PreviousExecutionID != nil && valueOrEmpty(plan.Entry.LatestExecutionID) != *queuedJob.PreviousExecutionID {
+			return Entry{}, ErrConflict
 		}
 		plan.JobID = queuedJob.ID
 		plan.JobLeaseToken = valueOrEmpty(queuedJob.leaseToken)
@@ -500,12 +503,21 @@ func (s *Service) ExecuteAction(ctx context.Context, principal auth.Principal, d
 	var entry Entry
 	var finishErr error
 	finishedAt := s.clock.Now()
-	if failedBatch && atomicBatchHistory {
-		failure := result.BatchFailure
-		if failure == nil {
-			failure = &BatchFailureEvent{}
+	var retryJob *Job
+	if isQueued && queuedJob.transactionRetryDelay > 0 && result.retryableTransaction &&
+		(result.Status == StatusFailed || result.Status == StatusPartial || result.Status == StatusPartiallyReverted) {
+		retryJob = &queuedJob
+	}
+	if atomicBatchHistory && (failedBatch || retryJob != nil) {
+		var failure *BatchFailureEvent
+		if failedBatch {
+			failure = result.BatchFailure
+			if failure == nil {
+				failure = &BatchFailureEvent{}
+			}
 		}
-		entry, finishErr = pgRepository.finishExecution(finalizeCtx, attempt, result.Status, result.PublicError, finishedAt, nil, failure)
+		entry, finishErr = pgRepository.finishExecution(finalizeCtx, attempt, result.Status, result.PublicError, finishedAt, nil, failure, retryJob)
+		entry.retryScheduled = retryJob != nil && finishErr == nil
 	} else {
 		entry, finishErr = repository.FinishExecution(finalizeCtx, attempt, result.Status, result.PublicError, finishedAt)
 	}

@@ -88,8 +88,9 @@ type Entry struct {
 	CanEdit                  bool            `json:"canEdit"`
 	CanReconcile             bool            `json:"canReconcile"`
 
-	attemptStatus Status
-	attemptError  *string
+	attemptStatus  Status
+	attemptError   *string
+	retryScheduled bool
 }
 
 // Definition is immutable after the first execution attempt has been recorded.
@@ -176,11 +177,12 @@ type HistoryPage struct {
 }
 
 type BatchProgress struct {
-	ExecutionID      string `json:"executionId"`
-	CommittedBatches int64  `json:"committedBatches"`
-	CommittedRows    int64  `json:"committedRows"`
-	LastCursor       int64  `json:"lastCursor"`
-	Status           string `json:"status"`
+	ExecutionID      string          `json:"executionId"`
+	Action           ExecutionAction `json:"action"`
+	CommittedBatches int64           `json:"committedBatches"`
+	CommittedRows    int64           `json:"committedRows"`
+	LastCursor       int64           `json:"lastCursor"`
+	Status           string          `json:"status"`
 }
 
 // BatchCheckpointState describes target-side commits used to recover an expired worker lease.

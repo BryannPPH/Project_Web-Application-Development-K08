@@ -128,12 +128,14 @@ func (e *PGExecutor) executeBatchUp(ctx context.Context, connection targetdb.Con
 		}
 		rowsAffected, executedSQL, err := executeScopedBatch(selectCtx, tx, plan.SQLSnapshot, column, cursorStart, cursorEnd, keys)
 		if err != nil {
-			_ = tx.Rollback(context.WithoutCancel(ctx))
+			rollbackErr := tx.Rollback(context.WithoutCancel(ctx))
 			cancel()
 			batchNumber := batchNumber + 1
-			return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "up", "batch SQL failed", err,
+			result := e.batchFailure(ctx, connection, databaseID, executionID, rootID, "up", "batch SQL failed", err,
 				BatchFailureEvent{QuerySQL: executedSQL, QueryParameters: []int64{cursorStart, cursorEnd},
 					BatchNumber: &batchNumber, CursorStart: &cursorStart, CursorEnd: &cursorEnd})
+			result.retryableTransaction = rollbackErr == nil && postgresTransactionConflict(err)
+			return result
 		}
 		batchNumber++
 		if _, err := tx.Exec(selectCtx, `INSERT INTO dbmp_migration_batch_checkpoints
@@ -159,9 +161,11 @@ func (e *PGExecutor) executeBatchUp(ctx context.Context, connection targetdb.Con
 					}}
 			}
 			if !committed {
-				return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "up", "batch transaction did not commit", commitErr,
+				result := e.batchFailure(ctx, connection, databaseID, executionID, rootID, "up", "batch transaction did not commit", commitErr,
 					BatchFailureEvent{QuerySQL: executedSQL, QueryParameters: []int64{cursorStart, cursorEnd},
 						BatchNumber: &batchNumber, CursorStart: &cursorStart, CursorEnd: &cursorEnd})
+				result.retryableTransaction = postgresTransactionConflict(commitErr)
+				return result
 			}
 		}
 		logFields := []any{"event", "migration_batch_committed",
@@ -236,10 +240,12 @@ func (e *PGExecutor) executeBatchRollback(ctx context.Context, connection target
 		}
 		rowsAffected, executedSQL, err := executeScopedBatch(batchCtx, tx, plan.SQLSnapshot, column, cursorStart, cursorEnd, keys)
 		if err != nil {
-			_ = tx.Rollback(context.WithoutCancel(ctx))
-			return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "down", "rollback batch SQL failed", err,
+			rollbackErr := tx.Rollback(context.WithoutCancel(ctx))
+			result := e.batchFailure(ctx, connection, databaseID, executionID, rootID, "down", "rollback batch SQL failed", err,
 				BatchFailureEvent{QuerySQL: executedSQL, QueryParameters: []int64{cursorStart, cursorEnd},
 					BatchNumber: &batchNumber, CursorStart: &cursorStart, CursorEnd: &cursorEnd})
+			result.retryableTransaction = rollbackErr == nil && postgresTransactionConflict(err)
+			return result
 		}
 		if _, err := tx.Exec(batchCtx, `INSERT INTO dbmp_migration_batch_checkpoints
 			(root_execution_id,execution_id,operation,batch_number,cursor_start,cursor_end,rows_affected,committed_at)
@@ -261,9 +267,11 @@ func (e *PGExecutor) executeBatchRollback(ctx context.Context, connection target
 					}}
 			}
 			if !committed {
-				return e.batchFailure(ctx, connection, databaseID, executionID, rootID, "down", "rollback batch transaction did not commit", err,
+				result := e.batchFailure(ctx, connection, databaseID, executionID, rootID, "down", "rollback batch transaction did not commit", err,
 					BatchFailureEvent{QuerySQL: executedSQL, QueryParameters: []int64{cursorStart, cursorEnd},
 						BatchNumber: &batchNumber, CursorStart: &cursorStart, CursorEnd: &cursorEnd})
+				result.retryableTransaction = postgresTransactionConflict(err)
+				return result
 			}
 		}
 		logFields := []any{"event", "migration_batch_rollback_committed",
@@ -359,6 +367,7 @@ func (e *PGExecutor) BatchProgress(ctx context.Context, databaseID string, attem
 	}
 	var progress BatchProgress
 	progress.ExecutionID, progress.Status = attempt.ID, attempt.Status
+	progress.Action = attempt.Action
 	err = connection.QueryRow(ctx, `SELECT count(*),COALESCE(sum(rows_affected),0),
 		CASE WHEN $2='down' THEN COALESCE(min(cursor_start),0) ELSE COALESCE(max(cursor_end),0) END
 		FROM dbmp_migration_batch_checkpoints WHERE root_execution_id=$1::uuid AND operation=$2`,
