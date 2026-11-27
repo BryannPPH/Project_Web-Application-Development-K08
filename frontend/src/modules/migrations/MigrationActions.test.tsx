@@ -297,3 +297,22 @@ it('menampilkan snapshot dan metadata attempt pada rute execution', async () => 
   expect(screen.getByText('Down SQL gagal')).toBeInTheDocument()
   expect(screen.getByRole('link', { name: 'e0' })).toHaveAttribute('href', '/databases/db-1/migrations/executions/e0')
 })
+
+it('menampilkan detail job yang ditolak sebelum SQL tanpa membuat snapshot palsu', async () => {
+  mockFetch((url) => url.pathname.endsWith('/migration-executions/j1') ? jsonResponse({
+    jobId: 'j1', migrationId: 'm1', version: 2, revision: 1, action: 'apply', actorUsername: 'operator',
+    requestedAt: '2026-11-20T09:00:00Z', relatedExecutionId: null, status: 'failed',
+    errorMessage: 'an earlier migration blocks this job',
+  }) : undefined)
+  renderRoute(<ExecutionDetailPage />, {
+    route: '/databases/db-1/migrations/executions/j1',
+    path: '/databases/:databaseId/migrations/executions/:executionId',
+    user: regularUser,
+  })
+
+  expect(await screen.findByText('Ditolak sebelum SQL')).toBeInTheDocument()
+  expect(screen.getByText('Job ID')).toBeInTheDocument()
+  expect(screen.getByText('j1')).toBeInTheDocument()
+  expect(screen.getByText('an earlier migration blocks this job')).toBeInTheDocument()
+  expect(screen.queryByRole('heading', { name: 'Snapshot Up SQL' })).not.toBeInTheDocument()
+})

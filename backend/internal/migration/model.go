@@ -106,7 +106,9 @@ type Definition struct {
 }
 
 type ExecutionAttempt struct {
-	ID                 string           `json:"executionId"`
+	ID                 string           `json:"executionId,omitempty"`
+	JobID              *string          `json:"jobId,omitempty"`
+	ErrorCode          *string          `json:"errorCode,omitempty"`
 	DatabaseID         string           `json:"databaseId"`
 	MigrationID        string           `json:"migrationId"`
 	MigrationName      string           `json:"migrationName"`

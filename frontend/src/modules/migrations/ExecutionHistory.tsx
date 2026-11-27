@@ -78,16 +78,17 @@ export function ExecutionHistory({ databaseId, migrations }: { databaseId: strin
             <tbody>
               {shown.map((item) => {
                 const name = item.migrationName || byMigration.get(item.migrationId)?.name
+                const historyId = item.jobId ?? item.executionId
                 return (
-                  <tr key={item.executionId}>
+                  <tr key={historyId}>
                     <td data-label="Waktu">{displayTime(item.requestedAt)}</td>
                     <td data-label="Versi">
-                      <Link className="migration-name-link" to={`/databases/${databaseId}/migrations/executions/${item.executionId}`}>
+                      <Link className="migration-name-link" to={`/databases/${databaseId}/migrations/executions/${historyId}`}>
                         v{item.version}{name ? ` · ${name}` : ''}
                       </Link>
                     </td>
                     <td data-label="Aksi">{executionActionText[item.action]}</td>
-                    <td data-label="Status">{executionStatusText[item.status] ?? item.status}</td>
+                    <td data-label="Status">{item.jobId ? 'Ditolak sebelum SQL' : (executionStatusText[item.status] ?? item.status)}</td>
                     <td data-label="Oleh">{item.actorUsername}</td>
                   </tr>
                 )

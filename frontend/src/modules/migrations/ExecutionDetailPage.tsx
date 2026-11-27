@@ -45,11 +45,11 @@ export function ExecutionDetailPage() {
         <>
           <div className="panel">
             <dl className="execution-detail__meta">
-              <div><dt>Status attempt</dt><dd>{executionStatusText[attempt.status] ?? attempt.status}</dd></div>
+              <div><dt>Status attempt</dt><dd>{attempt.jobId ? 'Ditolak sebelum SQL' : (executionStatusText[attempt.status] ?? attempt.status)}</dd></div>
               <div><dt>Revisi</dt><dd>{attempt.revision}</dd></div>
               <div><dt>Oleh</dt><dd>{attempt.actorUsername}</dd></div>
               <div><dt>Waktu</dt><dd>{displayTime(attempt.requestedAt)}</dd></div>
-              <div><dt>Execution ID</dt><dd><code>{attempt.executionId}</code></dd></div>
+              <div><dt>{attempt.jobId ? 'Job ID' : 'Execution ID'}</dt><dd><code>{attempt.jobId ?? attempt.executionId}</code></dd></div>
               {attempt.relatedExecutionId ? (
                 <div>
                   <dt>Execution terkait</dt>
@@ -59,10 +59,12 @@ export function ExecutionDetailPage() {
             </dl>
           </div>
           {attempt.errorMessage ? <StatusMessage tone="error">{attempt.errorMessage}</StatusMessage> : null}
-          <div className="panel">
-            <h2>{attempt.action === 'rollback' ? 'Snapshot Down SQL' : 'Snapshot Up SQL'}</h2>
-            <pre className="migration-sql-preview">{attempt.sqlSnapshot}</pre>
-          </div>
+          {attempt.jobId ? null : (
+            <div className="panel">
+              <h2>{attempt.action === 'rollback' ? 'Snapshot Down SQL' : 'Snapshot Up SQL'}</h2>
+              <pre className="migration-sql-preview">{attempt.sqlSnapshot}</pre>
+            </div>
+          )}
           {attempt.events?.length ? (
             <details className="panel">
               <summary>Peristiwa execution ({attempt.events.length})</summary>

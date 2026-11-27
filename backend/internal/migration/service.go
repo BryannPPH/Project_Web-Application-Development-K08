@@ -701,6 +701,9 @@ func (s *Service) GetBatchProgress(ctx context.Context, principal auth.Principal
 	if err != nil {
 		return BatchProgress{}, err
 	}
+	if attempt.JobID != nil {
+		return BatchProgress{}, ErrNoAttempt
+	}
 	executor, ok := s.executor.(BatchExecutor)
 	if !ok {
 		return BatchProgress{}, ErrConflict

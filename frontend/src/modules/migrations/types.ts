@@ -140,7 +140,9 @@ export interface MigrationJob {
 }
 
 export interface ExecutionAttempt {
-  executionId: string
+  executionId?: string
+  jobId?: string
+  errorCode?: string
   migrationId: string
   migrationName?: string
   version: number

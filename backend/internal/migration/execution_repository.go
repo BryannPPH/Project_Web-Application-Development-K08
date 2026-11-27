@@ -353,9 +353,10 @@ func (r *PGRepository) latestSuccessfulApply(ctx context.Context, migrationID st
 	return attempt, mapRepositoryError(err)
 }
 
-const attemptSelect = `SELECT a.id::text,a.database_id::text,a.migration_id::text,a.version,a.revision,
+const attemptSelect = `SELECT a.id::text AS id,a.database_id::text,a.migration_id::text,a.version,a.revision,
 	a.action,a.actor_id::text,u.username,a.requested_at,a.sql_snapshot,a.related_execution_id::text,
-	a.checkpoint_root_id::text,COALESCE(latest.status,'queued'),latest.error_message,COALESCE(a.previous_migration_status,''),m.name
+	a.checkpoint_root_id::text,COALESCE(latest.status,'queued'),latest.error_message,COALESCE(a.previous_migration_status,''),m.name,
+	NULL::text AS rejected_job_id,NULL::text AS rejection_code
 	FROM migration_execution_attempts a
 	JOIN users u ON u.id=a.actor_id
 	JOIN migration_entries m ON m.id=a.migration_id
@@ -377,11 +378,21 @@ func (r *PGRepository) executionRoot(ctx context.Context, executionID string) (s
 	return root, nil
 }
 
+// Failed jobs without an execution belong in history without changing an
+// execution's lifecycle or locking a draft definition.
+const rejectedJobSelect = `SELECT j.id::text AS id,j.database_id::text,j.migration_id::text,m.version,j.requested_revision,
+	j.action,j.actor_id::text,j.actor_username,j.created_at AS requested_at,''::text,NULL::text,
+	''::text,j.status,j.error_message,''::text,m.name,j.id::text,j.error_code
+	FROM migration_jobs j JOIN migration_entries m ON m.id=j.migration_id
+	WHERE j.database_id=$1::uuid AND j.status='failed' AND j.execution_id IS NULL`
+
 func (r *PGRepository) ListHistory(ctx context.Context, databaseID string, options HistoryOptions) (HistoryPage, error) {
 	where := `a.database_id=$1::uuid`
 	args := []any{databaseID}
+	jobs := rejectedJobSelect
 	if options.ExecutionID != "" {
 		where += ` AND a.id=$2::uuid`
+		jobs += ` AND j.id=$2::uuid`
 		args = append(args, options.ExecutionID)
 	}
 	if options.HideRollback {
@@ -404,8 +415,9 @@ func (r *PGRepository) ListHistory(ctx context.Context, databaseID string, optio
 	}
 	limitArg, offsetArg := len(args)+1, len(args)+2
 	args = append(args, options.Limit, options.Offset)
-	rows, err := r.pool.Query(ctx, attemptSelect+`WHERE `+where+
-		fmt.Sprintf(` ORDER BY a.requested_at DESC,a.id DESC LIMIT $%d OFFSET $%d`, limitArg, offsetArg), args...)
+	history := `(` + attemptSelect + `WHERE ` + where + ` UNION ALL ` + jobs + `)`
+	rows, err := r.pool.Query(ctx, `SELECT * FROM `+history+
+		fmt.Sprintf(` history ORDER BY requested_at DESC,id DESC LIMIT $%d OFFSET $%d`, limitArg, offsetArg), args...)
 	if err != nil {
 		return HistoryPage{}, mapRepositoryError(err)
 	}
@@ -422,13 +434,13 @@ func (r *PGRepository) ListHistory(ctx context.Context, databaseID string, optio
 		return HistoryPage{}, mapRepositoryError(err)
 	}
 	countArgs := args[:len(args)-2]
-	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM migration_execution_attempts a
-		LEFT JOIN LATERAL (SELECT e.status FROM migration_execution_events e
-			WHERE e.execution_id=a.id ORDER BY e.id DESC LIMIT 1) latest ON TRUE
-		WHERE `+where, countArgs...).Scan(&page.Total); err != nil {
+	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM `+history+` history`, countArgs...).Scan(&page.Total); err != nil {
 		return HistoryPage{}, mapRepositoryError(err)
 	}
 	for index := range page.Items {
+		if page.Items[index].JobID != nil {
+			continue
+		}
 		events, err := r.executionEvents(ctx, page.Items[index].ID)
 		if err != nil {
 			return HistoryPage{}, err
@@ -440,6 +452,13 @@ func (r *PGRepository) ListHistory(ctx context.Context, databaseID string, optio
 
 func (r *PGRepository) GetHistory(ctx context.Context, databaseID, executionID string) (ExecutionAttempt, error) {
 	attempt, err := r.getAttempt(ctx, databaseID, executionID)
+	if errors.Is(err, ErrNoAttempt) {
+		job, jobErr := scanAttempt(r.pool.QueryRow(ctx, rejectedJobSelect+` AND j.id=$2::uuid`, databaseID, executionID))
+		if errors.Is(jobErr, pgx.ErrNoRows) {
+			return ExecutionAttempt{}, ErrNoAttempt
+		}
+		return job, mapRepositoryError(jobErr)
+	}
 	if err != nil {
 		return ExecutionAttempt{}, err
 	}
@@ -490,7 +509,10 @@ func scanAttempt(row rowScanner) (ExecutionAttempt, error) {
 	err := row.Scan(&attempt.ID, &attempt.DatabaseID, &attempt.MigrationID, &attempt.Version, &attempt.Revision,
 		&attempt.Action, &attempt.ActorID, &attempt.ActorUsername, &attempt.RequestedAt, &attempt.SQLSnapshot,
 		&attempt.RelatedExecutionID, &attempt.CheckpointRootID, &attempt.Status, &attempt.ErrorMessage,
-		&attempt.previousMigrationStatus, &attempt.MigrationName)
+		&attempt.previousMigrationStatus, &attempt.MigrationName, &attempt.JobID, &attempt.ErrorCode)
+	if attempt.JobID != nil {
+		attempt.ID = ""
+	}
 	return attempt, err
 }
 
